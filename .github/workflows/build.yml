@@ -58,6 +58,14 @@ jobs:
             -p:Version=${{ needs.version.outputs.version }} `
             -o publish/${{ matrix.rid }}
 
+      - name: Build installer (x64 only)
+        if: matrix.arch == 'x64'
+        run: |
+          $version = "${{ needs.version.outputs.version }}"
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=${version} /DPublishDir=..\publish\${{ matrix.rid }} build\installer.iss
+          Move-Item "dist\ClaudeCodeWin-Setup-${version}-x64.exe" "publish\ClaudeCodeWin-Setup-${version}-x64.exe"
+
       - name: Rename artifact
         run: |
           $version = "${{ needs.version.outputs.version }}"
