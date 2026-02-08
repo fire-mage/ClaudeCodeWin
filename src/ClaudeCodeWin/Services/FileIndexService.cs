@@ -4,110 +4,59 @@ namespace ClaudeCodeWin.Services;
 
 public class FileIndexService
 {
-    private List<string> _files = [];
-    private string? _indexedDirectory;
-
-    private static readonly HashSet<string> ExcludedDirs = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".git", "node_modules", "bin", "obj", ".vs", "packages",
-        "__pycache__", ".idea", ".vscode", "dist", "build",
-        ".next", ".nuget", "TestResults", ".angular", "coverage",
-        ".svn", ".hg", "vendor", "target"
-    };
-
-    private const int MaxDepth = 12;
-    private const int MaxFiles = 30_000;
+    private List<string> _entries = [];
 
     public void BuildIndex(string directory)
     {
         if (!Directory.Exists(directory))
         {
-            _files = [];
-            _indexedDirectory = null;
+            _entries = [];
             return;
         }
 
-        var files = new List<string>();
-        var basePath = directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        Scan(basePath, basePath, 0, files);
-        _files = files;
-        _indexedDirectory = directory;
-    }
-
-    private static void Scan(string basePath, string currentDir, int depth, List<string> results)
-    {
-        if (depth > MaxDepth || results.Count >= MaxFiles)
-            return;
+        var entries = new List<string>();
 
         try
         {
-            foreach (var entry in Directory.EnumerateFileSystemEntries(currentDir))
+            foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
             {
-                if (results.Count >= MaxFiles)
-                    return;
-
                 var name = Path.GetFileName(entry);
+                if (string.IsNullOrEmpty(name) || name.StartsWith('.'))
+                    continue;
 
                 if (Directory.Exists(entry))
-                {
-                    if (ExcludedDirs.Contains(name))
-                        continue;
-                    Scan(basePath, entry, depth + 1, results);
-                }
+                    entries.Add(name + "/");
                 else
-                {
-                    // Store relative path with forward slashes
-                    var relative = entry[(basePath.Length + 1)..].Replace('\\', '/');
-                    results.Add(relative);
-                }
+                    entries.Add(name);
             }
         }
         catch (UnauthorizedAccessException) { }
         catch (DirectoryNotFoundException) { }
+
+        entries.Sort(StringComparer.OrdinalIgnoreCase);
+        _entries = entries;
     }
 
     public List<string> Search(string query, int maxResults = 8)
     {
-        if (string.IsNullOrEmpty(query) || _files.Count == 0)
+        if (string.IsNullOrEmpty(query) || _entries.Count == 0)
             return [];
 
-        var normalizedQuery = query.Replace('\\', '/');
-        var isPathQuery = normalizedQuery.Contains('/');
+        var startsWithMatches = new List<string>();
+        var containsMatches = new List<string>();
 
-        var nameStartMatches = new List<string>();
-        var nameContainsMatches = new List<string>();
-        var pathContainsMatches = new List<string>();
-
-        foreach (var file in _files)
+        foreach (var entry in _entries)
         {
-            if (isPathQuery)
-            {
-                if (file.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase))
-                    pathContainsMatches.Add(file);
-            }
-            else
-            {
-                var fileName = GetFileName(file);
-                if (fileName.StartsWith(normalizedQuery, StringComparison.OrdinalIgnoreCase))
-                    nameStartMatches.Add(file);
-                else if (fileName.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase))
-                    nameContainsMatches.Add(file);
-                else if (file.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase))
-                    pathContainsMatches.Add(file);
-            }
+            if (entry.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+                startsWithMatches.Add(entry);
+            else if (entry.Contains(query, StringComparison.OrdinalIgnoreCase))
+                containsMatches.Add(entry);
         }
 
         var results = new List<string>(maxResults);
-        AddUpTo(results, nameStartMatches, maxResults);
-        AddUpTo(results, nameContainsMatches, maxResults);
-        AddUpTo(results, pathContainsMatches, maxResults);
+        AddUpTo(results, startsWithMatches, maxResults);
+        AddUpTo(results, containsMatches, maxResults);
         return results;
-    }
-
-    private static string GetFileName(string path)
-    {
-        var lastSlash = path.LastIndexOf('/');
-        return lastSlash >= 0 ? path[(lastSlash + 1)..] : path;
     }
 
     private static void AddUpTo(List<string> target, List<string> source, int max)
