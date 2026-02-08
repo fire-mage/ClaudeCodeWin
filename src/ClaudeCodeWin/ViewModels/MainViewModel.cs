@@ -103,6 +103,8 @@ public class MainViewModel : ViewModelBase
     public RelayCommand RemoveRecentFolderCommand { get; }
     public RelayCommand PreviewAttachmentCommand { get; }
     public RelayCommand RemoveQueuedMessageCommand { get; }
+    public RelayCommand SendQueuedNowCommand { get; }
+    public RelayCommand ReturnQueuedToInputCommand { get; }
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
@@ -161,6 +163,23 @@ public class MainViewModel : ViewModelBase
         {
             if (p is QueuedMessage qm)
                 MessageQueue.Remove(qm);
+        });
+        SendQueuedNowCommand = new RelayCommand(p =>
+        {
+            if (p is QueuedMessage qm)
+            {
+                MessageQueue.Remove(qm);
+                CancelProcessing();
+                _ = SendDirectAsync(qm.Text, null);
+            }
+        });
+        ReturnQueuedToInputCommand = new RelayCommand(p =>
+        {
+            if (p is QueuedMessage qm)
+            {
+                MessageQueue.Remove(qm);
+                InputText = qm.Text;
+            }
         });
 
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
@@ -524,6 +543,29 @@ public class MainViewModel : ViewModelBase
 
             _notificationService.NotifyIfInactive();
         });
+    }
+
+    /// <summary>
+    /// Esc key handler: LIFO — pop last queued message back to input, or cancel Claude if queue is empty.
+    /// Returns true if an action was taken.
+    /// </summary>
+    public bool HandleEscape()
+    {
+        if (MessageQueue.Count > 0)
+        {
+            var last = MessageQueue[^1];
+            MessageQueue.RemoveAt(MessageQueue.Count - 1);
+            InputText = last.Text;
+            return true;
+        }
+
+        if (IsProcessing)
+        {
+            CancelProcessing();
+            return true;
+        }
+
+        return false;
     }
 
     private void CancelProcessing()

@@ -166,12 +166,14 @@ public partial class MainWindow : Window
             }
         }
 
-        // Escape = Cancel
-        if (e.Key == Key.Escape && ViewModel.IsProcessing)
+        // Escape = LIFO: pop queue → input, then cancel Claude
+        if (e.Key == Key.Escape)
         {
-            ViewModel.CancelCommand.Execute(null);
-            e.Handled = true;
-            return;
+            if (ViewModel.HandleEscape())
+            {
+                e.Handled = true;
+                return;
+            }
         }
 
         // Ctrl+N = New session

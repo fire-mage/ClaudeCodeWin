@@ -340,6 +340,8 @@
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="&#x23F3;" FontSize="11"
                                                Foreground="{StaticResource TextSecondaryBrush}"
@@ -348,10 +350,38 @@
                                                FontSize="12" TextTrimming="CharacterEllipsis"
                                                Foreground="{StaticResource TextBrush}"
                                                VerticalAlignment="Center"/>
-                                    <Button Grid.Column="2" Style="{StaticResource ChipCloseButton}"
+                                    <!-- Send now: cancel current + send this -->
+                                    <Border Grid.Column="2" Cursor="Hand" Background="Transparent"
+                                            Margin="4,0,0,0" ToolTip="Send now (cancel current task)">
+                                        <Border.InputBindings>
+                                            <MouseBinding Gesture="LeftClick"
+                                                          Command="{Binding DataContext.SendQueuedNowCommand,
+                                                              RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          CommandParameter="{Binding}"/>
+                                        </Border.InputBindings>
+                                        <TextBlock Text="&#x25B6;" FontSize="10"
+                                                   Foreground="{StaticResource SuccessBrush}"
+                                                   VerticalAlignment="Center" Padding="2,0"/>
+                                    </Border>
+                                    <!-- Return to input textbox -->
+                                    <Border Grid.Column="3" Cursor="Hand" Background="Transparent"
+                                            Margin="4,0,0,0" ToolTip="Return to input (edit message)">
+                                        <Border.InputBindings>
+                                            <MouseBinding Gesture="LeftClick"
+                                                          Command="{Binding DataContext.ReturnQueuedToInputCommand,
+                                                              RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          CommandParameter="{Binding}"/>
+                                        </Border.InputBindings>
+                                        <TextBlock Text="&#x21A9;" FontSize="12"
+                                                   Foreground="{StaticResource PrimaryBrush}"
+                                                   VerticalAlignment="Center" Padding="2,0"/>
+                                    </Border>
+                                    <!-- Delete from queue -->
+                                    <Button Grid.Column="4" Style="{StaticResource ChipCloseButton}"
                                             Command="{Binding DataContext.RemoveQueuedMessageCommand,
                                                 RelativeSource={RelativeSource AncestorType=Window}}"
-                                            CommandParameter="{Binding}"/>
+                                            CommandParameter="{Binding}"
+                                            ToolTip="Remove from queue"/>
                                 </Grid>
                             </Border>
                         </DataTemplate>
