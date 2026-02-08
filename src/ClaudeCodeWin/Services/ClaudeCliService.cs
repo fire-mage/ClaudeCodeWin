@@ -236,10 +236,20 @@ public class ClaudeCliService
         {
             foreach (var block in content.EnumerateArray())
             {
-                if (block.TryGetProperty("type", out var bt) && bt.GetString() == "text"
-                    && block.TryGetProperty("text", out var text))
+                if (!block.TryGetProperty("type", out var bt))
+                    continue;
+
+                var blockType = bt.GetString();
+
+                if (blockType == "text" && block.TryGetProperty("text", out var text))
                 {
                     OnTextDelta?.Invoke(text.GetString() ?? string.Empty);
+                }
+                else if (blockType == "tool_use")
+                {
+                    var toolName = block.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                    OnToolUseStarted?.Invoke(toolName, "");
+                    DetectFileChange(toolName, block);
                 }
             }
         }
@@ -253,12 +263,20 @@ public class ClaudeCliService
         if (block.TryGetProperty("type", out var bt) && bt.GetString() == "tool_use")
         {
             var toolName = block.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-            var input = block.TryGetProperty("input", out var inp) ? inp.ToString() : "";
 
             _currentToolName = toolName;
             _toolInputBuffer.Clear();
 
-            OnToolUseStarted?.Invoke(toolName, input);
+            // Seed buffer from initial input if it's non-empty (some CLIs send full input here)
+            if (block.TryGetProperty("input", out var inp)
+                && inp.ValueKind == JsonValueKind.Object
+                && inp.EnumerateObject().Any())
+            {
+                _toolInputBuffer.Append(inp.GetRawText());
+            }
+
+            var inputStr = block.TryGetProperty("input", out var inp2) ? inp2.ToString() : "";
+            OnToolUseStarted?.Invoke(toolName, inputStr);
         }
     }
 
@@ -295,20 +313,7 @@ public class ClaudeCliService
             try
             {
                 using var doc = JsonDocument.Parse(_toolInputBuffer.ToString());
-                string? filePath = null;
-                if (doc.RootElement.TryGetProperty("file_path", out var fp))
-                    filePath = fp.GetString();
-                else if (doc.RootElement.TryGetProperty("notebook_path", out var np))
-                    filePath = np.GetString();
-
-                if (!string.IsNullOrEmpty(filePath))
-                {
-                    // Snapshot file before Claude's tool executes (tool runs after stream completes)
-                    _fileSnapshots.TryAdd(filePath,
-                        File.Exists(filePath) ? File.ReadAllText(filePath) : null);
-
-                    OnFileChanged?.Invoke(filePath);
-                }
+                SnapshotAndNotify(doc.RootElement);
             }
             catch (JsonException) { }
             catch (IOException) { }
@@ -316,6 +321,45 @@ public class ClaudeCliService
 
         _currentToolName = null;
         _toolInputBuffer.Clear();
+    }
+
+    /// <summary>
+    /// Detect file changes from tool_use blocks in complete assistant events.
+    /// Called for Write/Edit/NotebookEdit tools.
+    /// </summary>
+    private void DetectFileChange(string toolName, JsonElement block)
+    {
+        if (toolName is not ("Write" or "Edit" or "NotebookEdit"))
+            return;
+
+        try
+        {
+            if (block.TryGetProperty("input", out var input) && input.ValueKind == JsonValueKind.Object)
+                SnapshotAndNotify(input);
+        }
+        catch (JsonException) { }
+        catch (IOException) { }
+    }
+
+    /// <summary>
+    /// Extract file_path from tool input, snapshot the file, and fire OnFileChanged.
+    /// </summary>
+    private void SnapshotAndNotify(JsonElement input)
+    {
+        string? filePath = null;
+        if (input.TryGetProperty("file_path", out var fp))
+            filePath = fp.GetString();
+        else if (input.TryGetProperty("notebook_path", out var np))
+            filePath = np.GetString();
+
+        if (!string.IsNullOrEmpty(filePath))
+        {
+            // Snapshot file content (before modification if possible)
+            _fileSnapshots.TryAdd(filePath,
+                File.Exists(filePath) ? File.ReadAllText(filePath) : null);
+
+            OnFileChanged?.Invoke(filePath);
+        }
     }
 
     private void HandleResult(JsonElement root)
