@@ -57,13 +57,14 @@ public class TaskRunnerService
 
         foreach (var task in tasks)
         {
+            var taskDef = task;
             var menuItem = new MenuItem
             {
                 Header = task.Name,
-                InputGestureText = task.HotKey ?? ""
+                InputGestureText = task.HotKey ?? "",
+                ToolTip = $"Runs shell command:\n{taskDef.Command}"
             };
 
-            var taskDef = task;
             menuItem.Click += (_, _) => RunTask(taskDef, viewModel, mainWindow);
             tasksMenu.Items.Add(menuItem);
         }
@@ -71,7 +72,11 @@ public class TaskRunnerService
         if (tasks.Count > 0)
             tasksMenu.Items.Add(new Separator());
 
-        var openFolder = new MenuItem { Header = "Open Tasks Folder..." };
+        var openFolder = new MenuItem
+        {
+            Header = "Open Tasks Folder...",
+            ToolTip = $"Open the folder with tasks.json to add or edit tasks.\n{TasksDir}"
+        };
         openFolder.Click += (_, _) =>
         {
             Directory.CreateDirectory(TasksDir);
@@ -79,7 +84,11 @@ public class TaskRunnerService
         };
         tasksMenu.Items.Add(openFolder);
 
-        var reload = new MenuItem { Header = "Reload Tasks" };
+        var reload = new MenuItem
+        {
+            Header = "Reload Tasks",
+            ToolTip = "Re-read tasks.json and refresh this menu after manual edits."
+        };
         reload.Click += (_, _) => PopulateMenu(mainWindow, viewModel);
         tasksMenu.Items.Add(reload);
     }

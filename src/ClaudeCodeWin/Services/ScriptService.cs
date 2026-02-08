@@ -61,13 +61,14 @@ public partial class ScriptService
 
         foreach (var script in scripts)
         {
+            var prompt = script.Prompt;
             var menuItem = new MenuItem
             {
                 Header = script.Name,
-                InputGestureText = script.HotKey ?? ""
+                InputGestureText = script.HotKey ?? "",
+                ToolTip = $"Sends prompt to Claude:\n\"{(prompt.Length > 120 ? prompt[..120] + "..." : prompt)}\""
             };
 
-            var prompt = script.Prompt;
             menuItem.Click += (_, _) =>
             {
                 var resolved = ResolveVariables(prompt, viewModel.WorkingDirectory, gitService);
@@ -83,7 +84,11 @@ public partial class ScriptService
         if (scripts.Count > 0)
             scriptsMenu.Items.Add(new Separator());
 
-        var openFolder = new MenuItem { Header = "Open Scripts Folder..." };
+        var openFolder = new MenuItem
+        {
+            Header = "Open Scripts Folder...",
+            ToolTip = $"Open the folder with scripts.json to add or edit scripts.\n{ScriptsDir}"
+        };
         openFolder.Click += (_, _) =>
         {
             Directory.CreateDirectory(ScriptsDir);
@@ -91,7 +96,11 @@ public partial class ScriptService
         };
         scriptsMenu.Items.Add(openFolder);
 
-        var reload = new MenuItem { Header = "Reload Scripts" };
+        var reload = new MenuItem
+        {
+            Header = "Reload Scripts",
+            ToolTip = "Re-read scripts.json and refresh this menu after manual edits."
+        };
         reload.Click += (_, _) => PopulateMenu(mainWindow, viewModel, gitService);
         scriptsMenu.Items.Add(reload);
 

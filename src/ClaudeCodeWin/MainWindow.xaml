@@ -34,19 +34,28 @@
 
         <!-- Menu bar -->
         <Menu Grid.Row="0" Background="{StaticResource SurfaceBrush}">
-            <MenuItem Header="_Session">
+            <MenuItem Header="_Session"
+                      ToolTip="Session management: start new conversations, change project folder">
                 <MenuItem Header="_New Session" Command="{Binding NewSessionCommand}"
-                          InputGestureText="Ctrl+N"/>
-                <MenuItem Header="Change _Project Folder..." Command="{Binding SelectFolderCommand}"/>
+                          InputGestureText="Ctrl+N"
+                          ToolTip="Start a fresh conversation with Claude. Clears chat history and resets context.&#x0a;Example: Use after finishing one task to start a new unrelated task."/>
+                <MenuItem Header="Change _Project Folder..." Command="{Binding SelectFolderCommand}"
+                          ToolTip="Select a different project folder as Claude's working directory.&#x0a;Claude reads files, runs commands, and writes code relative to this folder.&#x0a;Example: Switch between ProjectA and ProjectB."/>
                 <Separator/>
-                <MenuItem Header="E_xit" Click="MenuItem_Exit_Click"/>
+                <MenuItem Header="E_xit" Click="MenuItem_Exit_Click"
+                          ToolTip="Close the application. Window position and size are saved automatically."/>
             </MenuItem>
-            <MenuItem Header="S_cripts" x:Name="ScriptsMenu"/>
-            <MenuItem Header="_Tasks" x:Name="TasksMenu"/>
-            <MenuItem Header="_Help">
-                <MenuItem Header="Check for _Updates..." Command="{Binding CheckForUpdatesCommand}"/>
+            <MenuItem Header="S_cripts" x:Name="ScriptsMenu"
+                      ToolTip="Quick prompts: predefined messages sent to Claude with one click.&#x0a;Scripts can use variables: {clipboard}, {git-diff}, {git-status}, {file:path}.&#x0a;Customize by editing scripts.json — use 'Open Scripts Folder' below.&#x0a;Example: Copy code to clipboard, click 'Explain Code' to get an explanation."/>
+            <MenuItem Header="_Tasks" x:Name="TasksMenu"
+                      ToolTip="Shell commands: run predefined terminal commands in your project folder.&#x0a;Output appears in a separate window. Customize via tasks.json.&#x0a;Example: 'Git Status' runs 'git status' and displays the result."/>
+            <MenuItem Header="_Help"
+                      ToolTip="Updates and application information">
+                <MenuItem Header="Check for _Updates..." Command="{Binding CheckForUpdatesCommand}"
+                          ToolTip="Check if a newer version is available on the update server.&#x0a;If found, download and install with one click. Also checks automatically every 4 hours."/>
                 <Separator/>
-                <MenuItem Header="_About" Click="MenuItem_About_Click"/>
+                <MenuItem Header="_About" Click="MenuItem_About_Click"
+                          ToolTip="Application version, build date, and support contacts."/>
             </MenuItem>
         </Menu>
 

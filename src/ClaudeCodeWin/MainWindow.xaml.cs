@@ -257,12 +257,19 @@ public partial class MainWindow : Window
     private void MenuItem_About_Click(object sender, RoutedEventArgs e)
     {
         var version = typeof(MainWindow).Assembly
-            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion?.Split('+')[0] ?? "unknown";
 
+        var exePath = Environment.ProcessPath
+            ?? Assembly.GetExecutingAssembly().Location;
+        var buildDate = File.GetLastWriteTime(exePath).ToString("yyyy-MM-dd");
+
         MessageBox.Show(
-            $"ClaudeCodeWin\nWPF wrapper for Claude Code CLI\n\nVersion {version}",
-            "About",
+            $"ClaudeCodeWin v{version}\n" +
+            $"WPF GUI for Claude Code CLI\n\n" +
+            $"Built: {buildDate}\n\n" +
+            $"Support: claudecodewin.support@main.fish",
+            "About ClaudeCodeWin",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
     }
