@@ -12,6 +12,7 @@
     <Description>WPF GUI for Claude Code CLI</Description>
     <Company>main.fish</Company>
     <Version>1.0.0</Version>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
