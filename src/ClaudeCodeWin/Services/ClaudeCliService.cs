@@ -10,6 +10,8 @@ public class ClaudeCliService
     private Process? _process;
     private CancellationTokenSource? _cts;
     private string? _sessionId;
+    private string? _currentToolName;
+    private readonly StringBuilder _toolInputBuffer = new();
 
     public string? SessionId => _sessionId;
     public bool IsProcessing => _process is not null && !_process.HasExited;
@@ -19,6 +21,7 @@ public class ClaudeCliService
     public event Action<string, string>? OnToolUseCompleted; // toolName, output
     public event Action<ResultData>? OnCompleted;
     public event Action<string>? OnError;
+    public event Action<string>? OnAskUserQuestion; // raw JSON input of AskUserQuestion tool
 
     public string ClaudeExePath { get; set; } = "claude";
     public string? WorkingDirectory { get; set; }
@@ -181,6 +184,7 @@ public class ClaudeCliService
                     break;
 
                 case "content_block_stop":
+                    HandleContentBlockStop();
                     break;
 
                 case "message_start":
@@ -235,6 +239,10 @@ public class ClaudeCliService
         {
             var toolName = block.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
             var input = block.TryGetProperty("input", out var inp) ? inp.ToString() : "";
+
+            _currentToolName = toolName;
+            _toolInputBuffer.Clear();
+
             OnToolUseStarted?.Invoke(toolName, input);
         }
     }
@@ -254,9 +262,20 @@ public class ClaudeCliService
             }
             else if (deltaType == "input_json_delta" && delta.TryGetProperty("partial_json", out var pj))
             {
-                // Tool input streaming — we could accumulate but skip for now
+                _toolInputBuffer.Append(pj.GetString() ?? "");
             }
         }
+    }
+
+    private void HandleContentBlockStop()
+    {
+        if (_currentToolName == "AskUserQuestion" && _toolInputBuffer.Length > 0)
+        {
+            OnAskUserQuestion?.Invoke(_toolInputBuffer.ToString());
+        }
+
+        _currentToolName = null;
+        _toolInputBuffer.Clear();
     }
 
     private void HandleResult(JsonElement root)

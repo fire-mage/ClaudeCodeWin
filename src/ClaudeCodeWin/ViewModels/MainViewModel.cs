@@ -1,6 +1,10 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 using ClaudeCodeWin.Services;
@@ -37,6 +41,7 @@ public class MainViewModel : ViewModelBase
     public ObservableCollection<MessageViewModel> Messages { get; } = [];
     public ObservableCollection<FileAttachment> Attachments { get; } = [];
     public ObservableCollection<string> RecentFolders { get; } = [];
+    public ObservableCollection<QueuedMessage> MessageQueue { get; } = [];
 
     public string InputText
     {
@@ -54,9 +59,10 @@ public class MainViewModel : ViewModelBase
         }
     }
 
-    public bool CanSend => !IsProcessing;
+    public bool CanSend => true;
 
     public bool HasAttachments => Attachments.Count > 0;
+    public bool HasQueuedMessages => MessageQueue.Count > 0;
 
     public bool ShowWelcome
     {
@@ -101,6 +107,8 @@ public class MainViewModel : ViewModelBase
     public RelayCommand SelectFolderCommand { get; }
     public RelayCommand OpenRecentFolderCommand { get; }
     public RelayCommand RemoveRecentFolderCommand { get; }
+    public RelayCommand PreviewAttachmentCommand { get; }
+    public RelayCommand RemoveQueuedMessageCommand { get; }
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
@@ -121,6 +129,11 @@ public class MainViewModel : ViewModelBase
         {
             if (p is FileAttachment att)
                 Attachments.Remove(att);
+        });
+        PreviewAttachmentCommand = new RelayCommand(p =>
+        {
+            if (p is FileAttachment att && att.IsImage && File.Exists(att.FilePath))
+                ShowImagePreview(att);
         });
 
         SelectFolderCommand = new RelayCommand(SelectFolder);
@@ -150,7 +163,14 @@ public class MainViewModel : ViewModelBase
             }
         });
 
+        RemoveQueuedMessageCommand = new RelayCommand(p =>
+        {
+            if (p is QueuedMessage qm)
+                MessageQueue.Remove(qm);
+        });
+
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
+        MessageQueue.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasQueuedMessages));
 
         // Subscribe to update events
         _updateService.OnUpdateAvailable += info =>
@@ -202,6 +222,7 @@ public class MainViewModel : ViewModelBase
         _cliService.OnToolUseStarted += HandleToolUseStarted;
         _cliService.OnCompleted += HandleCompleted;
         _cliService.OnError += HandleError;
+        _cliService.OnAskUserQuestion += HandleAskUserQuestion;
 
         // Initialize recent folders from settings
         foreach (var folder in settings.RecentFolders)
@@ -295,11 +316,24 @@ public class MainViewModel : ViewModelBase
         if (string.IsNullOrEmpty(text))
             return;
 
+        // If Claude is busy, queue the message
+        if (IsProcessing)
+        {
+            MessageQueue.Add(new QueuedMessage(text));
+            InputText = string.Empty;
+            return;
+        }
+
+        await SendDirectAsync(text, Attachments.Count > 0 ? [.. Attachments] : null);
+    }
+
+    private async Task SendDirectAsync(string text, List<FileAttachment>? attachments)
+    {
         var userMsg = new MessageViewModel(MessageRole.User, text);
         Messages.Add(userMsg);
 
-        List<FileAttachment>? attachments = Attachments.Count > 0 ? [.. Attachments] : null;
-        Attachments.Clear();
+        if (attachments is not null)
+            Attachments.Clear();
 
         InputText = string.Empty;
         IsProcessing = true;
@@ -400,37 +434,82 @@ public class MainViewModel : ViewModelBase
 
             RefreshGitStatus();
             _notificationService.NotifyIfInactive();
+
+            // Auto-send next queued message
+            if (MessageQueue.Count > 0)
+            {
+                var next = MessageQueue[0];
+                MessageQueue.RemoveAt(0);
+                _ = SendDirectAsync(next.Text, null);
+            }
         });
     }
 
     private void UpdateTokenUsageText()
     {
-        if (_sessionTurnCount == 0)
-        {
-            TokenUsageText = "";
-            return;
-        }
-
-        var text = $"In: {FormatTokenCount(_sessionInputTokens)} | Out: {FormatTokenCount(_sessionOutputTokens)}";
-
         if (_contextWindow > 0 && _lastInputTokens > 0)
         {
             var pct = (int)((long)_lastInputTokens * 100 / _contextWindow);
-            text += $" | Ctx: {pct}%";
+            TokenUsageText = $"Memory used: {pct}%";
         }
-
-        text += $" | Turns: {_sessionTurnCount}";
-        TokenUsageText = text;
+        else
+        {
+            TokenUsageText = "";
+        }
     }
 
-    private static string FormatTokenCount(long tokens)
+    private void HandleAskUserQuestion(string rawJson)
     {
-        return tokens switch
+        Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            >= 1_000_000 => $"{tokens / 1_000_000.0:F1}M",
-            >= 1_000 => $"{tokens / 1_000.0:F1}K",
-            _ => tokens.ToString()
-        };
+            try
+            {
+                using var doc = JsonDocument.Parse(rawJson);
+                var root = doc.RootElement;
+
+                if (!root.TryGetProperty("questions", out var questionsArr)
+                    || questionsArr.ValueKind != JsonValueKind.Array)
+                    return;
+
+                foreach (var q in questionsArr.EnumerateArray())
+                {
+                    var question = new UserQuestion
+                    {
+                        Question = q.TryGetProperty("question", out var qText) ? qText.GetString() ?? "" : "",
+                        Header = q.TryGetProperty("header", out var h) ? h.GetString() ?? "" : "",
+                        MultiSelect = q.TryGetProperty("multiSelect", out var ms) && ms.GetBoolean()
+                    };
+
+                    if (q.TryGetProperty("options", out var opts) && opts.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var opt in opts.EnumerateArray())
+                        {
+                            question.Options.Add(new QuestionOption
+                            {
+                                Label = opt.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "",
+                                Description = opt.TryGetProperty("description", out var d) ? d.GetString() ?? "" : ""
+                            });
+                        }
+                    }
+
+                    var questionVm = new QuestionViewModel(question);
+                    questionVm.OnAnswered += (sender, answer) =>
+                    {
+                        if (IsProcessing)
+                            MessageQueue.Insert(0, new QueuedMessage(answer));
+                        else
+                            Task.Run(() => Application.Current.Dispatcher.InvokeAsync(
+                                () => SendDirectAsync(answer, null)));
+                    };
+
+                    _currentAssistantMessage?.Questions.Add(questionVm);
+                }
+            }
+            catch (JsonException)
+            {
+                // Invalid JSON — ignore
+            }
+        });
     }
 
     private void HandleError(string error)
@@ -473,6 +552,7 @@ public class MainViewModel : ViewModelBase
             CancelProcessing();
 
         Messages.Clear();
+        MessageQueue.Clear();
         _cliService.ResetSession();
         ModelName = "";
         StatusText = "Ready";
@@ -508,5 +588,43 @@ public class MainViewModel : ViewModelBase
     {
         if (Attachments.All(a => a.FilePath != attachment.FilePath))
             Attachments.Add(attachment);
+    }
+
+    private static void ShowImagePreview(FileAttachment att)
+    {
+        var bitmap = new BitmapImage();
+        bitmap.BeginInit();
+        bitmap.UriSource = new Uri(att.FilePath, UriKind.Absolute);
+        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+        bitmap.EndInit();
+
+        var image = new System.Windows.Controls.Image
+        {
+            Source = bitmap,
+            Stretch = Stretch.Uniform,
+            StretchDirection = StretchDirection.DownOnly
+        };
+
+        var mainWindow = Application.Current.MainWindow;
+        var previewWindow = new Window
+        {
+            Title = att.FileName,
+            Width = Math.Min(bitmap.PixelWidth + 40, 1200),
+            Height = Math.Min(bitmap.PixelHeight + 60, 800),
+            MinWidth = 300,
+            MinHeight = 200,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = mainWindow,
+            Background = (Brush)mainWindow!.FindResource("BackgroundBrush"),
+            Content = new ScrollViewer
+            {
+                Content = image,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Padding = new Thickness(8)
+            }
+        };
+
+        previewWindow.ShowDialog();
     }
 }

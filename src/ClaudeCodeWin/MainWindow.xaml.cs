@@ -251,6 +251,16 @@ public partial class MainWindow : Window
             System.Windows.Threading.DispatcherPriority.Background);
     }
 
+    private void MemoryIndicator_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement element && element.ContextMenu is not null)
+        {
+            element.ContextMenu.PlacementTarget = element;
+            element.ContextMenu.IsOpen = true;
+            e.Handled = true;
+        }
+    }
+
     private void MenuItem_Exit_Click(object sender, RoutedEventArgs e)
     {
         Close();
