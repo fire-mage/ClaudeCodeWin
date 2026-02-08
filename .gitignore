@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+dist/
+build/publish/
+
+# IDE
+.vs/
+*.user
+*.suo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Claude Code
+.claude/
+
+# Temp
+*.tmp
+*.log

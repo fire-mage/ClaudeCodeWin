@@ -1,0 +1,80 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - rid: win-x64
+            arch: x64
+          - rid: win-arm64
+            arch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Publish
+        run: |
+          dotnet publish src/ClaudeCodeWin/ClaudeCodeWin.csproj `
+            -c Release `
+            -r ${{ matrix.rid }} `
+            --self-contained `
+            -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o publish/${{ matrix.rid }}
+
+      - name: Rename artifact
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          Move-Item "publish/${{ matrix.rid }}/ClaudeCodeWin.exe" "publish/ClaudeCodeWin-${version}-${{ matrix.arch }}.exe"
+
+      - name: Compute SHA256
+        id: hash
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          $file = "publish/ClaudeCodeWin-${version}-${{ matrix.arch }}.exe"
+          $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+          echo "sha256=$hash" >> $env:GITHUB_OUTPUT
+          echo "filename=ClaudeCodeWin-${version}-${{ matrix.arch }}.exe" >> $env:GITHUB_OUTPUT
+          echo "$hash  ClaudeCodeWin-${version}-${{ matrix.arch }}.exe" > "publish/ClaudeCodeWin-${version}-${{ matrix.arch }}.exe.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeCodeWin-${{ matrix.arch }}
+          path: publish/ClaudeCodeWin-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/*
