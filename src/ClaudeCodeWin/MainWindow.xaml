@@ -112,11 +112,27 @@
                                     MaxWidth="{Binding Role, Converter={StaticResource RoleToMaxWidth}}"
                                     Visibility="{Binding IsThinking, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
                                 <StackPanel>
-                                    <!-- Main text -->
-                                    <TextBlock Text="{Binding Text}"
-                                               TextWrapping="Wrap"
-                                               FontFamily="Cascadia Code,Consolas,Courier New"
-                                               FontSize="13.5"/>
+                                    <!-- Main text (selectable) -->
+                                    <TextBox Text="{Binding Text, Mode=OneWay}"
+                                             IsReadOnly="True"
+                                             TextWrapping="Wrap"
+                                             FontFamily="Cascadia Code,Consolas,Courier New"
+                                             FontSize="13.5"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             Padding="0"
+                                             Foreground="{StaticResource TextBrush}"
+                                             SelectionBrush="{StaticResource SelectionBrush}"
+                                             IsTabStop="False"
+                                             Cursor="IBeam">
+                                        <TextBox.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Selection" Command="ApplicationCommands.Copy"/>
+                                                <MenuItem Header="Copy All" Click="CopyAllMessage_Click"
+                                                          Tag="{Binding Text}"/>
+                                            </ContextMenu>
+                                        </TextBox.ContextMenu>
+                                    </TextBox>
 
                                     <!-- Tool uses -->
                                     <ItemsControl ItemsSource="{Binding ToolUses}" Margin="0,6,0,0">

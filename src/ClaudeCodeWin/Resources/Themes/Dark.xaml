@@ -308,6 +308,9 @@
         <Setter Property="FontFamily" Value="Segoe UI"/>
     </Style>
 
+    <!-- SelectionBrush for TextBox (text highlight color) -->
+    <SolidColorBrush x:Key="SelectionBrush" Color="#3389B4FA"/>
+
     <!-- StatusBar -->
     <Style x:Key="StatusBarStyle" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>

@@ -253,6 +253,12 @@ public partial class MainWindow : Window
             System.Windows.Threading.DispatcherPriority.Background);
     }
 
+    private void CopyAllMessage_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem && menuItem.Tag is string text && !string.IsNullOrEmpty(text))
+            Clipboard.SetText(text);
+    }
+
     private void MemoryIndicator_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (sender is FrameworkElement element && element.ContextMenu is not null)
