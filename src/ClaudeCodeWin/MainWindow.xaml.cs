@@ -17,12 +17,14 @@ public partial class MainWindow : Window
     private readonly SettingsService _settingsService;
     private readonly AppSettings _settings;
     private readonly FileIndexService _fileIndexService;
+    private readonly ChatHistoryService _chatHistoryService;
     private CancellationTokenSource? _autocompleteCts;
 
     private MainViewModel ViewModel => (MainViewModel)DataContext;
 
     public MainWindow(MainViewModel viewModel, NotificationService notificationService,
-        SettingsService settingsService, AppSettings settings, FileIndexService fileIndexService)
+        SettingsService settingsService, AppSettings settings, FileIndexService fileIndexService,
+        ChatHistoryService chatHistoryService)
     {
         InitializeComponent();
         DataContext = viewModel;
@@ -30,11 +32,16 @@ public partial class MainWindow : Window
         _settingsService = settingsService;
         _settings = settings;
         _fileIndexService = fileIndexService;
+        _chatHistoryService = chatHistoryService;
 
         notificationService.Initialize(this);
 
         InputTextBox.TextChanged += InputTextBox_TextChanged;
         AutocompleteList.MouseDoubleClick += AutocompleteList_MouseDoubleClick;
+
+        // Rebuild Recent Projects submenu whenever the collection changes
+        viewModel.RecentFolders.CollectionChanged += (_, _) => RebuildRecentProjectsMenu();
+        RebuildRecentProjectsMenu();
 
         // Set window icon from embedded resource
         try
@@ -300,7 +307,9 @@ public partial class MainWindow : Window
         var caret = InputTextBox.CaretIndex;
         var word = ExtractCurrentWord(text, caret);
 
-        if (word.Length < 3)
+        // For path queries like "src/com", check length of the part after last "/"
+        var searchPart = word.Contains('/') ? word[(word.LastIndexOf('/') + 1)..] : word;
+        if (searchPart.Length < 3 && !word.EndsWith('/'))
         {
             AutocompletePopup.IsOpen = false;
             return;
@@ -374,9 +383,81 @@ public partial class MainWindow : Window
         }
     }
 
+    private void RebuildRecentProjectsMenu()
+    {
+        RecentProjectsMenu.Items.Clear();
+
+        if (ViewModel.RecentFolders.Count == 0)
+        {
+            RecentProjectsMenu.Items.Add(new MenuItem { Header = "(empty)", IsEnabled = false });
+            return;
+        }
+
+        foreach (var folder in ViewModel.RecentFolders)
+        {
+            var folderName = Path.GetFileName(folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var textBlock = new TextBlock
+            {
+                Text = $"{folderName}  ({folder})",
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+                MaxWidth = 500
+            };
+            Grid.SetColumn(textBlock, 0);
+            grid.Children.Add(textBlock);
+
+            var removeBtn = new Button
+            {
+                Content = "\u2715",
+                FontSize = 10,
+                Padding = new Thickness(4, 0, 4, 0),
+                Margin = new Thickness(12, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Background = System.Windows.Media.Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Foreground = (System.Windows.Media.Brush)FindResource("TextSecondaryBrush"),
+                ToolTip = "Remove from recent"
+            };
+            var folderForRemove = folder;
+            removeBtn.Click += (_, e) =>
+            {
+                e.Handled = true;
+                var result = MessageBox.Show($"Remove \"{folderForRemove}\" from recent projects?",
+                    "Confirm", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (result == MessageBoxResult.Yes)
+                    ViewModel.RemoveRecentFolderCommand.Execute(folderForRemove);
+            };
+            Grid.SetColumn(removeBtn, 1);
+            grid.Children.Add(removeBtn);
+
+            var menuItem = new MenuItem { Header = grid };
+            var folderForOpen = folder;
+            menuItem.Click += (_, _) => ViewModel.OpenRecentFolderCommand.Execute(folderForOpen);
+            RecentProjectsMenu.Items.Add(menuItem);
+        }
+    }
+
     private void MenuItem_Exit_Click(object sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private void MenuItem_ChatHistory_Click(object sender, RoutedEventArgs e)
+    {
+        var historyWindow = new ChatHistoryWindow(_chatHistoryService)
+        {
+            Owner = this
+        };
+
+        if (historyWindow.ShowDialog() == true && historyWindow.SelectedEntry is not null)
+        {
+            ViewModel.LoadChatFromHistory(historyWindow.SelectedEntry);
+        }
     }
 
     private void MenuItem_About_Click(object sender, RoutedEventArgs e)

@@ -30,6 +30,7 @@
             <RowDefinition Height="Auto"/>     <!-- Message queue -->
             <RowDefinition Height="Auto"/>     <!-- Attachments -->
             <RowDefinition Height="Auto"/>     <!-- Input -->
+            <RowDefinition Height="Auto"/>     <!-- Changed files -->
             <RowDefinition Height="Auto"/>     <!-- Status bar -->
         </Grid.RowDefinitions>
 
@@ -42,6 +43,10 @@
                           ToolTip="Start a fresh conversation with Claude. Clears chat history and resets context.&#x0a;Example: Use after finishing one task to start a new unrelated task."/>
                 <MenuItem Header="Change _Project Folder..." Command="{Binding SelectFolderCommand}"
                           ToolTip="Select a different project folder as Claude's working directory.&#x0a;Claude reads files, runs commands, and writes code relative to this folder.&#x0a;Example: Switch between ProjectA and ProjectB."/>
+                <MenuItem Header="Chat _History..." Click="MenuItem_ChatHistory_Click"
+                          ToolTip="Browse and reopen previous conversations."/>
+                <MenuItem Header="Recent _Projects" x:Name="RecentProjectsMenu"
+                          ToolTip="Recently opened project folders. Click to switch, use X to remove."/>
                 <Separator/>
                 <MenuItem Header="E_xit" Click="MenuItem_Exit_Click"
                           ToolTip="Close the application. Window position and size are saved automatically."/>
@@ -359,7 +364,7 @@
                     <DataTemplate>
                         <Border Style="{StaticResource ChipBorder}">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#x1F4CE;" FontSize="12" Margin="0,0,4,0"
+                                <TextBlock Text="{Binding FileTypeIcon}" FontSize="12" Margin="0,0,4,0"
                                            VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding FileName}"
                                            FontSize="12"
@@ -517,8 +522,53 @@
             </StackPanel>
         </Grid>
 
+        <!-- Changed files indicator -->
+        <Border Grid.Row="5"
+                Background="{StaticResource SurfaceBrush}"
+                Padding="8,3"
+                Visibility="{Binding HasChangedFiles, Converter={StaticResource BoolToVis}}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,1,0,0">
+            <Expander IsExpanded="False" Foreground="{StaticResource TextSecondaryBrush}">
+                <Expander.Header>
+                    <TextBlock Text="{Binding ChangedFilesText}" FontSize="11"
+                               Foreground="{StaticResource AccentBrush}"/>
+                </Expander.Header>
+                <ItemsControl ItemsSource="{Binding ChangedFiles}" Margin="16,2,0,2">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Cursor="Hand" Background="Transparent"
+                                    Margin="0,1" Padding="2,1"
+                                    ToolTip="Click to view changes">
+                                <Border.InputBindings>
+                                    <MouseBinding Gesture="LeftClick"
+                                                  Command="{Binding DataContext.ViewChangedFileCommand,
+                                                      RelativeSource={RelativeSource AncestorType=Window}}"
+                                                  CommandParameter="{Binding}"/>
+                                </Border.InputBindings>
+                                <TextBlock Text="{Binding}" FontSize="11"
+                                           FontFamily="Cascadia Code,Consolas,Courier New"
+                                           Foreground="{StaticResource PrimaryBrush}"
+                                           TextDecorations="Underline"/>
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background"
+                                                        Value="{StaticResource SurfaceLightBrush}"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Expander>
+        </Border>
+
         <!-- Status bar -->
-        <Border Grid.Row="5" Style="{StaticResource StatusBarStyle}">
+        <Border Grid.Row="6" Style="{StaticResource StatusBarStyle}">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>

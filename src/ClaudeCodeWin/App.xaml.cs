@@ -17,6 +17,7 @@ public partial class App : Application
         var gitService = new GitService();
         var updateService = new UpdateService();
         var fileIndexService = new FileIndexService();
+        var chatHistoryService = new ChatHistoryService();
 
         // Apply settings
         var settings = settingsService.Load();
@@ -25,8 +26,8 @@ public partial class App : Application
         if (!string.IsNullOrEmpty(settings.WorkingDirectory))
             cliService.WorkingDirectory = settings.WorkingDirectory;
 
-        var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService);
-        var mainWindow = new MainWindow(mainViewModel, notificationService, settingsService, settings, fileIndexService);
+        var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService);
+        var mainWindow = new MainWindow(mainViewModel, notificationService, settingsService, settings, fileIndexService, chatHistoryService);
 
         // Setup scripts menu
         scriptService.PopulateMenu(mainWindow, mainViewModel, gitService);

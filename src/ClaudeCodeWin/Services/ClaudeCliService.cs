@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using ClaudeCodeWin.Models;
@@ -12,6 +14,7 @@ public class ClaudeCliService
     private string? _sessionId;
     private string? _currentToolName;
     private readonly StringBuilder _toolInputBuffer = new();
+    private readonly ConcurrentDictionary<string, string?> _fileSnapshots = new();
 
     public string? SessionId => _sessionId;
     public bool IsProcessing => _process is not null && !_process.HasExited;
@@ -22,6 +25,7 @@ public class ClaudeCliService
     public event Action<ResultData>? OnCompleted;
     public event Action<string>? OnError;
     public event Action<string>? OnAskUserQuestion; // raw JSON input of AskUserQuestion tool
+    public event Action<string>? OnFileChanged; // filePath from Write/Edit/NotebookEdit tools
 
     public string ClaudeExePath { get; set; } = "claude";
     public string? WorkingDirectory { get; set; }
@@ -110,6 +114,17 @@ public class ClaudeCliService
     public void RestoreSession(string sessionId)
     {
         _sessionId = sessionId;
+    }
+
+    public string? GetFileSnapshot(string filePath)
+    {
+        _fileSnapshots.TryGetValue(filePath, out var snapshot);
+        return snapshot;
+    }
+
+    public void ClearFileSnapshots()
+    {
+        _fileSnapshots.Clear();
     }
 
     private string BuildArguments()
@@ -272,6 +287,31 @@ public class ClaudeCliService
         if (_currentToolName == "AskUserQuestion" && _toolInputBuffer.Length > 0)
         {
             OnAskUserQuestion?.Invoke(_toolInputBuffer.ToString());
+        }
+
+        // Detect file changes from Write/Edit/NotebookEdit tools
+        if (_currentToolName is "Write" or "Edit" or "NotebookEdit" && _toolInputBuffer.Length > 0)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(_toolInputBuffer.ToString());
+                string? filePath = null;
+                if (doc.RootElement.TryGetProperty("file_path", out var fp))
+                    filePath = fp.GetString();
+                else if (doc.RootElement.TryGetProperty("notebook_path", out var np))
+                    filePath = np.GetString();
+
+                if (!string.IsNullOrEmpty(filePath))
+                {
+                    // Snapshot file before Claude's tool executes (tool runs after stream completes)
+                    _fileSnapshots.TryAdd(filePath,
+                        File.Exists(filePath) ? File.ReadAllText(filePath) : null);
+
+                    OnFileChanged?.Invoke(filePath);
+                }
+            }
+            catch (JsonException) { }
+            catch (IOException) { }
         }
 
         _currentToolName = null;

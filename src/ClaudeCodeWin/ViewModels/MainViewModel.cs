@@ -40,6 +40,7 @@ public class MainViewModel : ViewModelBase
     private readonly GitService _gitService;
     private readonly UpdateService _updateService;
     private readonly FileIndexService _fileIndexService;
+    private readonly ChatHistoryService _chatHistoryService;
     private VersionInfo? _pendingUpdate;
     private string? _downloadedUpdatePath;
 
@@ -58,11 +59,13 @@ public class MainViewModel : ViewModelBase
     private int _sessionTurnCount;
     private int _contextWindow;
     private int _lastInputTokens;
+    private string? _currentChatId;
 
     public ObservableCollection<MessageViewModel> Messages { get; } = [];
     public ObservableCollection<FileAttachment> Attachments { get; } = [];
     public ObservableCollection<string> RecentFolders { get; } = [];
     public ObservableCollection<QueuedMessage> MessageQueue { get; } = [];
+    public ObservableCollection<string> ChangedFiles { get; } = [];
 
     public string InputText
     {
@@ -78,6 +81,8 @@ public class MainViewModel : ViewModelBase
 
     public bool HasAttachments => Attachments.Count > 0;
     public bool HasQueuedMessages => MessageQueue.Count > 0;
+    public bool HasChangedFiles => ChangedFiles.Count > 0;
+    public string ChangedFilesText => $"{ChangedFiles.Count} file(s) changed";
 
     public bool ShowWelcome
     {
@@ -126,11 +131,13 @@ public class MainViewModel : ViewModelBase
     public RelayCommand RemoveQueuedMessageCommand { get; }
     public RelayCommand SendQueuedNowCommand { get; }
     public RelayCommand ReturnQueuedToInputCommand { get; }
+    public RelayCommand ViewChangedFileCommand { get; }
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
         SettingsService settingsService, AppSettings settings, GitService gitService,
-        UpdateService updateService, FileIndexService fileIndexService)
+        UpdateService updateService, FileIndexService fileIndexService,
+        ChatHistoryService chatHistoryService)
     {
         _cliService = cliService;
         _notificationService = notificationService;
@@ -139,6 +146,7 @@ public class MainViewModel : ViewModelBase
         _gitService = gitService;
         _updateService = updateService;
         _fileIndexService = fileIndexService;
+        _chatHistoryService = chatHistoryService;
 
         SendCommand = new RelayCommand(() => _ = SendMessageAsync());
         CancelCommand = new RelayCommand(CancelProcessing, () => IsProcessing);
@@ -203,9 +211,19 @@ public class MainViewModel : ViewModelBase
                 InputText = qm.Text;
             }
         });
+        ViewChangedFileCommand = new RelayCommand(p =>
+        {
+            if (p is string filePath)
+                ShowFileDiff(filePath);
+        });
 
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
         MessageQueue.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasQueuedMessages));
+        ChangedFiles.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasChangedFiles));
+            OnPropertyChanged(nameof(ChangedFilesText));
+        };
 
         // Subscribe to update events
         _updateService.OnUpdateAvailable += info =>
@@ -258,6 +276,7 @@ public class MainViewModel : ViewModelBase
         _cliService.OnCompleted += HandleCompleted;
         _cliService.OnError += HandleError;
         _cliService.OnAskUserQuestion += HandleAskUserQuestion;
+        _cliService.OnFileChanged += HandleFileChanged;
 
         // Initialize recent folders from settings
         foreach (var folder in settings.RecentFolders)
@@ -374,6 +393,8 @@ public class MainViewModel : ViewModelBase
         if (attachments is not null)
             Attachments.Clear();
 
+        ChangedFiles.Clear();
+        _cliService.ClearFileSnapshots();
         InputText = string.Empty;
         IsProcessing = true;
         StatusText = "Processing...";
@@ -480,6 +501,7 @@ public class MainViewModel : ViewModelBase
 
             RefreshGitStatus();
             _notificationService.NotifyIfInactive();
+            SaveChatHistory();
 
             // Auto-send next queued message
             if (MessageQueue.Count > 0)
@@ -551,6 +573,15 @@ public class MainViewModel : ViewModelBase
         });
     }
 
+    private void HandleFileChanged(string filePath)
+    {
+        Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            if (!ChangedFiles.Contains(filePath))
+                ChangedFiles.Add(filePath);
+        });
+    }
+
     private void HandleError(string error)
     {
         Application.Current.Dispatcher.InvokeAsync(() =>
@@ -613,8 +644,14 @@ public class MainViewModel : ViewModelBase
         if (IsProcessing)
             CancelProcessing();
 
+        // Save current chat before clearing
+        SaveChatHistory();
+        _currentChatId = null;
+
         Messages.Clear();
         MessageQueue.Clear();
+        ChangedFiles.Clear();
+        _cliService.ClearFileSnapshots();
         _cliService.ResetSession();
         ModelName = "";
         StatusText = "Ready";
@@ -646,10 +683,132 @@ public class MainViewModel : ViewModelBase
         GitStatusText = dirtyCount > 0 ? $"{branch} | {dirtyCount} dirty" : branch;
     }
 
+    private void SaveChatHistory()
+    {
+        // Only save if there are user/assistant messages
+        var chatMessages = Messages
+            .Where(m => m.Role is MessageRole.User or MessageRole.Assistant)
+            .ToList();
+        if (chatMessages.Count == 0) return;
+
+        var entry = new ChatHistoryEntry
+        {
+            Id = _currentChatId ?? Guid.NewGuid().ToString(),
+            ProjectPath = WorkingDirectory,
+            SessionId = _cliService.SessionId,
+            Messages = chatMessages.Select(m => new ChatMessage
+            {
+                Role = m.Role,
+                Text = m.Text,
+                Timestamp = m.Timestamp,
+                ToolUses = m.ToolUses.Select(t => new ToolUseInfo
+                {
+                    ToolName = t.ToolName,
+                    Input = t.Input,
+                    Output = t.Output
+                }).ToList()
+            }).ToList()
+        };
+
+        // Title = first ~80 chars of first user message
+        var firstUser = chatMessages.FirstOrDefault(m => m.Role == MessageRole.User);
+        entry.Title = firstUser is not null
+            ? (firstUser.Text.Length > 80 ? firstUser.Text[..80] + "..." : firstUser.Text)
+            : "Untitled";
+
+        if (_currentChatId is null)
+        {
+            entry.CreatedAt = chatMessages[0].Timestamp;
+            _currentChatId = entry.Id;
+        }
+
+        try { _chatHistoryService.Save(entry); } catch { }
+    }
+
+    public void LoadChatFromHistory(ChatHistoryEntry entry)
+    {
+        if (IsProcessing)
+            CancelProcessing();
+
+        Messages.Clear();
+        MessageQueue.Clear();
+        _sessionInputTokens = 0;
+        _sessionOutputTokens = 0;
+        _sessionTurnCount = 0;
+        _contextWindow = 0;
+        _lastInputTokens = 0;
+        UpdateTokenUsageText();
+
+        _currentChatId = entry.Id;
+
+        // Restore session if available
+        if (!string.IsNullOrEmpty(entry.SessionId))
+            _cliService.RestoreSession(entry.SessionId);
+        else
+            _cliService.ResetSession();
+
+        // Restore messages
+        foreach (var msg in entry.Messages)
+        {
+            var vm = new MessageViewModel(msg.Role, msg.Text);
+            foreach (var tool in msg.ToolUses)
+                vm.ToolUses.Add(new ToolUseViewModel(tool.ToolName, tool.Input));
+            Messages.Add(vm);
+        }
+
+        // Switch to project if different
+        if (!string.IsNullOrEmpty(entry.ProjectPath) && entry.ProjectPath != WorkingDirectory)
+        {
+            _cliService.WorkingDirectory = entry.ProjectPath;
+            _settings.WorkingDirectory = entry.ProjectPath;
+            _settingsService.Save(_settings);
+            ProjectPath = entry.ProjectPath;
+            RefreshGitStatus();
+            _ = Task.Run(() => _fileIndexService.BuildIndex(entry.ProjectPath));
+        }
+
+        ShowWelcome = false;
+        ModelName = "";
+        StatusText = "Ready";
+
+        Messages.Add(new MessageViewModel(MessageRole.System,
+            $"Loaded chat from history. {(entry.SessionId is not null ? "Session restored — you can continue." : "No session to restore.")}"));
+    }
+
     public void AddAttachment(FileAttachment attachment)
     {
         if (Attachments.All(a => a.FilePath != attachment.FilePath))
             Attachments.Add(attachment);
+    }
+
+    private void ShowFileDiff(string filePath)
+    {
+        var oldContent = _cliService.GetFileSnapshot(filePath);
+
+        string? newContent;
+        try
+        {
+            newContent = File.Exists(filePath) ? File.ReadAllText(filePath) : null;
+        }
+        catch
+        {
+            newContent = null;
+        }
+
+        if (oldContent is null && newContent is null)
+        {
+            MessageBox.Show($"Cannot read file:\n{filePath}", "Error",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var diff = DiffService.ComputeDiff(oldContent, newContent);
+
+        var viewer = new DiffViewerWindow(filePath, diff)
+        {
+            Owner = Application.Current.MainWindow
+        };
+        viewer.Show();
     }
 
     private static void ShowImagePreview(FileAttachment att)
