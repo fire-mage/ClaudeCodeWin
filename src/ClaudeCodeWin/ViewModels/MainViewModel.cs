@@ -473,6 +473,9 @@ public class MainViewModel : ViewModelBase
 
     private void HandleAskUserQuestion(string rawJson)
     {
+        // AskUserQuestion cannot work interactively in pipe mode (-p):
+        // stdin is closed after sending the prompt, so the CLI auto-selects answers.
+        // We show the question text as an informational system message.
         Application.Current.Dispatcher.InvokeAsync(() =>
         {
             try
@@ -484,39 +487,29 @@ public class MainViewModel : ViewModelBase
                     || questionsArr.ValueKind != JsonValueKind.Array)
                     return;
 
+                var parts = new List<string>();
                 foreach (var q in questionsArr.EnumerateArray())
                 {
-                    var question = new UserQuestion
-                    {
-                        Question = q.TryGetProperty("question", out var qText) ? qText.GetString() ?? "" : "",
-                        Header = q.TryGetProperty("header", out var h) ? h.GetString() ?? "" : "",
-                        MultiSelect = q.TryGetProperty("multiSelect", out var ms) && ms.GetBoolean()
-                    };
+                    var question = q.TryGetProperty("question", out var qText) ? qText.GetString() ?? "" : "";
+                    var sb = new System.Text.StringBuilder();
+                    sb.AppendLine($"Claude asked: {question}");
 
                     if (q.TryGetProperty("options", out var opts) && opts.ValueKind == JsonValueKind.Array)
                     {
                         foreach (var opt in opts.EnumerateArray())
                         {
-                            question.Options.Add(new QuestionOption
-                            {
-                                Label = opt.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "",
-                                Description = opt.TryGetProperty("description", out var d) ? d.GetString() ?? "" : ""
-                            });
+                            var label = opt.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "";
+                            var desc = opt.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "";
+                            sb.AppendLine($"  - {label}: {desc}");
                         }
                     }
 
-                    var questionVm = new QuestionViewModel(question);
-                    questionVm.OnAnswered += (sender, answer) =>
-                    {
-                        if (IsProcessing)
-                            MessageQueue.Insert(0, new QueuedMessage(answer));
-                        else
-                            Task.Run(() => Application.Current.Dispatcher.InvokeAsync(
-                                () => SendDirectAsync(answer, null)));
-                    };
-
-                    _currentAssistantMessage?.Questions.Add(questionVm);
+                    sb.Append("(Auto-answered by CLI — pipe mode limitation)");
+                    parts.Add(sb.ToString());
                 }
+
+                if (parts.Count > 0)
+                    Messages.Add(new MessageViewModel(MessageRole.System, string.Join("\n\n", parts)));
             }
             catch (JsonException)
             {

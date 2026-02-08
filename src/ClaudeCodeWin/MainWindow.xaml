@@ -46,8 +46,7 @@
                 <MenuItem Header="E_xit" Click="MenuItem_Exit_Click"
                           ToolTip="Close the application. Window position and size are saved automatically."/>
             </MenuItem>
-            <MenuItem Header="S_cripts" x:Name="ScriptsMenu"
-                      ToolTip="Quick prompts: predefined messages sent to Claude with one click.&#x0a;Scripts can use variables: {clipboard}, {git-diff}, {git-status}, {file:path}.&#x0a;Customize by editing scripts.json — use 'Open Scripts Folder' below.&#x0a;Example: Copy code to clipboard, click 'Explain Code' to get an explanation."/>
+            <MenuItem Header="S_cripts" x:Name="ScriptsMenu" Visibility="Collapsed"/>
             <MenuItem Header="_Tasks" x:Name="TasksMenu"
                       ToolTip="Shell commands: run predefined terminal commands in your project folder.&#x0a;Output appears in a separate window. Customize via tasks.json.&#x0a;Example: 'Git Status' runs 'git status' and displays the result."/>
             <MenuItem Header="_Help"
@@ -160,68 +159,6 @@
                                                                    Foreground="{StaticResource TextSecondaryBrush}"
                                                                    Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}"
                                                                    Margin="16,4,0,0"/>
-                                                    </StackPanel>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-
-                                    <!-- Questions (AskUserQuestion) -->
-                                    <ItemsControl ItemsSource="{Binding Questions}" Margin="0,8,0,0"
-                                                  Visibility="{Binding HasQuestions, Converter={StaticResource BoolToVis}}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate DataType="{x:Type vm:QuestionViewModel}">
-                                                <Border Background="{StaticResource SurfaceLightBrush}"
-                                                        CornerRadius="6" Padding="12,10" Margin="0,4">
-                                                    <StackPanel>
-                                                        <TextBlock Text="{Binding Header}"
-                                                                   FontSize="10" FontWeight="SemiBold"
-                                                                   Foreground="{StaticResource PrimaryBrush}"
-                                                                   Margin="0,0,0,4"/>
-                                                        <TextBlock Text="{Binding QuestionText}"
-                                                                   TextWrapping="Wrap"
-                                                                   FontSize="13" FontWeight="SemiBold"
-                                                                   Margin="0,0,0,8"/>
-                                                        <ItemsControl ItemsSource="{Binding Options}">
-                                                            <ItemsControl.ItemTemplate>
-                                                                <DataTemplate DataType="{x:Type vm:QuestionOptionViewModel}">
-                                                                    <Border Margin="0,0,0,4" CornerRadius="4"
-                                                                            Padding="10,6" Cursor="Hand"
-                                                                            Background="{StaticResource SurfaceBrush}">
-                                                                        <Border.InputBindings>
-                                                                            <MouseBinding Gesture="LeftClick"
-                                                                                          Command="{Binding SelectCommand}"/>
-                                                                        </Border.InputBindings>
-                                                                        <Border.Style>
-                                                                            <Style TargetType="Border">
-                                                                                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
-                                                                                <Setter Property="BorderThickness" Value="1"/>
-                                                                                <Style.Triggers>
-                                                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                                                        <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
-                                                                                        <Setter Property="Background" Value="{StaticResource ToolBubbleBrush}"/>
-                                                                                    </Trigger>
-                                                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                                                        <Setter Property="BorderBrush" Value="{StaticResource SuccessBrush}"/>
-                                                                                        <Setter Property="Background" Value="#2A3A2A"/>
-                                                                                    </DataTrigger>
-                                                                                </Style.Triggers>
-                                                                            </Style>
-                                                                        </Border.Style>
-                                                                        <StackPanel>
-                                                                            <TextBlock Text="{Binding Label}"
-                                                                                       FontWeight="SemiBold"
-                                                                                       FontSize="12"/>
-                                                                            <TextBlock Text="{Binding Description}"
-                                                                                       TextWrapping="Wrap"
-                                                                                       FontSize="11"
-                                                                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                                                                       Margin="0,2,0,0"/>
-                                                                        </StackPanel>
-                                                                    </Border>
-                                                                </DataTemplate>
-                                                            </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
                                                     </StackPanel>
                                                 </Border>
                                             </DataTemplate>

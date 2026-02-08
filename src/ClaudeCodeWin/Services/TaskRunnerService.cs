@@ -91,6 +91,29 @@ public class TaskRunnerService
         };
         reload.Click += (_, _) => PopulateMenu(mainWindow, viewModel);
         tasksMenu.Items.Add(reload);
+
+        tasksMenu.Items.Add(new Separator());
+
+        var howTo = new MenuItem
+        {
+            Header = "How to add a task",
+            IsEnabled = false,
+            ToolTip = "Open Tasks Folder, edit tasks.json, then Reload Tasks.\n\n" +
+                      "Example tasks.json:\n" +
+                      "[\n" +
+                      "  {\n" +
+                      "    \"name\": \"npm install\",\n" +
+                      "    \"command\": \"npm install\",\n" +
+                      "    \"confirmBeforeRun\": false\n" +
+                      "  },\n" +
+                      "  {\n" +
+                      "    \"name\": \"Run Tests\",\n" +
+                      "    \"command\": \"dotnet test\",\n" +
+                      "    \"confirmBeforeRun\": true\n" +
+                      "  }\n" +
+                      "]"
+        };
+        tasksMenu.Items.Add(howTo);
     }
 
     private static void RunTask(TaskDefinition task, MainViewModel viewModel, Window owner)

@@ -32,16 +32,12 @@ public class MessageViewModel : ViewModelBase
     }
 
     public ObservableCollection<ToolUseViewModel> ToolUses { get; } = [];
-    public ObservableCollection<QuestionViewModel> Questions { get; } = [];
-
-    public bool HasQuestions => Questions.Count > 0;
 
     public MessageViewModel(MessageRole role, string text = "")
     {
         Role = role;
         Text = text;
         Timestamp = DateTime.Now;
-        Questions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasQuestions));
     }
 }
 
