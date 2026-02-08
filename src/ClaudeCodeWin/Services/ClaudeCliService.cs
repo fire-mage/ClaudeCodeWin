@@ -264,16 +264,20 @@ public class ClaudeCliService
         string? sessionId = null;
         string? model = null;
         int inputTokens = 0, outputTokens = 0, cacheRead = 0, cacheCreation = 0;
+        int contextWindow = 0;
 
         if (root.TryGetProperty("session_id", out var sid))
             sessionId = sid.GetString();
 
-        // Extract model from modelUsage keys (more reliable than top-level "model")
+        // Extract model and contextWindow from modelUsage (more reliable than top-level "model")
         if (root.TryGetProperty("modelUsage", out var mu) && mu.ValueKind == JsonValueKind.Object)
         {
             foreach (var prop in mu.EnumerateObject())
             {
                 model = prop.Name;
+                if (prop.Value.ValueKind == JsonValueKind.Object
+                    && prop.Value.TryGetProperty("contextWindow", out var cw))
+                    contextWindow = cw.GetInt32();
                 break;
             }
         }
@@ -293,7 +297,7 @@ public class ClaudeCliService
         if (sessionId is not null)
             _sessionId = sessionId;
 
-        OnCompleted?.Invoke(new ResultData(sessionId, model, inputTokens, outputTokens, cacheRead, cacheCreation));
+        OnCompleted?.Invoke(new ResultData(sessionId, model, inputTokens, outputTokens, cacheRead, cacheCreation, contextWindow));
     }
 
     private void KillProcess()

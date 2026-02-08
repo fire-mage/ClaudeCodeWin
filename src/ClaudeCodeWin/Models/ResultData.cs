@@ -6,5 +6,6 @@ public record ResultData(
     int InputTokens,
     int OutputTokens,
     int CacheReadTokens,
-    int CacheCreationTokens
+    int CacheCreationTokens,
+    int ContextWindow
 );

@@ -13,6 +13,9 @@
 #ifndef PublishDir
   #define PublishDir "publish"
 #endif
+#ifndef Arch
+  #define Arch "x64"
+#endif
 #define MyAppPublisher "main.fish"
 #define MyAppExeName "ClaudeCodeWin.exe"
 #define MyAppURL "https://main.fish"
@@ -27,15 +30,20 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=..\dist
-OutputBaseFilename=ClaudeCodeWin-Setup-{#MyAppVersion}-x64
+OutputBaseFilename=ClaudeCodeWin-Setup-{#MyAppVersion}-{#Arch}
 SetupIconFile=..\src\ClaudeCodeWin\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
+#if Arch == "arm64"
+ArchitecturesAllowed=arm64
+ArchitecturesInstallIn64BitMode=arm64
+#else
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

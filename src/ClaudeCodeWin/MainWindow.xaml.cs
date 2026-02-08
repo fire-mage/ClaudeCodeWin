@@ -2,7 +2,9 @@ using System.Collections.Specialized;
 using System.IO;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using ClaudeCodeWin.Models;
 using ClaudeCodeWin.Services;
@@ -256,21 +258,92 @@ public partial class MainWindow : Window
 
     private void MenuItem_About_Click(object sender, RoutedEventArgs e)
     {
-        var version = typeof(MainWindow).Assembly
+        var infoVersion = typeof(MainWindow).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion?.Split('+')[0] ?? "unknown";
+            ?.InformationalVersion ?? "unknown";
 
-        var exePath = Environment.ProcessPath
-            ?? Assembly.GetExecutingAssembly().Location;
-        var buildDate = File.GetLastWriteTime(exePath).ToString("yyyy-MM-dd");
+        var parts = infoVersion.Split('+');
+        var version = parts[0];
+        var buildHash = parts.Length > 1 ? parts[1][..Math.Min(7, parts[1].Length)] : "";
 
-        MessageBox.Show(
-            $"ClaudeCodeWin v{version}\n" +
-            $"WPF GUI for Claude Code CLI\n\n" +
-            $"Built: {buildDate}\n\n" +
-            $"Support: claudecodewin.support@main.fish",
-            "About ClaudeCodeWin",
-            MessageBoxButton.OK,
-            MessageBoxImage.Information);
+        var exePath = Environment.ProcessPath ?? "";
+        var buildDate = !string.IsNullOrEmpty(exePath) && File.Exists(exePath)
+            ? File.GetLastWriteTime(exePath).ToString("yyyy-MM-dd")
+            : "unknown";
+
+        const string email = "claudecodewin.support@main.fish";
+
+        var aboutWindow = new Window
+        {
+            Title = "About ClaudeCodeWin",
+            Width = 420,
+            Height = 280,
+            ResizeMode = ResizeMode.NoResize,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            Background = (Brush)FindResource("BackgroundBrush"),
+        };
+
+        var stack = new StackPanel { Margin = new Thickness(28, 24, 28, 24) };
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = $"ClaudeCodeWin v{version}",
+            FontSize = 20,
+            FontWeight = FontWeights.Bold,
+            Foreground = (Brush)FindResource("PrimaryBrush")
+        });
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = "WPF GUI for Claude Code CLI",
+            Margin = new Thickness(0, 4, 0, 0),
+            Foreground = (Brush)FindResource("TextSecondaryBrush")
+        });
+
+        var buildText = $"Built: {buildDate}";
+        if (!string.IsNullOrEmpty(buildHash))
+            buildText += $"  |  Build: {buildHash}";
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = buildText,
+            Margin = new Thickness(0, 16, 0, 0),
+            FontSize = 12,
+            Foreground = (Brush)FindResource("TextSecondaryBrush")
+        });
+
+        // Email row with copy button
+        var emailPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 16, 0, 0)
+        };
+
+        emailPanel.Children.Add(new TextBlock
+        {
+            Text = $"Support: {email}",
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 13
+        });
+
+        var copyButton = new Button
+        {
+            Content = "Copy",
+            Margin = new Thickness(12, 0, 0, 0),
+            Padding = new Thickness(14, 4, 14, 4),
+            Style = (Style)FindResource("PrimaryButton"),
+            FontSize = 11
+        };
+        copyButton.Click += (_, _) =>
+        {
+            Clipboard.SetText(email);
+            copyButton.Content = "Copied!";
+        };
+        emailPanel.Children.Add(copyButton);
+        stack.Children.Add(emailPanel);
+
+        aboutWindow.Content = stack;
+        aboutWindow.ShowDialog();
     }
 }

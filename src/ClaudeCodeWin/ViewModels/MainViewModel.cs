@@ -31,6 +31,8 @@ public class MainViewModel : ViewModelBase
     private long _sessionInputTokens;
     private long _sessionOutputTokens;
     private int _sessionTurnCount;
+    private int _contextWindow;
+    private int _lastInputTokens;
 
     public ObservableCollection<MessageViewModel> Messages { get; } = [];
     public ObservableCollection<FileAttachment> Attachments { get; } = [];
@@ -380,6 +382,9 @@ public class MainViewModel : ViewModelBase
             _sessionInputTokens += result.InputTokens + result.CacheReadTokens + result.CacheCreationTokens;
             _sessionOutputTokens += result.OutputTokens;
             _sessionTurnCount++;
+            _lastInputTokens = result.InputTokens + result.CacheReadTokens + result.CacheCreationTokens;
+            if (result.ContextWindow > 0)
+                _contextWindow = result.ContextWindow;
             UpdateTokenUsageText();
 
             // Save session for persistence
@@ -406,7 +411,16 @@ public class MainViewModel : ViewModelBase
             return;
         }
 
-        TokenUsageText = $"In: {FormatTokenCount(_sessionInputTokens)} | Out: {FormatTokenCount(_sessionOutputTokens)} | Turns: {_sessionTurnCount}";
+        var text = $"In: {FormatTokenCount(_sessionInputTokens)} | Out: {FormatTokenCount(_sessionOutputTokens)}";
+
+        if (_contextWindow > 0 && _lastInputTokens > 0)
+        {
+            var pct = (int)((long)_lastInputTokens * 100 / _contextWindow);
+            text += $" | Ctx: {pct}%";
+        }
+
+        text += $" | Turns: {_sessionTurnCount}";
+        TokenUsageText = text;
     }
 
     private static string FormatTokenCount(long tokens)
@@ -465,6 +479,8 @@ public class MainViewModel : ViewModelBase
         _sessionInputTokens = 0;
         _sessionOutputTokens = 0;
         _sessionTurnCount = 0;
+        _contextWindow = 0;
+        _lastInputTokens = 0;
         UpdateTokenUsageText();
 
         // Clear saved session for current project
