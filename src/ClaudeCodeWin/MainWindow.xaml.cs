@@ -16,19 +16,25 @@ public partial class MainWindow : Window
 {
     private readonly SettingsService _settingsService;
     private readonly AppSettings _settings;
+    private readonly FileIndexService _fileIndexService;
+    private CancellationTokenSource? _autocompleteCts;
 
     private MainViewModel ViewModel => (MainViewModel)DataContext;
 
     public MainWindow(MainViewModel viewModel, NotificationService notificationService,
-        SettingsService settingsService, AppSettings settings)
+        SettingsService settingsService, AppSettings settings, FileIndexService fileIndexService)
     {
         InitializeComponent();
         DataContext = viewModel;
 
         _settingsService = settingsService;
         _settings = settings;
+        _fileIndexService = fileIndexService;
 
         notificationService.Initialize(this);
+
+        InputTextBox.TextChanged += InputTextBox_TextChanged;
+        AutocompleteList.MouseDoubleClick += AutocompleteList_MouseDoubleClick;
 
         // Set window icon from embedded resource
         try
@@ -143,6 +149,38 @@ public partial class MainWindow : Window
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // Autocomplete navigation
+        if (AutocompletePopup.IsOpen)
+        {
+            if (e.Key == Key.Down)
+            {
+                AutocompleteList.SelectedIndex =
+                    Math.Min(AutocompleteList.SelectedIndex + 1, AutocompleteList.Items.Count - 1);
+                AutocompleteList.ScrollIntoView(AutocompleteList.SelectedItem);
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.Up)
+            {
+                AutocompleteList.SelectedIndex = Math.Max(AutocompleteList.SelectedIndex - 1, 0);
+                AutocompleteList.ScrollIntoView(AutocompleteList.SelectedItem);
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.Tab || e.Key == Key.Enter)
+            {
+                InsertAutocomplete();
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.Escape)
+            {
+                AutocompletePopup.IsOpen = false;
+                e.Handled = true;
+                return;
+            }
+        }
+
         // Enter or Ctrl+Enter = Send (when InputTextBox is focused)
         if (e.Key == Key.Enter && InputTextBox.IsFocused)
         {
@@ -244,6 +282,73 @@ public partial class MainWindow : Window
             FileName = fileName,
             IsScreenshot = true
         });
+    }
+
+    private async void InputTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _autocompleteCts?.Cancel();
+        _autocompleteCts = new CancellationTokenSource();
+        var token = _autocompleteCts.Token;
+
+        try
+        {
+            await Task.Delay(150, token);
+        }
+        catch (TaskCanceledException) { return; }
+
+        var text = InputTextBox.Text;
+        var caret = InputTextBox.CaretIndex;
+        var word = ExtractCurrentWord(text, caret);
+
+        if (word.Length < 3)
+        {
+            AutocompletePopup.IsOpen = false;
+            return;
+        }
+
+        var results = _fileIndexService.Search(word);
+        if (results.Count == 0)
+        {
+            AutocompletePopup.IsOpen = false;
+            return;
+        }
+
+        AutocompleteList.ItemsSource = results;
+        AutocompleteList.SelectedIndex = 0;
+        AutocompletePopup.IsOpen = true;
+    }
+
+    private static string ExtractCurrentWord(string text, int caretIndex)
+    {
+        if (caretIndex <= 0 || caretIndex > text.Length) return "";
+        var start = caretIndex - 1;
+        while (start >= 0 && !char.IsWhiteSpace(text[start]))
+            start--;
+        start++;
+        return text[start..caretIndex];
+    }
+
+    private void InsertAutocomplete()
+    {
+        if (AutocompleteList.SelectedItem is not string selected) return;
+
+        var text = InputTextBox.Text;
+        var caret = InputTextBox.CaretIndex;
+
+        var start = caret - 1;
+        while (start >= 0 && !char.IsWhiteSpace(text[start]))
+            start--;
+        start++;
+
+        var newText = text[..start] + selected + text[caret..];
+        InputTextBox.Text = newText;
+        InputTextBox.CaretIndex = start + selected.Length;
+        AutocompletePopup.IsOpen = false;
+    }
+
+    private void AutocompleteList_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        InsertAutocomplete();
     }
 
     private void ScrollToBottom()

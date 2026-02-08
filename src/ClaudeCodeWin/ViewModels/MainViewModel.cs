@@ -13,12 +13,21 @@ namespace ClaudeCodeWin.ViewModels;
 
 public class MainViewModel : ViewModelBase
 {
+    private const string SystemInstruction =
+        """
+        <system-instruction>
+        IMPORTANT: Do NOT use the AskUserQuestion tool — it is not supported in this environment and will be auto-answered by the system without user input.
+        When you need to ask the user clarifying questions, ask them directly as plain text in your response. Use numbered options if applicable. The user will read your message and reply.
+        </system-instruction>
+        """;
+
     private readonly ClaudeCliService _cliService;
     private readonly NotificationService _notificationService;
     private readonly SettingsService _settingsService;
     private readonly AppSettings _settings;
     private readonly GitService _gitService;
     private readonly UpdateService _updateService;
+    private readonly FileIndexService _fileIndexService;
     private VersionInfo? _pendingUpdate;
     private string? _downloadedUpdatePath;
 
@@ -109,7 +118,7 @@ public class MainViewModel : ViewModelBase
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
         SettingsService settingsService, AppSettings settings, GitService gitService,
-        UpdateService updateService)
+        UpdateService updateService, FileIndexService fileIndexService)
     {
         _cliService = cliService;
         _notificationService = notificationService;
@@ -117,6 +126,7 @@ public class MainViewModel : ViewModelBase
         _settings = settings;
         _gitService = gitService;
         _updateService = updateService;
+        _fileIndexService = fileIndexService;
 
         SendCommand = new RelayCommand(() => _ = SendMessageAsync());
         CancelCommand = new RelayCommand(CancelProcessing, () => IsProcessing);
@@ -248,6 +258,7 @@ public class MainViewModel : ViewModelBase
         if (!string.IsNullOrEmpty(settings.WorkingDirectory))
         {
             RefreshGitStatus();
+            _ = Task.Run(() => _fileIndexService.BuildIndex(settings.WorkingDirectory));
 
             if (settings.SavedSessions.TryGetValue(settings.WorkingDirectory, out var saved)
                 && DateTime.Now - saved.CreatedAt < TimeSpan.FromHours(24))
@@ -293,6 +304,9 @@ public class MainViewModel : ViewModelBase
         ShowWelcome = false;
         ProjectPath = folder;
         RefreshGitStatus();
+
+        // Rebuild file index in background
+        _ = Task.Run(() => _fileIndexService.BuildIndex(folder));
 
         // Try to restore saved session, otherwise start fresh
         if (_settings.SavedSessions.TryGetValue(folder, out var saved)
@@ -352,17 +366,24 @@ public class MainViewModel : ViewModelBase
         IsProcessing = true;
         StatusText = "Processing...";
 
-        // Auto-inject context snapshot on first message of a new session
+        // Auto-inject system instruction and context snapshot on first message of a new session
         var finalPrompt = text;
-        if (_cliService.SessionId is null && !string.IsNullOrEmpty(WorkingDirectory))
+        if (_cliService.SessionId is null)
         {
-            var snapshotPath = Path.Combine(WorkingDirectory, "CONTEXT_SNAPSHOT.md");
-            if (File.Exists(snapshotPath))
+            var preamble = SystemInstruction;
+
+            if (!string.IsNullOrEmpty(WorkingDirectory))
             {
-                var snapshot = File.ReadAllText(snapshotPath);
-                finalPrompt = $"<context-snapshot>\n{snapshot}\n</context-snapshot>\n\n{text}";
-                Messages.Add(new MessageViewModel(MessageRole.System, "Context injected: CONTEXT_SNAPSHOT.md"));
+                var snapshotPath = Path.Combine(WorkingDirectory, "CONTEXT_SNAPSHOT.md");
+                if (File.Exists(snapshotPath))
+                {
+                    var snapshot = File.ReadAllText(snapshotPath);
+                    preamble += $"\n\n<context-snapshot>\n{snapshot}\n</context-snapshot>";
+                    Messages.Add(new MessageViewModel(MessageRole.System, "Context injected: CONTEXT_SNAPSHOT.md"));
+                }
             }
+
+            finalPrompt = $"{preamble}\n\n{text}";
         }
 
         _currentAssistantMessage = new MessageViewModel(MessageRole.Assistant) { IsStreaming = true, IsThinking = true };
