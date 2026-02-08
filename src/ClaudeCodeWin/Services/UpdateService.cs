@@ -143,13 +143,16 @@ public class UpdateService
             await fileStream.FlushAsync().ConfigureAwait(false);
             fileStream.Close();
 
-            // Verify SHA256
-            var hash = await ComputeSha256Async(downloadPath).ConfigureAwait(false);
-            if (!string.Equals(hash, info.Sha256, StringComparison.OrdinalIgnoreCase))
+            // Verify SHA256 (skip if publisher did not provide a hash)
+            if (!string.IsNullOrEmpty(info.Sha256))
             {
-                File.Delete(downloadPath);
-                OnError?.Invoke("SHA256 mismatch — download corrupted. Please try again.");
-                return;
+                var hash = await ComputeSha256Async(downloadPath).ConfigureAwait(false);
+                if (!string.Equals(hash, info.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    File.Delete(downloadPath);
+                    OnError?.Invoke("SHA256 mismatch — download corrupted. Please try again.");
+                    return;
+                }
             }
 
             OnUpdateReady?.Invoke(downloadPath);
