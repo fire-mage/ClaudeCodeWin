@@ -52,14 +52,8 @@ public class MainViewModel : ViewModelBase
     public bool IsProcessing
     {
         get => _isProcessing;
-        set
-        {
-            SetProperty(ref _isProcessing, value);
-            OnPropertyChanged(nameof(CanSend));
-        }
+        set => SetProperty(ref _isProcessing, value);
     }
-
-    public bool CanSend => true;
 
     public bool HasAttachments => Attachments.Count > 0;
     public bool HasQueuedMessages => MessageQueue.Count > 0;
@@ -100,7 +94,7 @@ public class MainViewModel : ViewModelBase
         set => SetProperty(ref _tokenUsageText, value);
     }
 
-    public AsyncRelayCommand SendCommand { get; }
+    public RelayCommand SendCommand { get; }
     public RelayCommand CancelCommand { get; }
     public RelayCommand NewSessionCommand { get; }
     public RelayCommand RemoveAttachmentCommand { get; }
@@ -122,7 +116,7 @@ public class MainViewModel : ViewModelBase
         _gitService = gitService;
         _updateService = updateService;
 
-        SendCommand = new AsyncRelayCommand(SendMessageAsync, () => CanSend);
+        SendCommand = new RelayCommand(() => _ = SendMessageAsync());
         CancelCommand = new RelayCommand(CancelProcessing, () => IsProcessing);
         NewSessionCommand = new RelayCommand(StartNewSession);
         RemoveAttachmentCommand = new RelayCommand(p =>
