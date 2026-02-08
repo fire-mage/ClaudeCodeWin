@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
@@ -255,8 +256,12 @@ public partial class MainWindow : Window
 
     private void MenuItem_About_Click(object sender, RoutedEventArgs e)
     {
+        var version = typeof(MainWindow).Assembly
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion?.Split('+')[0] ?? "unknown";
+
         MessageBox.Show(
-            "ClaudeCodeWin\nWPF wrapper for Claude Code CLI\n\nVersion 1.0",
+            $"ClaudeCodeWin\nWPF wrapper for Claude Code CLI\n\nVersion {version}",
             "About",
             MessageBoxButton.OK,
             MessageBoxImage.Information);

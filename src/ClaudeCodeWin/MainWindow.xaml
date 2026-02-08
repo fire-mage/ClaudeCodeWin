@@ -44,6 +44,8 @@
             <MenuItem Header="S_cripts" x:Name="ScriptsMenu"/>
             <MenuItem Header="_Tasks" x:Name="TasksMenu"/>
             <MenuItem Header="_Help">
+                <MenuItem Header="Check for _Updates..." Command="{Binding CheckForUpdatesCommand}"/>
+                <Separator/>
                 <MenuItem Header="_About" Click="MenuItem_About_Click"/>
             </MenuItem>
         </Menu>

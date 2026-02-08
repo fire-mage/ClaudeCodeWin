@@ -14,6 +14,9 @@ public class MainViewModel : ViewModelBase
     private readonly SettingsService _settingsService;
     private readonly AppSettings _settings;
     private readonly GitService _gitService;
+    private readonly UpdateService _updateService;
+    private VersionInfo? _pendingUpdate;
+    private string? _downloadedUpdatePath;
 
     private string _inputText = string.Empty;
     private bool _isProcessing;
@@ -96,15 +99,18 @@ public class MainViewModel : ViewModelBase
     public RelayCommand SelectFolderCommand { get; }
     public RelayCommand OpenRecentFolderCommand { get; }
     public RelayCommand RemoveRecentFolderCommand { get; }
+    public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
-        SettingsService settingsService, AppSettings settings, GitService gitService)
+        SettingsService settingsService, AppSettings settings, GitService gitService,
+        UpdateService updateService)
     {
         _cliService = cliService;
         _notificationService = notificationService;
         _settingsService = settingsService;
         _settings = settings;
         _gitService = gitService;
+        _updateService = updateService;
 
         SendCommand = new AsyncRelayCommand(SendMessageAsync, () => CanSend);
         CancelCommand = new RelayCommand(CancelProcessing, () => IsProcessing);
@@ -130,8 +136,65 @@ public class MainViewModel : ViewModelBase
                 _settingsService.Save(_settings);
             }
         });
+        CheckForUpdatesCommand = new AsyncRelayCommand(async () =>
+        {
+            StatusText = "Checking for updates...";
+            await _updateService.CheckForUpdateAsync();
+            if (_pendingUpdate is null)
+            {
+                StatusText = "Ready";
+                MessageBox.Show($"You are on the latest version ({_updateService.CurrentVersion}).",
+                    "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        });
 
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
+
+        // Subscribe to update events
+        _updateService.OnUpdateAvailable += info =>
+        {
+            Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                _pendingUpdate = info;
+                var notes = string.IsNullOrEmpty(info.ReleaseNotes) ? "" : $"\n\n{info.ReleaseNotes}";
+                var result = MessageBox.Show(
+                    $"Version {info.Version} is available (current: {_updateService.CurrentVersion}).{notes}\n\nDownload and install update?",
+                    "Update Available",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Information);
+
+                if (result == MessageBoxResult.Yes)
+                    _ = _updateService.DownloadAndApplyAsync(info);
+            });
+        };
+
+        _updateService.OnDownloadProgress += percent =>
+        {
+            Application.Current.Dispatcher.InvokeAsync(() =>
+                StatusText = $"Downloading update... {percent}%");
+        };
+
+        _updateService.OnUpdateReady += path =>
+        {
+            Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                _downloadedUpdatePath = path;
+                StatusText = "Update ready — restarting...";
+                UpdateService.ApplyUpdate(path);
+            });
+        };
+
+        _updateService.OnError += error =>
+        {
+            Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                StatusText = "Ready";
+                MessageBox.Show(error, "Update Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            });
+        };
+
+        // Start periodic update checks
+        _updateService.StartPeriodicCheck();
 
         _cliService.OnTextDelta += HandleTextDelta;
         _cliService.OnToolUseStarted += HandleToolUseStarted;

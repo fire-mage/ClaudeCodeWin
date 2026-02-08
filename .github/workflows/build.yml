@@ -2,14 +2,32 @@ name: Build & Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.calc.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Calculate version
+        id: calc
+        run: |
+          # Read major.minor from .csproj, append run_number as patch
+          CSPROJ_VER=$(grep -oP '(?<=<Version>)[^<]+' src/ClaudeCodeWin/ClaudeCodeWin.csproj)
+          MAJOR_MINOR=$(echo "$CSPROJ_VER" | cut -d. -f1,2)
+          VERSION="${MAJOR_MINOR}.${{ github.run_number }}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
   build:
+    needs: version
     runs-on: windows-latest
     strategy:
       matrix:
@@ -37,21 +55,19 @@ jobs:
             -p:EnableCompressionInSingleFile=true `
             -p:DebugType=None `
             -p:DebugSymbols=false `
+            -p:Version=${{ needs.version.outputs.version }} `
             -o publish/${{ matrix.rid }}
 
       - name: Rename artifact
         run: |
-          $version = "${{ github.ref_name }}".TrimStart('v')
+          $version = "${{ needs.version.outputs.version }}"
           Move-Item "publish/${{ matrix.rid }}/ClaudeCodeWin.exe" "publish/ClaudeCodeWin-${version}-${{ matrix.arch }}.exe"
 
       - name: Compute SHA256
-        id: hash
         run: |
-          $version = "${{ github.ref_name }}".TrimStart('v')
+          $version = "${{ needs.version.outputs.version }}"
           $file = "publish/ClaudeCodeWin-${version}-${{ matrix.arch }}.exe"
           $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
-          echo "sha256=$hash" >> $env:GITHUB_OUTPUT
-          echo "filename=ClaudeCodeWin-${version}-${{ matrix.arch }}.exe" >> $env:GITHUB_OUTPUT
           echo "$hash  ClaudeCodeWin-${version}-${{ matrix.arch }}.exe" > "publish/ClaudeCodeWin-${version}-${{ matrix.arch }}.exe.sha256"
 
       - name: Upload artifact
@@ -61,7 +77,7 @@ jobs:
           path: publish/ClaudeCodeWin-*
 
   release:
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -76,5 +92,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ needs.version.outputs.version }}
+          name: v${{ needs.version.outputs.version }}
           generate_release_notes: true
           files: artifacts/*
