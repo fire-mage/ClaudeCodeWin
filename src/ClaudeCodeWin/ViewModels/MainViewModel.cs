@@ -57,8 +57,6 @@ public class MainViewModel : ViewModelBase
     private long _sessionInputTokens;
     private long _sessionOutputTokens;
     private int _sessionTurnCount;
-    private int _contextWindow;
-    private int _lastInputTokens;
     private string? _currentChatId;
 
     public ObservableCollection<MessageViewModel> Messages { get; } = [];
@@ -528,9 +526,6 @@ public class MainViewModel : ViewModelBase
             _sessionInputTokens += result.InputTokens + result.CacheReadTokens + result.CacheCreationTokens;
             _sessionOutputTokens += result.OutputTokens;
             _sessionTurnCount++;
-            _lastInputTokens = result.InputTokens + result.CacheReadTokens + result.CacheCreationTokens;
-            if (result.ContextWindow > 0)
-                _contextWindow = result.ContextWindow;
             UpdateTokenUsageText();
 
             // Save session for persistence
@@ -560,15 +555,21 @@ public class MainViewModel : ViewModelBase
 
     private void UpdateTokenUsageText()
     {
-        if (_contextWindow > 0 && _lastInputTokens > 0)
-        {
-            var pct = (int)((long)_lastInputTokens * 100 / _contextWindow);
-            TokenUsageText = $"Memory used: {pct}%";
-        }
-        else
-        {
-            TokenUsageText = "";
-        }
+        var parts = new List<string>();
+        if (_sessionInputTokens > 0)
+            parts.Add($"In: {FormatTokenCount(_sessionInputTokens)}");
+        if (_sessionOutputTokens > 0)
+            parts.Add($"Out: {FormatTokenCount(_sessionOutputTokens)}");
+        if (_sessionTurnCount > 0)
+            parts.Add($"Turns: {_sessionTurnCount}");
+        TokenUsageText = parts.Count > 0 ? string.Join(" | ", parts) : "";
+    }
+
+    private static string FormatTokenCount(long count)
+    {
+        if (count >= 1_000_000) return $"{count / 1_000_000.0:F1}M";
+        if (count >= 1_000) return $"{count / 1_000.0:F1}K";
+        return count.ToString();
     }
 
     private void HandleAskUserQuestion(string rawJson)
@@ -708,8 +709,6 @@ public class MainViewModel : ViewModelBase
         _sessionInputTokens = 0;
         _sessionOutputTokens = 0;
         _sessionTurnCount = 0;
-        _contextWindow = 0;
-        _lastInputTokens = 0;
         UpdateTokenUsageText();
 
         // Clear saved session for current project
@@ -787,8 +786,6 @@ public class MainViewModel : ViewModelBase
         _sessionInputTokens = 0;
         _sessionOutputTokens = 0;
         _sessionTurnCount = 0;
-        _contextWindow = 0;
-        _lastInputTokens = 0;
         UpdateTokenUsageText();
 
         _currentChatId = entry.Id;

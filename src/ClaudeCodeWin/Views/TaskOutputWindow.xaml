@@ -25,20 +25,25 @@
         </StackPanel>
 
         <!-- Output area -->
-        <TextBox Grid.Row="1"
-                 x:Name="OutputTextBox"
-                 IsReadOnly="True"
-                 Background="{StaticResource SurfaceBrush}"
-                 Foreground="{StaticResource TextBrush}"
-                 CaretBrush="{StaticResource TextBrush}"
-                 BorderBrush="{StaticResource BorderBrush}"
-                 BorderThickness="1"
-                 Padding="8"
-                 FontFamily="Cascadia Code,Consolas,Courier New"
-                 FontSize="12"
-                 TextWrapping="Wrap"
-                 VerticalScrollBarVisibility="Auto"
-                 AcceptsReturn="True"/>
+        <RichTextBox Grid.Row="1"
+                     x:Name="OutputRichTextBox"
+                     IsReadOnly="True"
+                     Background="{StaticResource SurfaceBrush}"
+                     Foreground="{StaticResource TextBrush}"
+                     CaretBrush="{StaticResource TextBrush}"
+                     BorderBrush="{StaticResource BorderBrush}"
+                     BorderThickness="1"
+                     Padding="8"
+                     FontFamily="Cascadia Code,Consolas,Courier New"
+                     FontSize="12"
+                     VerticalScrollBarVisibility="Auto"
+                     IsDocumentEnabled="True">
+            <RichTextBox.Document>
+                <FlowDocument>
+                    <Paragraph x:Name="OutputParagraph"/>
+                </FlowDocument>
+            </RichTextBox.Document>
+        </RichTextBox>
 
         <!-- Close button -->
         <Button Grid.Row="2"

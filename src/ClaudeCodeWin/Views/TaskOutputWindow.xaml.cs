@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Documents;
 using System.Windows.Media;
 using ClaudeCodeWin.Models;
 
@@ -10,10 +12,15 @@ public partial class TaskOutputWindow : Window
 {
     private Process? _process;
     private CancellationTokenSource? _cts;
+    private Brush _currentForeground = Brushes.White;
+    private bool _isBold;
+
+    private static readonly Regex AnsiRegex = new(@"\x1b\[([0-9;]*)m", RegexOptions.Compiled);
 
     public TaskOutputWindow()
     {
         InitializeComponent();
+        _currentForeground = (Brush)FindResource("TextBrush");
     }
 
     public async Task RunTaskAsync(TaskDefinition task, string? projectDir)
@@ -40,6 +47,9 @@ public partial class TaskOutputWindow : Window
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+
+        // Enable virtual terminal processing for ANSI support
+        startInfo.Environment["TERM"] = "xterm-256color";
 
         if (!string.IsNullOrEmpty(workingDir))
             startInfo.WorkingDirectory = workingDir;
@@ -107,8 +117,92 @@ public partial class TaskOutputWindow : Window
 
     private void AppendOutput(string text)
     {
-        OutputTextBox.AppendText(text);
-        OutputTextBox.ScrollToEnd();
+        // Parse ANSI escape codes and append colored runs
+        var lastIndex = 0;
+        foreach (Match match in AnsiRegex.Matches(text))
+        {
+            // Append text before this escape code
+            if (match.Index > lastIndex)
+            {
+                var plainText = text[lastIndex..match.Index];
+                AppendRun(plainText);
+            }
+
+            // Process the ANSI code
+            var codes = match.Groups[1].Value;
+            ProcessAnsiCodes(codes);
+
+            lastIndex = match.Index + match.Length;
+        }
+
+        // Append remaining text after last escape code
+        if (lastIndex < text.Length)
+        {
+            var remaining = text[lastIndex..];
+            // Strip any other escape sequences (like \x1b[K, \x1b[2J, etc.)
+            remaining = Regex.Replace(remaining, @"\x1b\[[^m]*[A-Za-z]", "");
+            if (remaining.Length > 0)
+                AppendRun(remaining);
+        }
+
+        OutputRichTextBox.ScrollToEnd();
+    }
+
+    private void AppendRun(string text)
+    {
+        var run = new Run(text)
+        {
+            Foreground = _currentForeground,
+            FontWeight = _isBold ? FontWeights.Bold : FontWeights.Normal
+        };
+        OutputParagraph.Inlines.Add(run);
+    }
+
+    private void ProcessAnsiCodes(string codes)
+    {
+        if (string.IsNullOrEmpty(codes))
+        {
+            ResetAnsiState();
+            return;
+        }
+
+        foreach (var part in codes.Split(';'))
+        {
+            if (!int.TryParse(part, out var code))
+                continue;
+
+            switch (code)
+            {
+                case 0: ResetAnsiState(); break;
+                case 1: _isBold = true; break;
+                case 22: _isBold = false; break;
+                // Standard foreground colors
+                case 30: _currentForeground = new SolidColorBrush(Color.FromRgb(69, 71, 90)); break;     // Black (dark gray)
+                case 31: _currentForeground = new SolidColorBrush(Color.FromRgb(243, 139, 168)); break;   // Red
+                case 32: _currentForeground = new SolidColorBrush(Color.FromRgb(166, 227, 161)); break;   // Green
+                case 33: _currentForeground = new SolidColorBrush(Color.FromRgb(249, 226, 175)); break;   // Yellow
+                case 34: _currentForeground = new SolidColorBrush(Color.FromRgb(137, 180, 250)); break;   // Blue
+                case 35: _currentForeground = new SolidColorBrush(Color.FromRgb(203, 166, 247)); break;   // Magenta
+                case 36: _currentForeground = new SolidColorBrush(Color.FromRgb(148, 226, 213)); break;   // Cyan
+                case 37: _currentForeground = (Brush)FindResource("TextBrush"); break;                     // White (default)
+                case 39: _currentForeground = (Brush)FindResource("TextBrush"); break;                     // Default
+                // Bright foreground colors
+                case 90: _currentForeground = new SolidColorBrush(Color.FromRgb(108, 112, 134)); break;   // Bright black (gray)
+                case 91: _currentForeground = new SolidColorBrush(Color.FromRgb(243, 139, 168)); break;   // Bright red
+                case 92: _currentForeground = new SolidColorBrush(Color.FromRgb(166, 227, 161)); break;   // Bright green
+                case 93: _currentForeground = new SolidColorBrush(Color.FromRgb(249, 226, 175)); break;   // Bright yellow
+                case 94: _currentForeground = new SolidColorBrush(Color.FromRgb(137, 180, 250)); break;   // Bright blue
+                case 95: _currentForeground = new SolidColorBrush(Color.FromRgb(203, 166, 247)); break;   // Bright magenta
+                case 96: _currentForeground = new SolidColorBrush(Color.FromRgb(148, 226, 213)); break;   // Bright cyan
+                case 97: _currentForeground = new SolidColorBrush(Color.FromRgb(205, 214, 244)); break;   // Bright white
+            }
+        }
+    }
+
+    private void ResetAnsiState()
+    {
+        _currentForeground = (Brush)FindResource("TextBrush");
+        _isBold = false;
     }
 
     private void SetStatus(bool success)

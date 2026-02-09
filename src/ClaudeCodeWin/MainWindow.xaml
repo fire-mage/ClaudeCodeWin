@@ -142,7 +142,7 @@
                                     <Border Background="{StaticResource ToolBubbleBrush}"
                                             CornerRadius="4" Padding="6,4" Margin="0,6,0,0"
                                             Visibility="{Binding HasToolUses, Converter={StaticResource BoolToVis}}">
-                                        <Expander IsExpanded="False"
+                                        <Expander IsExpanded="True"
                                                   Foreground="{StaticResource TextSecondaryBrush}">
                                             <Expander.Header>
                                                 <StackPanel Orientation="Horizontal">
@@ -600,24 +600,10 @@
             </Grid>
 
             <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Bottom">
-                <Button Style="{StaticResource PrimaryButton}"
+                <Button Content="Send"
+                        Style="{StaticResource PrimaryButton}"
                         Command="{Binding SendCommand}"
-                        Margin="0,0,0,4">
-                    <Button.Content>
-                        <TextBlock>
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="Send"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsProcessing}" Value="True">
-                                            <Setter Property="Text" Value="Queue"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </Button.Content>
-                </Button>
+                        Margin="0,0,0,4"/>
                 <Button Content="Cancel"
                         Style="{StaticResource CancelButton}"
                         Command="{Binding CancelCommand}"
