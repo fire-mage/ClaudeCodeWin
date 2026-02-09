@@ -18,7 +18,7 @@ public class ClaudeCliService
     private readonly ConcurrentDictionary<string, string?> _fileSnapshots = new();
     private readonly object _processLock = new();
     private bool _isSessionActive;
-    private string? _systemPromptAppend;
+    private string _lastStderr = string.Empty;
 
     public string? SessionId => _sessionId;
     public bool IsProcessRunning
@@ -42,15 +42,6 @@ public class ClaudeCliService
 
     public string ClaudeExePath { get; set; } = "claude";
     public string? WorkingDirectory { get; set; }
-
-    /// <summary>
-    /// Set system prompt to append via --append-system-prompt.
-    /// Must be set before StartSession or SendMessage.
-    /// </summary>
-    public void SetSystemPrompt(string prompt)
-    {
-        _systemPromptAppend = prompt;
-    }
 
     /// <summary>
     /// Start a new persistent CLI process for the session.
@@ -210,13 +201,6 @@ public class ClaudeCliService
         if (!string.IsNullOrEmpty(_sessionId))
             sb.Append($" --resume \"{_sessionId}\"");
 
-        if (!string.IsNullOrEmpty(_systemPromptAppend))
-        {
-            // Escape for command line — replace " with \"
-            var escaped = _systemPromptAppend.Replace("\\", "\\\\").Replace("\"", "\\\"");
-            sb.Append($" --append-system-prompt \"{escaped}\"");
-        }
-
         return sb.ToString();
     }
 
@@ -286,10 +270,10 @@ public class ClaudeCliService
             {
                 var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
                 if (line is null) break;
-                // Accumulate stderr — only report on process exit or significant errors
                 if (!string.IsNullOrWhiteSpace(line))
                     sb.AppendLine(line);
             }
+            _lastStderr = sb.ToString();
         }
         catch (OperationCanceledException) { }
         catch { }
@@ -299,8 +283,12 @@ public class ClaudeCliService
     {
         if (!_isSessionActive) return; // Expected stop
 
-        // Unexpected process death
-        OnError?.Invoke("Claude process exited unexpectedly");
+        // Unexpected process death — include stderr if available
+        var errorMsg = "Claude process exited unexpectedly";
+        if (!string.IsNullOrWhiteSpace(_lastStderr))
+            errorMsg += $"\n{_lastStderr.Trim()}";
+
+        OnError?.Invoke(errorMsg);
         lock (_processLock)
         {
             _process?.Dispose();

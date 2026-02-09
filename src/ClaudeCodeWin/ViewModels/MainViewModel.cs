@@ -285,9 +285,6 @@ public class MainViewModel : ViewModelBase
         _cliService.OnAskUserQuestion += HandleAskUserQuestion;
         _cliService.OnFileChanged += HandleFileChanged;
 
-        // Set system prompt via --append-system-prompt
-        _cliService.SetSystemPrompt(SystemInstruction);
-
         // Initialize recent folders from settings
         foreach (var folder in settings.RecentFolders)
             RecentFolders.Add(folder);
@@ -412,17 +409,24 @@ public class MainViewModel : ViewModelBase
         IsProcessing = true;
         StatusText = "Processing...";
 
-        // Inject context snapshot on first message of a new session
+        // Auto-inject system instruction and context snapshot on first message of a new session
         var finalPrompt = text;
-        if (_cliService.SessionId is null && !string.IsNullOrEmpty(WorkingDirectory))
+        if (_cliService.SessionId is null)
         {
-            var snapshotPath = Path.Combine(WorkingDirectory, "CONTEXT_SNAPSHOT.md");
-            if (File.Exists(snapshotPath))
+            var preamble = SystemInstruction;
+
+            if (!string.IsNullOrEmpty(WorkingDirectory))
             {
-                var snapshot = File.ReadAllText(snapshotPath);
-                finalPrompt = $"<context-snapshot>\n{snapshot}\n</context-snapshot>\n\n{text}";
-                Messages.Add(new MessageViewModel(MessageRole.System, "Context injected: CONTEXT_SNAPSHOT.md"));
+                var snapshotPath = Path.Combine(WorkingDirectory, "CONTEXT_SNAPSHOT.md");
+                if (File.Exists(snapshotPath))
+                {
+                    var snapshot = File.ReadAllText(snapshotPath);
+                    preamble += $"\n\n<context-snapshot>\n{snapshot}\n</context-snapshot>";
+                    Messages.Add(new MessageViewModel(MessageRole.System, "Context injected: CONTEXT_SNAPSHOT.md"));
+                }
             }
+
+            finalPrompt = $"{preamble}\n\n{text}";
         }
 
         _currentAssistantMessage = new MessageViewModel(MessageRole.Assistant) { IsStreaming = true, IsThinking = true };
