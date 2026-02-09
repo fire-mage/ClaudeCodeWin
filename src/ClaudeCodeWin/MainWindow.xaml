@@ -138,34 +138,137 @@
                                         </TextBox.ContextMenu>
                                     </TextBox>
 
-                                    <!-- Tool uses -->
-                                    <ItemsControl ItemsSource="{Binding ToolUses}" Margin="0,6,0,0">
+                                    <!-- Tool uses — compact summary with expandable details -->
+                                    <Border Background="{StaticResource ToolBubbleBrush}"
+                                            CornerRadius="4" Padding="6,4" Margin="0,6,0,0"
+                                            Visibility="{Binding HasToolUses, Converter={StaticResource BoolToVis}}">
+                                        <Expander IsExpanded="False"
+                                                  Foreground="{StaticResource TextSecondaryBrush}">
+                                            <Expander.Header>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="&#x25CF; " FontSize="10"
+                                                               Foreground="{StaticResource PrimaryBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding ToolActivitySummary}"
+                                                               FontSize="12"
+                                                               Foreground="{StaticResource PrimaryBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Expander.Header>
+                                            <ItemsControl ItemsSource="{Binding ToolUses}" Margin="4,4,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate DataType="{x:Type vm:ToolUseViewModel}">
+                                                        <Border Margin="0,1" Padding="4,2"
+                                                                CornerRadius="3">
+                                                            <StackPanel>
+                                                                <StackPanel Orientation="Horizontal" Cursor="Hand">
+                                                                    <TextBlock FontSize="9" Margin="0,0,5,0"
+                                                                               Foreground="{StaticResource PrimaryBrush}"
+                                                                               VerticalAlignment="Center">
+                                                                        <TextBlock.Style>
+                                                                            <Style TargetType="TextBlock">
+                                                                                <Setter Property="Text" Value="&#x25B6;"/>
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                                                                                        <Setter Property="Text" Value="&#x25BC;"/>
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </TextBlock.Style>
+                                                                    </TextBlock>
+                                                                    <TextBlock Text="{Binding ToolName}"
+                                                                               FontWeight="SemiBold"
+                                                                               Foreground="{StaticResource PrimaryBrush}"
+                                                                               FontSize="11.5"/>
+                                                                    <TextBlock Text=": " FontSize="11.5"
+                                                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                                                               Visibility="{Binding Summary, Converter={StaticResource BoolToVis}}"/>
+                                                                    <TextBlock Text="{Binding Summary}"
+                                                                               FontSize="11.5"
+                                                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                                                               TextTrimming="CharacterEllipsis"
+                                                                               MaxWidth="500"/>
+                                                                    <StackPanel.InputBindings>
+                                                                        <MouseBinding Gesture="LeftClick"
+                                                                                      Command="{Binding ToggleExpandedCommand}"/>
+                                                                    </StackPanel.InputBindings>
+                                                                </StackPanel>
+                                                                <!-- Expanded: show result preview -->
+                                                                <TextBox Text="{Binding ResultPreview, Mode=OneWay}"
+                                                                         IsReadOnly="True"
+                                                                         TextWrapping="Wrap"
+                                                                         FontFamily="Cascadia Code,Consolas,Courier New"
+                                                                         FontSize="11"
+                                                                         Background="Transparent"
+                                                                         BorderThickness="0"
+                                                                         Padding="0"
+                                                                         Foreground="{StaticResource TextSecondaryBrush}"
+                                                                         SelectionBrush="{StaticResource SelectionBrush}"
+                                                                         IsTabStop="False"
+                                                                         MaxHeight="200"
+                                                                         VerticalScrollBarVisibility="Auto"
+                                                                         Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}"
+                                                                         Margin="16,3,0,2"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Expander>
+                                    </Border>
+
+                                    <!-- AskUserQuestion buttons -->
+                                    <ItemsControl ItemsSource="{Binding QuestionDisplay.Options}"
+                                                  Visibility="{Binding HasQuestion, Converter={StaticResource BoolToVis}}"
+                                                  Margin="0,8,0,0">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
-                                            <DataTemplate DataType="{x:Type vm:ToolUseViewModel}">
-                                                <Border Background="{StaticResource ToolBubbleBrush}"
-                                                        CornerRadius="4" Padding="8,4" Margin="0,2">
-                                                    <StackPanel>
-                                                        <StackPanel Orientation="Horizontal" Cursor="Hand">
-                                                            <TextBlock Text="&#x25B6;" FontSize="10"
-                                                                       Foreground="{StaticResource PrimaryBrush}"
-                                                                       Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                                            <TextBlock Text="{Binding ToolName}"
-                                                                       FontWeight="SemiBold"
-                                                                       Foreground="{StaticResource PrimaryBrush}"
-                                                                       FontSize="12"/>
-                                                            <StackPanel.InputBindings>
-                                                                <MouseBinding Gesture="LeftClick"
-                                                                              Command="{Binding ToggleExpandedCommand}"/>
-                                                            </StackPanel.InputBindings>
-                                                        </StackPanel>
-                                                        <TextBlock Text="{Binding Input}"
-                                                                   TextWrapping="Wrap"
-                                                                   FontSize="11"
-                                                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                                                   Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}"
-                                                                   Margin="16,4,0,0"/>
-                                                    </StackPanel>
-                                                </Border>
+                                            <DataTemplate>
+                                                <Button Margin="0,0,6,4"
+                                                        Padding="12,6"
+                                                        Cursor="Hand"
+                                                        Command="{Binding DataContext.AnswerQuestionCommand,
+                                                            RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding Label}"
+                                                        ToolTip="{Binding Description}">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button">
+                                                            <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
+                                                            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                                                            <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                                                            <Setter Property="BorderThickness" Value="1"/>
+                                                            <Setter Property="FontSize" Value="12"/>
+                                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                                            <Setter Property="Template">
+                                                                <Setter.Value>
+                                                                    <ControlTemplate TargetType="Button">
+                                                                        <Border Background="{TemplateBinding Background}"
+                                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                                                CornerRadius="6"
+                                                                                Padding="{TemplateBinding Padding}">
+                                                                            <ContentPresenter HorizontalAlignment="Center"
+                                                                                              VerticalAlignment="Center"/>
+                                                                        </Border>
+                                                                        <ControlTemplate.Triggers>
+                                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                                <Setter Property="Background"
+                                                                                        Value="{StaticResource PrimaryBrush}"/>
+                                                                                <Setter Property="Foreground"
+                                                                                        Value="{StaticResource BackgroundBrush}"/>
+                                                                            </Trigger>
+                                                                        </ControlTemplate.Triggers>
+                                                                    </ControlTemplate>
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </Style>
+                                                    </Button.Style>
+                                                    <TextBlock Text="{Binding Label}"/>
+                                                </Button>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>

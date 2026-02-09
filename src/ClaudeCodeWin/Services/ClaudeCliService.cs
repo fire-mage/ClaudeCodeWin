@@ -10,104 +10,156 @@ namespace ClaudeCodeWin.Services;
 public class ClaudeCliService
 {
     private Process? _process;
-    private CancellationTokenSource? _cts;
+    private CancellationTokenSource? _readCts;
     private string? _sessionId;
     private string? _currentToolName;
+    private string? _currentToolUseId;
     private readonly StringBuilder _toolInputBuffer = new();
     private readonly ConcurrentDictionary<string, string?> _fileSnapshots = new();
+    private readonly object _processLock = new();
+    private bool _isSessionActive;
+    private string? _systemPromptAppend;
 
     public string? SessionId => _sessionId;
-    public bool IsProcessing => _process is not null && !_process.HasExited;
+    public bool IsProcessRunning
+    {
+        get
+        {
+            lock (_processLock)
+                return _process is not null && !_process.HasExited;
+        }
+    }
 
+    // Events
     public event Action<string>? OnTextDelta;
-    public event Action<string, string>? OnToolUseStarted; // toolName, input
-    public event Action<string, string>? OnToolUseCompleted; // toolName, output
+    public event Action<string, string, string>? OnToolUseStarted; // toolName, toolUseId, input
+    public event Action<string, string, string>? OnToolResult; // toolName, toolUseId, content
     public event Action<ResultData>? OnCompleted;
     public event Action<string>? OnError;
     public event Action<string>? OnAskUserQuestion; // raw JSON input of AskUserQuestion tool
     public event Action<string>? OnFileChanged; // filePath from Write/Edit/NotebookEdit tools
+    public event Action<string, string, List<string>>? OnSessionStarted; // sessionId, model, tools
 
     public string ClaudeExePath { get; set; } = "claude";
     public string? WorkingDirectory { get; set; }
 
-    public async Task SendMessageAsync(string prompt, List<FileAttachment>? attachments = null)
+    /// <summary>
+    /// Set system prompt to append via --append-system-prompt.
+    /// Must be set before StartSession or SendMessage.
+    /// </summary>
+    public void SetSystemPrompt(string prompt)
     {
-        _cts = new CancellationTokenSource();
-        var ct = _cts.Token;
+        _systemPromptAppend = prompt;
+    }
 
-        var args = BuildArguments();
-        var fullPrompt = BuildPrompt(prompt, attachments);
-
-        var startInfo = new ProcessStartInfo
+    /// <summary>
+    /// Start a new persistent CLI process for the session.
+    /// </summary>
+    public void StartSession()
+    {
+        lock (_processLock)
         {
-            FileName = ClaudeExePath,
-            Arguments = args,
-            UseShellExecute = false,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-            StandardInputEncoding = Encoding.UTF8,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
+            if (_process is not null && !_process.HasExited)
+                return; // Already running
 
-        if (!string.IsNullOrEmpty(WorkingDirectory))
-            startInfo.WorkingDirectory = WorkingDirectory;
+            _readCts = new CancellationTokenSource();
 
-        startInfo.Environment["LANG"] = "en_US.UTF-8";
-
-        try
-        {
-            _process = Process.Start(startInfo);
-            if (_process is null)
+            var args = BuildArguments();
+            var startInfo = new ProcessStartInfo
             {
-                OnError?.Invoke("Failed to start claude process");
+                FileName = ClaudeExePath,
+                Arguments = args,
+                UseShellExecute = false,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                StandardInputEncoding = Encoding.UTF8,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
+            };
+
+            if (!string.IsNullOrEmpty(WorkingDirectory))
+                startInfo.WorkingDirectory = WorkingDirectory;
+
+            startInfo.Environment["LANG"] = "en_US.UTF-8";
+
+            try
+            {
+                _process = Process.Start(startInfo);
+                if (_process is null)
+                {
+                    OnError?.Invoke("Failed to start claude process");
+                    return;
+                }
+
+                _isSessionActive = true;
+
+                // Start background reading loops
+                var ct = _readCts.Token;
+                _ = Task.Run(() => ReadStdoutLoop(ct), ct);
+                _ = Task.Run(() => ReadStderrLoop(ct), ct);
+
+                // Monitor process exit
+                _process.EnableRaisingEvents = true;
+                _process.Exited += (_, _) => HandleProcessExited();
+            }
+            catch (Exception ex)
+            {
+                OnError?.Invoke($"Failed to start claude: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Send a user message to the running CLI process via stdin.
+    /// Starts the process if not running.
+    /// </summary>
+    public void SendMessage(string text, List<FileAttachment>? attachments = null)
+    {
+        var fullText = BuildPrompt(text, attachments);
+
+        lock (_processLock)
+        {
+            if (_process is null || _process.HasExited)
+                StartSession();
+
+            if (_process is null || _process.HasExited)
+            {
+                OnError?.Invoke("Claude process is not running");
                 return;
             }
 
-            await _process.StandardInput.WriteLineAsync(fullPrompt).ConfigureAwait(false);
-            _process.StandardInput.Close();
+            try
+            {
+                var messageJson = JsonSerializer.Serialize(new
+                {
+                    type = "user",
+                    message = new
+                    {
+                        role = "user",
+                        content = fullText
+                    }
+                });
 
-            // Read stderr concurrently to avoid pipe buffer deadlock.
-            // Without this, if the process fills the 4 KB stderr buffer,
-            // it blocks — which also blocks stdout, hanging the app.
-            var stderrTask = _process.StandardError.ReadToEndAsync(ct);
-
-            await ReadStreamAsync(_process.StandardOutput, ct).ConfigureAwait(false);
-
-            var stderr = await stderrTask.ConfigureAwait(false);
-
-            await _process.WaitForExitAsync(ct).ConfigureAwait(false);
-
-            if (_process.ExitCode != 0 && !string.IsNullOrWhiteSpace(stderr))
-                OnError?.Invoke(stderr);
-        }
-        catch (OperationCanceledException)
-        {
-            KillProcess();
-        }
-        catch (Exception ex)
-        {
-            OnError?.Invoke(ex.Message);
-        }
-        finally
-        {
-            _process?.Dispose();
-            _process = null;
-            _cts?.Dispose();
-            _cts = null;
+                _process.StandardInput.WriteLine(messageJson);
+                _process.StandardInput.Flush();
+            }
+            catch (Exception ex)
+            {
+                OnError?.Invoke($"Failed to send message: {ex.Message}");
+            }
         }
     }
 
     public void Cancel()
     {
-        _cts?.Cancel();
-        KillProcess();
+        StopSession();
     }
 
     public void ResetSession()
     {
+        StopSession();
         _sessionId = null;
     }
 
@@ -127,12 +179,43 @@ public class ClaudeCliService
         _fileSnapshots.Clear();
     }
 
+    /// <summary>
+    /// Stop the CLI process, cancel reading loops.
+    /// </summary>
+    public void StopSession()
+    {
+        lock (_processLock)
+        {
+            _isSessionActive = false;
+            _readCts?.Cancel();
+
+            try
+            {
+                if (_process is not null && !_process.HasExited)
+                    _process.Kill(entireProcessTree: true);
+            }
+            catch { }
+
+            _process?.Dispose();
+            _process = null;
+            _readCts?.Dispose();
+            _readCts = null;
+        }
+    }
+
     private string BuildArguments()
     {
-        var sb = new StringBuilder("-p --output-format stream-json --verbose");
+        var sb = new StringBuilder("-p --output-format stream-json --input-format stream-json --verbose --include-partial-messages --dangerously-skip-permissions");
 
         if (!string.IsNullOrEmpty(_sessionId))
             sb.Append($" --resume \"{_sessionId}\"");
+
+        if (!string.IsNullOrEmpty(_systemPromptAppend))
+        {
+            // Escape for command line — replace " with \"
+            var escaped = _systemPromptAppend.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            sb.Append($" --append-system-prompt \"{escaped}\"");
+        }
 
         return sb.ToString();
     }
@@ -156,15 +239,72 @@ public class ClaudeCliService
         return sb.ToString();
     }
 
-    private async Task ReadStreamAsync(System.IO.StreamReader reader, CancellationToken ct)
+    private async Task ReadStdoutLoop(CancellationToken ct)
     {
-        while (!reader.EndOfStream && !ct.IsCancellationRequested)
-        {
-            var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
+        Process? proc;
+        lock (_processLock)
+            proc = _process;
 
-            ProcessJsonLine(line);
+        if (proc is null) return;
+
+        try
+        {
+            var reader = proc.StandardOutput;
+            while (!ct.IsCancellationRequested)
+            {
+                var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+                if (line is null)
+                    break; // EOF
+
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+
+                ProcessJsonLine(line);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (_isSessionActive)
+                OnError?.Invoke($"Read error: {ex.Message}");
+        }
+    }
+
+    private async Task ReadStderrLoop(CancellationToken ct)
+    {
+        Process? proc;
+        lock (_processLock)
+            proc = _process;
+
+        if (proc is null) return;
+
+        try
+        {
+            var reader = proc.StandardError;
+            var sb = new StringBuilder();
+            while (!ct.IsCancellationRequested)
+            {
+                var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+                if (line is null) break;
+                // Accumulate stderr — only report on process exit or significant errors
+                if (!string.IsNullOrWhiteSpace(line))
+                    sb.AppendLine(line);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch { }
+    }
+
+    private void HandleProcessExited()
+    {
+        if (!_isSessionActive) return; // Expected stop
+
+        // Unexpected process death
+        OnError?.Invoke("Claude process exited unexpectedly");
+        lock (_processLock)
+        {
+            _process?.Dispose();
+            _process = null;
         }
     }
 
@@ -186,33 +326,31 @@ public class ClaudeCliService
                     HandleSystemMessage(root);
                     break;
 
+                case "stream_event":
+                    HandleStreamEvent(root);
+                    break;
+
                 case "assistant":
                     HandleAssistantMessage(root);
                     break;
 
-                case "content_block_start":
-                    HandleContentBlockStart(root);
-                    break;
-
-                case "content_block_delta":
-                    HandleContentBlockDelta(root);
-                    break;
-
-                case "content_block_stop":
-                    HandleContentBlockStop();
-                    break;
-
-                case "message_start":
-                    break;
-
-                case "message_delta":
-                    break;
-
-                case "message_stop":
+                case "user":
+                    HandleUserMessage(root);
                     break;
 
                 case "result":
                     HandleResult(root);
+                    break;
+
+                // Legacy top-level events (fallback in case CLI sends them)
+                case "content_block_start":
+                    HandleContentBlockStart(root);
+                    break;
+                case "content_block_delta":
+                    HandleContentBlockDelta(root);
+                    break;
+                case "content_block_stop":
+                    HandleContentBlockStop();
                     break;
             }
         }
@@ -222,35 +360,152 @@ public class ClaudeCliService
         }
     }
 
+    /// <summary>
+    /// Unwrap stream_event wrapper and dispatch inner event.
+    /// </summary>
+    private void HandleStreamEvent(JsonElement root)
+    {
+        if (!root.TryGetProperty("event", out var evt))
+            return;
+
+        if (!evt.TryGetProperty("type", out var evtType))
+            return;
+
+        var eventType = evtType.GetString();
+
+        switch (eventType)
+        {
+            case "content_block_start":
+                HandleContentBlockStart(evt);
+                break;
+            case "content_block_delta":
+                HandleContentBlockDelta(evt);
+                break;
+            case "content_block_stop":
+                HandleContentBlockStop();
+                break;
+            case "message_start":
+            case "message_delta":
+            case "message_stop":
+                // Not needed for current features
+                break;
+        }
+    }
+
     private void HandleSystemMessage(JsonElement root)
     {
         if (root.TryGetProperty("session_id", out var sid))
             _sessionId = sid.GetString();
+
+        // Parse init event data
+        string? model = null;
+        var tools = new List<string>();
+
+        if (root.TryGetProperty("model", out var m))
+            model = m.GetString();
+
+        if (root.TryGetProperty("tools", out var toolsArr) && toolsArr.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var tool in toolsArr.EnumerateArray())
+            {
+                if (tool.ValueKind == JsonValueKind.String)
+                    tools.Add(tool.GetString()!);
+                else if (tool.TryGetProperty("name", out var tn))
+                    tools.Add(tn.GetString() ?? "");
+            }
+        }
+
+        if (_sessionId is not null)
+            OnSessionStarted?.Invoke(_sessionId, model ?? "", tools);
     }
 
     private void HandleAssistantMessage(JsonElement root)
     {
-        if (root.TryGetProperty("message", out var msg)
-            && msg.TryGetProperty("content", out var content)
-            && content.ValueKind == JsonValueKind.Array)
+        if (!root.TryGetProperty("message", out var msg)
+            || !msg.TryGetProperty("content", out var content)
+            || content.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var block in content.EnumerateArray())
         {
-            foreach (var block in content.EnumerateArray())
+            if (!block.TryGetProperty("type", out var bt))
+                continue;
+
+            var blockType = bt.GetString();
+
+            if (blockType == "tool_use")
             {
-                if (!block.TryGetProperty("type", out var bt))
-                    continue;
+                var toolName = block.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                DetectFileChange(toolName, block);
 
-                var blockType = bt.GetString();
+                // Try to extract complete input for summary
+                if (block.TryGetProperty("input", out var inp) && inp.ValueKind == JsonValueKind.Object)
+                {
+                    var toolUseId = block.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? "" : "";
+                    // Don't re-fire OnToolUseStarted — it was already fired from content_block_start
+                }
+            }
+        }
+    }
 
-                if (blockType == "text" && block.TryGetProperty("text", out var text))
+    /// <summary>
+    /// Handle tool_result events from the CLI (type:"user" messages).
+    /// </summary>
+    private void HandleUserMessage(JsonElement root)
+    {
+        if (!root.TryGetProperty("message", out var msg))
+            return;
+
+        if (!msg.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var block in content.EnumerateArray())
+        {
+            if (!block.TryGetProperty("type", out var bt))
+                continue;
+
+            var blockType = bt.GetString();
+
+            if (blockType == "tool_result")
+            {
+                var toolUseId = block.TryGetProperty("tool_use_id", out var tid) ? tid.GetString() ?? "" : "";
+                var resultContent = "";
+
+                if (block.TryGetProperty("content", out var c))
                 {
-                    OnTextDelta?.Invoke(text.GetString() ?? string.Empty);
+                    if (c.ValueKind == JsonValueKind.String)
+                    {
+                        resultContent = c.GetString() ?? "";
+                    }
+                    else if (c.ValueKind == JsonValueKind.Array)
+                    {
+                        // Array of content blocks
+                        var sb = new StringBuilder();
+                        foreach (var part in c.EnumerateArray())
+                        {
+                            if (part.TryGetProperty("text", out var t))
+                                sb.Append(t.GetString());
+                        }
+                        resultContent = sb.ToString();
+                    }
                 }
-                else if (blockType == "tool_use")
+
+                // Extract structured data (e.g., file info from Read tool)
+                string? filePath = null;
+                if (block.TryGetProperty("tool_use_result", out var tur))
                 {
-                    var toolName = block.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-                    OnToolUseStarted?.Invoke(toolName, "");
-                    DetectFileChange(toolName, block);
+                    if (tur.TryGetProperty("file", out var file))
+                    {
+                        if (file.TryGetProperty("filePath", out var fp))
+                            filePath = fp.GetString();
+                        if (file.TryGetProperty("content", out var fc))
+                            resultContent = fc.GetString() ?? resultContent;
+                    }
                 }
+
+                // Find tool name by toolUseId — use the last started tool as fallback
+                var toolName = _currentToolName ?? "Unknown";
+                OnToolResult?.Invoke(toolName, toolUseId, resultContent);
             }
         }
     }
@@ -263,11 +518,13 @@ public class ClaudeCliService
         if (block.TryGetProperty("type", out var bt) && bt.GetString() == "tool_use")
         {
             var toolName = block.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+            var toolUseId = block.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? "" : "";
 
             _currentToolName = toolName;
+            _currentToolUseId = toolUseId;
             _toolInputBuffer.Clear();
 
-            // Seed buffer from initial input if it's non-empty (some CLIs send full input here)
+            // Seed buffer from initial input if it's non-empty
             if (block.TryGetProperty("input", out var inp)
                 && inp.ValueKind == JsonValueKind.Object
                 && inp.EnumerateObject().Any())
@@ -276,7 +533,7 @@ public class ClaudeCliService
             }
 
             var inputStr = block.TryGetProperty("input", out var inp2) ? inp2.ToString() : "";
-            OnToolUseStarted?.Invoke(toolName, inputStr);
+            OnToolUseStarted?.Invoke(toolName, toolUseId, inputStr);
         }
     }
 
@@ -319,14 +576,19 @@ public class ClaudeCliService
             catch (IOException) { }
         }
 
+        // Finalize tool input — update the tool use with complete input
+        if (_currentToolName is not null && _toolInputBuffer.Length > 0)
+        {
+            // The complete input is now available — fire a "tool input complete" via OnToolUseStarted
+            // with the full input JSON so the ViewModel can parse the summary
+            OnToolUseStarted?.Invoke(_currentToolName, _currentToolUseId ?? "", _toolInputBuffer.ToString());
+        }
+
         _currentToolName = null;
+        _currentToolUseId = null;
         _toolInputBuffer.Clear();
     }
 
-    /// <summary>
-    /// Detect file changes from tool_use blocks in complete assistant events.
-    /// Called for Write/Edit/NotebookEdit tools.
-    /// </summary>
     private void DetectFileChange(string toolName, JsonElement block)
     {
         if (toolName is not ("Write" or "Edit" or "NotebookEdit"))
@@ -341,9 +603,6 @@ public class ClaudeCliService
         catch (IOException) { }
     }
 
-    /// <summary>
-    /// Extract file_path from tool input, snapshot the file, and fire OnFileChanged.
-    /// </summary>
     private void SnapshotAndNotify(JsonElement input)
     {
         string? filePath = null;
@@ -354,7 +613,6 @@ public class ClaudeCliService
 
         if (!string.IsNullOrEmpty(filePath))
         {
-            // Snapshot file content (before modification if possible)
             _fileSnapshots.TryAdd(filePath,
                 File.Exists(filePath) ? File.ReadAllText(filePath) : null);
 
@@ -372,7 +630,6 @@ public class ClaudeCliService
         if (root.TryGetProperty("session_id", out var sid))
             sessionId = sid.GetString();
 
-        // Extract model and contextWindow from modelUsage (more reliable than top-level "model")
         if (root.TryGetProperty("modelUsage", out var mu) && mu.ValueKind == JsonValueKind.Object)
         {
             foreach (var prop in mu.EnumerateObject())
@@ -401,18 +658,5 @@ public class ClaudeCliService
             _sessionId = sessionId;
 
         OnCompleted?.Invoke(new ResultData(sessionId, model, inputTokens, outputTokens, cacheRead, cacheCreation, contextWindow));
-    }
-
-    private void KillProcess()
-    {
-        try
-        {
-            if (_process is not null && !_process.HasExited)
-                _process.Kill(entireProcessTree: true);
-        }
-        catch
-        {
-            // Process may have already exited
-        }
     }
 }

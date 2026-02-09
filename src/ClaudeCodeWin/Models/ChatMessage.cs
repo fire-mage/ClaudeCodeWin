@@ -19,7 +19,9 @@ public class ChatMessage
 public class ToolUseInfo
 {
     public string ToolName { get; set; } = string.Empty;
+    public string ToolUseId { get; set; } = string.Empty;
     public string Input { get; set; } = string.Empty;
     public string Output { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
     public bool IsExpanded { get; set; }
 }

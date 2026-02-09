@@ -26,9 +26,9 @@ public class MainViewModel : ViewModelBase
         - **File attachments**: the user can drag-and-drop files or paste screenshots (Ctrl+V) into the chat.
         - **Session persistence**: sessions are saved per project folder and restored on next launch (within 24h).
         - **Message queue**: messages sent while you are processing get queued and auto-sent sequentially.
+        - **AskUserQuestion support**: When you use the AskUserQuestion tool, the user sees interactive buttons and can select an option. The selected answer is sent back to you as the next user message.
 
         ## Important rules
-        - Do NOT use the AskUserQuestion tool — it is not supported in this environment and will be auto-answered by the system without user input. When you need to ask the user clarifying questions, ask them directly as plain text in your response. Use numbered options if applicable.
         - When editing tasks.json or scripts.json, the format is a JSON array with camelCase keys. After editing, remind the user to click "Reload Tasks" or "Reload Scripts" in the menu.
         </system-instruction>
         """;
@@ -132,6 +132,7 @@ public class MainViewModel : ViewModelBase
     public RelayCommand SendQueuedNowCommand { get; }
     public RelayCommand ReturnQueuedToInputCommand { get; }
     public RelayCommand ViewChangedFileCommand { get; }
+    public RelayCommand AnswerQuestionCommand { get; }
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
@@ -216,6 +217,11 @@ public class MainViewModel : ViewModelBase
             if (p is string filePath)
                 ShowFileDiff(filePath);
         });
+        AnswerQuestionCommand = new RelayCommand(p =>
+        {
+            if (p is string answer)
+                _ = SendDirectAsync(answer, null);
+        });
 
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
         MessageQueue.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasQueuedMessages));
@@ -273,10 +279,14 @@ public class MainViewModel : ViewModelBase
 
         _cliService.OnTextDelta += HandleTextDelta;
         _cliService.OnToolUseStarted += HandleToolUseStarted;
+        _cliService.OnToolResult += HandleToolResult;
         _cliService.OnCompleted += HandleCompleted;
         _cliService.OnError += HandleError;
         _cliService.OnAskUserQuestion += HandleAskUserQuestion;
         _cliService.OnFileChanged += HandleFileChanged;
+
+        // Set system prompt via --append-system-prompt
+        _cliService.SetSystemPrompt(SystemInstruction);
 
         // Initialize recent folders from settings
         foreach (var folder in settings.RecentFolders)
@@ -315,6 +325,9 @@ public class MainViewModel : ViewModelBase
 
     public void SetWorkingDirectory(string folder)
     {
+        // Stop existing process when switching projects
+        _cliService.StopSession();
+
         _cliService.WorkingDirectory = folder;
         _settings.WorkingDirectory = folder;
 
@@ -399,31 +412,25 @@ public class MainViewModel : ViewModelBase
         IsProcessing = true;
         StatusText = "Processing...";
 
-        // Auto-inject system instruction and context snapshot on first message of a new session
+        // Inject context snapshot on first message of a new session
         var finalPrompt = text;
-        if (_cliService.SessionId is null)
+        if (_cliService.SessionId is null && !string.IsNullOrEmpty(WorkingDirectory))
         {
-            var preamble = SystemInstruction;
-
-            if (!string.IsNullOrEmpty(WorkingDirectory))
+            var snapshotPath = Path.Combine(WorkingDirectory, "CONTEXT_SNAPSHOT.md");
+            if (File.Exists(snapshotPath))
             {
-                var snapshotPath = Path.Combine(WorkingDirectory, "CONTEXT_SNAPSHOT.md");
-                if (File.Exists(snapshotPath))
-                {
-                    var snapshot = File.ReadAllText(snapshotPath);
-                    preamble += $"\n\n<context-snapshot>\n{snapshot}\n</context-snapshot>";
-                    Messages.Add(new MessageViewModel(MessageRole.System, "Context injected: CONTEXT_SNAPSHOT.md"));
-                }
+                var snapshot = File.ReadAllText(snapshotPath);
+                finalPrompt = $"<context-snapshot>\n{snapshot}\n</context-snapshot>\n\n{text}";
+                Messages.Add(new MessageViewModel(MessageRole.System, "Context injected: CONTEXT_SNAPSHOT.md"));
             }
-
-            finalPrompt = $"{preamble}\n\n{text}";
         }
 
         _currentAssistantMessage = new MessageViewModel(MessageRole.Assistant) { IsStreaming = true, IsThinking = true };
         _isFirstDelta = true;
         Messages.Add(_currentAssistantMessage);
 
-        await _cliService.SendMessageAsync(finalPrompt, attachments);
+        // Send via persistent process (starts process if needed)
+        await Task.Run(() => _cliService.SendMessage(finalPrompt, attachments));
     }
 
     private void HandleTextDelta(string text)
@@ -446,7 +453,7 @@ public class MainViewModel : ViewModelBase
         });
     }
 
-    private void HandleToolUseStarted(string toolName, string input)
+    private void HandleToolUseStarted(string toolName, string toolUseId, string input)
     {
         Application.Current.Dispatcher.InvokeAsync(() =>
         {
@@ -457,8 +464,42 @@ public class MainViewModel : ViewModelBase
                     _isFirstDelta = false;
                     _currentAssistantMessage.IsThinking = false;
                 }
+
+                // Check if this tool use already exists (update with complete input)
+                var existing = _currentAssistantMessage.ToolUses
+                    .FirstOrDefault(t => t.ToolUseId == toolUseId && !string.IsNullOrEmpty(toolUseId));
+
+                if (existing is not null)
+                {
+                    // Update existing with complete input (from content_block_stop)
+                    existing.UpdateInput(input);
+                }
+                else
+                {
+                    _currentAssistantMessage.ToolUses.Add(new ToolUseViewModel(toolName, toolUseId, input));
+                }
             }
-            _currentAssistantMessage?.ToolUses.Add(new ToolUseViewModel(toolName, input));
+        });
+    }
+
+    private void HandleToolResult(string toolName, string toolUseId, string content)
+    {
+        Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            if (_currentAssistantMessage is null) return;
+
+            // Find the tool use by ID and set its result
+            var tool = _currentAssistantMessage.ToolUses
+                .FirstOrDefault(t => t.ToolUseId == toolUseId)
+                ?? _currentAssistantMessage.ToolUses.LastOrDefault(t => t.ToolName == toolName);
+
+            if (tool is not null)
+            {
+                // Truncate large results for display
+                tool.ResultContent = content.Length > 5000
+                    ? content[..5000] + $"\n\n... ({content.Length:N0} chars total)"
+                    : content;
+            }
         });
     }
 
@@ -528,9 +569,6 @@ public class MainViewModel : ViewModelBase
 
     private void HandleAskUserQuestion(string rawJson)
     {
-        // AskUserQuestion cannot work interactively in pipe mode (-p):
-        // stdin is closed after sending the prompt, so the CLI auto-selects answers.
-        // We show the question text as an informational system message.
         Application.Current.Dispatcher.InvokeAsync(() =>
         {
             try
@@ -542,34 +580,42 @@ public class MainViewModel : ViewModelBase
                     || questionsArr.ValueKind != JsonValueKind.Array)
                     return;
 
-                var parts = new List<string>();
                 foreach (var q in questionsArr.EnumerateArray())
                 {
                     var question = q.TryGetProperty("question", out var qText) ? qText.GetString() ?? "" : "";
-                    var sb = new System.Text.StringBuilder();
-                    sb.AppendLine($"Claude asked: {question}");
+                    var options = new List<QuestionOption>();
 
                     if (q.TryGetProperty("options", out var opts) && opts.ValueKind == JsonValueKind.Array)
                     {
                         foreach (var opt in opts.EnumerateArray())
                         {
-                            var label = opt.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "";
-                            var desc = opt.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "";
-                            sb.AppendLine($"  - {label}: {desc}");
+                            options.Add(new QuestionOption
+                            {
+                                Label = opt.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "",
+                                Description = opt.TryGetProperty("description", out var d) ? d.GetString() ?? "" : ""
+                            });
                         }
                     }
 
-                    sb.Append("(Auto-answered by CLI — pipe mode limitation)");
-                    parts.Add(sb.ToString());
+                    if (options.Count > 0)
+                    {
+                        var questionMsg = new MessageViewModel(MessageRole.System, question)
+                        {
+                            QuestionDisplay = new QuestionDisplayModel
+                            {
+                                QuestionText = question,
+                                Options = options
+                            }
+                        };
+                        Messages.Add(questionMsg);
+                    }
+                    else
+                    {
+                        Messages.Add(new MessageViewModel(MessageRole.System, $"Claude asked: {question}"));
+                    }
                 }
-
-                if (parts.Count > 0)
-                    Messages.Add(new MessageViewModel(MessageRole.System, string.Join("\n\n", parts)));
             }
-            catch (JsonException)
-            {
-                // Invalid JSON — ignore
-            }
+            catch (JsonException) { }
         });
     }
 
@@ -704,8 +750,10 @@ public class MainViewModel : ViewModelBase
                 ToolUses = m.ToolUses.Select(t => new ToolUseInfo
                 {
                     ToolName = t.ToolName,
+                    ToolUseId = t.ToolUseId,
                     Input = t.Input,
-                    Output = t.Output
+                    Output = t.Output,
+                    Summary = t.Summary
                 }).ToList()
             }).ToList()
         };
@@ -752,7 +800,7 @@ public class MainViewModel : ViewModelBase
         {
             var vm = new MessageViewModel(msg.Role, msg.Text);
             foreach (var tool in msg.ToolUses)
-                vm.ToolUses.Add(new ToolUseViewModel(tool.ToolName, tool.Input));
+                vm.ToolUses.Add(new ToolUseViewModel(tool.ToolName, tool.ToolUseId, tool.Input));
             Messages.Add(vm);
         }
 
