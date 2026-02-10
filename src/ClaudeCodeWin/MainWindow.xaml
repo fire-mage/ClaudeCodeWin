@@ -606,7 +606,7 @@
                 <!-- Autocomplete popup -->
                 <Popup x:Name="AutocompletePopup"
                        PlacementTarget="{Binding ElementName=InputTextBox}"
-                       Placement="Top"
+                       Placement="Relative"
                        StaysOpen="False"
                        AllowsTransparency="True"
                        PopupAnimation="Fade"

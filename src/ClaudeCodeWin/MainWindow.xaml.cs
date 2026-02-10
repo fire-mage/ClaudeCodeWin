@@ -324,7 +324,41 @@ public partial class MainWindow : Window
 
         AutocompleteList.ItemsSource = results;
         AutocompleteList.SelectedIndex = 0;
+
+        // Position popup near the caret
+        PositionAutocompletePopup(caret);
         AutocompletePopup.IsOpen = true;
+    }
+
+    private void PositionAutocompletePopup(int caretIndex)
+    {
+        try
+        {
+            var rect = InputTextBox.GetRectFromCharacterIndex(caretIndex);
+            if (rect.IsEmpty) return;
+
+            // Position popup at the caret X, above the caret line (like Intellisense going upward)
+            AutocompletePopup.HorizontalOffset = rect.Left;
+            // Negative offset to show above: go up from caret position
+            // With Placement="Relative", offset is from top-left of TextBox
+            // We want to show ABOVE the current line, so subtract estimated popup height
+            AutocompletePopup.VerticalOffset = rect.Top;
+            AutocompletePopup.Placement = System.Windows.Controls.Primitives.PlacementMode.Relative;
+
+            // After rendering, adjust to show above
+            AutocompletePopup.Dispatcher.InvokeAsync(() =>
+            {
+                if (AutocompletePopup.Child is FrameworkElement child && child.ActualHeight > 0)
+                {
+                    AutocompletePopup.VerticalOffset = rect.Top - child.ActualHeight - 4;
+                }
+            }, System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+        catch
+        {
+            AutocompletePopup.HorizontalOffset = 0;
+            AutocompletePopup.VerticalOffset = 0;
+        }
     }
 
     private static string ExtractCurrentWord(string text, int caretIndex)
@@ -517,7 +551,7 @@ public partial class MainWindow : Window
             Foreground = (Brush)FindResource("TextSecondaryBrush")
         });
 
-        // Email row with copy button
+        // Email row with subtle copy button
         var emailPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -534,10 +568,15 @@ public partial class MainWindow : Window
         var copyButton = new Button
         {
             Content = "Copy",
-            Margin = new Thickness(12, 0, 0, 0),
-            Padding = new Thickness(14, 4, 14, 4),
-            Style = (Style)FindResource("PrimaryButton"),
-            FontSize = 11
+            Margin = new Thickness(8, 0, 0, 0),
+            Padding = new Thickness(8, 2, 8, 2),
+            FontSize = 10,
+            Cursor = Cursors.Hand,
+            Background = Brushes.Transparent,
+            Foreground = (Brush)FindResource("TextSecondaryBrush"),
+            BorderBrush = (Brush)FindResource("BorderBrush"),
+            BorderThickness = new Thickness(1),
+            VerticalAlignment = VerticalAlignment.Center
         };
         copyButton.Click += (_, _) =>
         {
@@ -546,6 +585,18 @@ public partial class MainWindow : Window
         };
         emailPanel.Children.Add(copyButton);
         stack.Children.Add(emailPanel);
+
+        // Close button — prominent, primary style
+        var closeButton = new Button
+        {
+            Content = "Close",
+            Margin = new Thickness(0, 24, 0, 0),
+            Padding = new Thickness(32, 8, 32, 8),
+            Style = (Style)FindResource("PrimaryButton"),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        closeButton.Click += (_, _) => aboutWindow.Close();
+        stack.Children.Add(closeButton);
 
         aboutWindow.Content = stack;
         aboutWindow.ShowDialog();
