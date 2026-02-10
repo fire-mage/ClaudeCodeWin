@@ -60,12 +60,15 @@ public partial class MainWindow : Window
             // Icon not found — not critical, continue without it
         }
 
-        // Auto-scroll when messages change or text streams in
+        // Track scroll position for "scroll to bottom" button
+        ChatScrollViewer.ScrollChanged += ChatScrollViewer_ScrollChanged;
+
+        // Auto-scroll when messages change or text streams in (only if user is at bottom)
         if (viewModel.Messages is INotifyCollectionChanged ncc)
         {
             ncc.CollectionChanged += (_, args) =>
             {
-                ScrollToBottom();
+                ScrollToBottomIfAtBottom();
 
                 // Subscribe to text changes on new streaming messages
                 if (args.NewItems is not null)
@@ -75,7 +78,7 @@ public partial class MainWindow : Window
                         msg.PropertyChanged += (_, pe) =>
                         {
                             if (pe.PropertyName == nameof(MessageViewModel.Text))
-                                ScrollToBottom();
+                                ScrollToBottomIfAtBottom();
                         };
                     }
                 }
@@ -394,11 +397,35 @@ public partial class MainWindow : Window
         InsertAutocomplete();
     }
 
-    private void ScrollToBottom()
+    private bool _isUserNearBottom = true;
+
+    private bool IsNearBottom()
     {
-        Dispatcher.InvokeAsync(() =>
-            ChatScrollViewer.ScrollToEnd(),
-            System.Windows.Threading.DispatcherPriority.Background);
+        var sv = ChatScrollViewer;
+        return sv.VerticalOffset >= sv.ScrollableHeight - 50;
+    }
+
+    private void ScrollToBottomIfAtBottom()
+    {
+        if (_isUserNearBottom)
+        {
+            Dispatcher.InvokeAsync(() =>
+                ChatScrollViewer.ScrollToEnd(),
+                System.Windows.Threading.DispatcherPriority.Background);
+        }
+    }
+
+    private void ChatScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        _isUserNearBottom = IsNearBottom();
+        ScrollToBottomButton.Visibility = _isUserNearBottom
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
+    private void ScrollToBottomButton_Click(object sender, RoutedEventArgs e)
+    {
+        ChatScrollViewer.ScrollToEnd();
     }
 
     private void CopyAllMessage_Click(object sender, RoutedEventArgs e)

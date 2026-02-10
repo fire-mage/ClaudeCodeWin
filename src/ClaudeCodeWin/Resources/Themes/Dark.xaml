@@ -1,25 +1,25 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- Colors -->
-    <Color x:Key="BackgroundColor">#1E1E2E</Color>
-    <Color x:Key="SurfaceColor">#2A2A3C</Color>
-    <Color x:Key="SurfaceLightColor">#363649</Color>
-    <Color x:Key="PrimaryColor">#89B4FA</Color>
-    <Color x:Key="PrimaryDarkColor">#5A8FD8</Color>
-    <Color x:Key="TextColor">#CDD6F4</Color>
-    <Color x:Key="TextSecondaryColor">#9399B2</Color>
-    <Color x:Key="UserBubbleColor">#2B4576</Color>
-    <Color x:Key="AssistantBubbleColor">#313244</Color>
-    <Color x:Key="ToolBubbleColor">#3B3B52</Color>
-    <Color x:Key="BorderColor">#45475A</Color>
-    <Color x:Key="ErrorColor">#F38BA8</Color>
-    <Color x:Key="SuccessColor">#A6E3A1</Color>
-    <Color x:Key="AccentColor">#F5C2E7</Color>
-    <Color x:Key="MenuHighlightColor">#404060</Color>
-    <Color x:Key="SystemBubbleColor">#2A3A2A</Color>
-    <Color x:Key="ThinkingBubbleColor">#3D3260</Color>
-    <Color x:Key="WarningColor">#FAB387</Color>
+    <!-- Colors — Main Fish Design System (dark mode) -->
+    <Color x:Key="BackgroundColor">#0d1117</Color>
+    <Color x:Key="SurfaceColor">#161b22</Color>
+    <Color x:Key="SurfaceLightColor">#21262d</Color>
+    <Color x:Key="PrimaryColor">#4CAF50</Color>
+    <Color x:Key="PrimaryDarkColor">#388E3C</Color>
+    <Color x:Key="TextColor">#e6edf3</Color>
+    <Color x:Key="TextSecondaryColor">#8b949e</Color>
+    <Color x:Key="UserBubbleColor">#1a3a1a</Color>
+    <Color x:Key="AssistantBubbleColor">#1c2128</Color>
+    <Color x:Key="ToolBubbleColor">#272c33</Color>
+    <Color x:Key="BorderColor">#30363d</Color>
+    <Color x:Key="ErrorColor">#f85149</Color>
+    <Color x:Key="SuccessColor">#56d364</Color>
+    <Color x:Key="AccentColor">#FFAB1A</Color>
+    <Color x:Key="MenuHighlightColor">#2a3040</Color>
+    <Color x:Key="SystemBubbleColor">#1a2a1a</Color>
+    <Color x:Key="ThinkingBubbleColor">#1a2e1a</Color>
+    <Color x:Key="WarningColor">#FFAB1A</Color>
 
     <!-- Brushes -->
     <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}"/>
@@ -44,7 +44,7 @@
     <!-- Global TextBlock style -->
     <Style TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-        <Setter Property="FontFamily" Value="Segoe UI"/>
+        <Setter Property="FontFamily" Value="Nunito,Segoe UI,sans-serif"/>
         <Setter Property="FontSize" Value="14"/>
     </Style>
 
@@ -71,7 +71,7 @@
     <!-- Button style -->
     <Style x:Key="PrimaryButton" TargetType="Button">
         <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
-        <Setter Property="Foreground" Value="#1E1E2E"/>
+        <Setter Property="Foreground" Value="#FFFFFF"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="FontSize" Value="14"/>
         <Setter Property="Padding" Value="20,8"/>
@@ -101,7 +101,7 @@
     <!-- Cancel Button -->
     <Style x:Key="CancelButton" TargetType="Button">
         <Setter Property="Background" Value="{StaticResource ErrorBrush}"/>
-        <Setter Property="Foreground" Value="#1E1E2E"/>
+        <Setter Property="Foreground" Value="#FFFFFF"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="FontSize" Value="14"/>
         <Setter Property="Padding" Value="20,8"/>
@@ -307,11 +307,11 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="10,8"/>
         <Setter Property="FontSize" Value="12"/>
-        <Setter Property="FontFamily" Value="Segoe UI"/>
+        <Setter Property="FontFamily" Value="Nunito,Segoe UI,sans-serif"/>
     </Style>
 
     <!-- SelectionBrush for TextBox (text highlight color) -->
-    <SolidColorBrush x:Key="SelectionBrush" Color="#3389B4FA"/>
+    <SolidColorBrush x:Key="SelectionBrush" Color="#334CAF50"/>
 
     <!-- StatusBar -->
     <Style x:Key="StatusBarStyle" TargetType="Border">

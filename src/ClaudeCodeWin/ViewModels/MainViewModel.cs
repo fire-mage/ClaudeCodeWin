@@ -57,6 +57,7 @@ public class MainViewModel : ViewModelBase
     private string? _currentChatId;
     private string _ctaText = "";
     private CtaState _ctaState = CtaState.Welcome;
+    private bool _isUpdating;
 
     public ObservableCollection<MessageViewModel> Messages { get; } = [];
     public ObservableCollection<FileAttachment> Attachments { get; } = [];
@@ -74,6 +75,12 @@ public class MainViewModel : ViewModelBase
     {
         get => _isProcessing;
         set => SetProperty(ref _isProcessing, value);
+    }
+
+    public bool IsUpdating
+    {
+        get => _isUpdating;
+        set => SetProperty(ref _isUpdating, value);
     }
 
     public bool HasAttachments => Attachments.Count > 0;
@@ -125,7 +132,7 @@ public class MainViewModel : ViewModelBase
 
     public bool HasCta => !string.IsNullOrEmpty(_ctaText);
 
-    public bool HasDialogHistory => Messages.Count > 0;
+    public bool HasDialogHistory => Messages.Any(m => m.Role == MessageRole.Assistant);
 
     public RelayCommand SendCommand { get; }
     public RelayCommand CancelCommand { get; }
@@ -259,7 +266,10 @@ public class MainViewModel : ViewModelBase
                     MessageBoxImage.Information);
 
                 if (result == MessageBoxResult.Yes)
+                {
+                    IsUpdating = true;
                     _ = _updateService.DownloadAndApplyAsync(info);
+                }
             });
         };
 
@@ -283,6 +293,7 @@ public class MainViewModel : ViewModelBase
         {
             Application.Current.Dispatcher.InvokeAsync(() =>
             {
+                IsUpdating = false;
                 StatusText = "Ready";
                 MessageBox.Show(error, "Update Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             });

@@ -102,7 +102,7 @@
                                                Foreground="{StaticResource PrimaryBrush}"
                                                VerticalAlignment="Center"/>
                                     <TextBlock Text="Claude is thinking..."
-                                               FontFamily="Segoe UI"
+                                               FontFamily="Nunito,Segoe UI,sans-serif"
                                                FontSize="15"
                                                FontWeight="SemiBold"
                                                Foreground="{StaticResource PrimaryBrush}"
@@ -381,6 +381,48 @@
             </ItemsControl>
         </ScrollViewer>
 
+        <!-- Scroll to bottom button -->
+        <Button x:Name="ScrollToBottomButton"
+                Grid.Row="1"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Margin="0,0,24,12"
+                Panel.ZIndex="5"
+                Visibility="Collapsed"
+                Click="ScrollToBottomButton_Click"
+                Cursor="Hand"
+                ToolTip="Scroll to bottom">
+            <Button.Style>
+                <Style TargetType="Button">
+                    <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
+                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                    <Setter Property="BorderThickness" Value="1"/>
+                    <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="16"
+                                        Padding="10,6">
+                                    <TextBlock Text="&#x25BC; Down"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource PrimaryBrush}"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="{StaticResource MenuHighlightBrush}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Button.Style>
+        </Button>
+
         <!-- Welcome overlay -->
         <Border Grid.Row="1"
                 Background="{StaticResource BackgroundBrush}"
@@ -614,6 +656,7 @@
                 <TextBox x:Name="InputTextBox"
                          Style="{StaticResource InputTextBox}"
                          Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                         IsEnabled="{Binding IsUpdating, Converter={StaticResource InverseBool}}"
                          MaxHeight="200"
                          MinHeight="40"
                          VerticalAlignment="Stretch"/>
@@ -640,6 +683,16 @@
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
+                <!-- Update in progress overlay -->
+                <TextBlock Text="Please wait for the update to complete"
+                           IsHitTestVisible="False"
+                           Foreground="{StaticResource WarningBrush}"
+                           FontFamily="Nunito,Segoe UI,sans-serif"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           Margin="12,10,0,0"
+                           VerticalAlignment="Top"
+                           Visibility="{Binding IsUpdating, Converter={StaticResource BoolToVis}}"/>
 
                 <!-- Autocomplete popup -->
                 <Popup x:Name="AutocompletePopup"
@@ -697,6 +750,7 @@
                 <Button Content="Send"
                         Style="{StaticResource PrimaryButton}"
                         Command="{Binding SendCommand}"
+                        IsEnabled="{Binding IsUpdating, Converter={StaticResource InverseBool}}"
                         Margin="0,0,0,4"/>
                 <Button Content="Cancel"
                         Style="{StaticResource CancelButton}"
@@ -708,21 +762,27 @@
                         Margin="0,4,0,0"
                         Visibility="{Binding HasDialogHistory, Converter={StaticResource BoolToVis}}"
                         MouseLeftButtonUp="QuickPrompt_Click">
-                    <TextBlock Text="Quick &#x25BC;" FontSize="11"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                    <TextBlock Text="Quick Prompts &#x25BC;" FontSize="11"
+                               Foreground="{StaticResource PrimaryBrush}"
                                HorizontalAlignment="Center"
                                Padding="4,2"/>
                     <Border.ContextMenu>
-                        <ContextMenu x:Name="QuickPromptMenu">
+                        <ContextMenu x:Name="QuickPromptMenu"
+                                     Background="{StaticResource SurfaceBrush}"
+                                     BorderBrush="{StaticResource BorderBrush}"
+                                     Foreground="{StaticResource TextBrush}">
                             <MenuItem Header="Commit &amp; Push"
+                                      Foreground="{StaticResource TextBrush}"
                                       ToolTip="Ask Claude to commit changes and push to GitHub"
                                       Click="QuickPromptItem_Click"
                                       Tag="Please commit all current changes with a descriptive message and push to the remote repository."/>
                             <MenuItem Header="Deploy to Test"
+                                      Foreground="{StaticResource TextBrush}"
                                       ToolTip="Ask Claude to deploy the project to test environment"
                                       Click="QuickPromptItem_Click"
                                       Tag="Please deploy this project to the test environment."/>
                             <MenuItem Header="Deploy to Prod"
+                                      Foreground="{StaticResource TextBrush}"
                                       ToolTip="Ask Claude to deploy the project to production"
                                       Click="QuickPromptItem_Click"
                                       Tag="Please deploy this project to the production environment."/>
