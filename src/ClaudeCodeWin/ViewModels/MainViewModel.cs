@@ -58,6 +58,8 @@ public class MainViewModel : ViewModelBase
     private long _sessionOutputTokens;
     private int _sessionTurnCount;
     private string? _currentChatId;
+    private string _ctaText = "";
+    private CtaState _ctaState = CtaState.Welcome;
 
     public ObservableCollection<MessageViewModel> Messages { get; } = [];
     public ObservableCollection<FileAttachment> Attachments { get; } = [];
@@ -117,6 +119,14 @@ public class MainViewModel : ViewModelBase
         get => _tokenUsageText;
         set => SetProperty(ref _tokenUsageText, value);
     }
+
+    public string CtaText
+    {
+        get => _ctaText;
+        set => SetProperty(ref _ctaText, value);
+    }
+
+    public bool HasCta => !string.IsNullOrEmpty(_ctaText);
 
     public RelayCommand SendCommand { get; }
     public RelayCommand CancelCommand { get; }
@@ -281,6 +291,7 @@ public class MainViewModel : ViewModelBase
         _cliService.OnCompleted += HandleCompleted;
         _cliService.OnError += HandleError;
         _cliService.OnAskUserQuestion += HandleAskUserQuestion;
+        _cliService.OnExitPlanMode += HandleExitPlanMode;
         _cliService.OnFileChanged += HandleFileChanged;
 
         // Initialize recent folders from settings
@@ -289,6 +300,7 @@ public class MainViewModel : ViewModelBase
 
         ShowWelcome = string.IsNullOrEmpty(settings.WorkingDirectory);
         ProjectPath = settings.WorkingDirectory ?? "";
+        UpdateCta(ShowWelcome ? CtaState.Welcome : CtaState.Ready);
 
         // Restore session and git status if project was already set
         if (!string.IsNullOrEmpty(settings.WorkingDirectory))
@@ -364,6 +376,7 @@ public class MainViewModel : ViewModelBase
             var resumeTime = saved.CreatedAt.ToString("HH:mm");
             Messages.Add(new MessageViewModel(MessageRole.System,
                 $"Project loaded: {folderName}\nResumed session from {resumeTime}. Type your message to continue."));
+            UpdateCta(CtaState.WaitingForUser);
         }
         else
         {
@@ -406,6 +419,7 @@ public class MainViewModel : ViewModelBase
         InputText = string.Empty;
         IsProcessing = true;
         StatusText = "Processing...";
+        UpdateCta(CtaState.Processing);
 
         // Auto-inject system instruction and context snapshot on first message of a new session
         var finalPrompt = text;
@@ -518,6 +532,7 @@ public class MainViewModel : ViewModelBase
             _currentAssistantMessage = null;
             IsProcessing = false;
             StatusText = "Ready";
+            UpdateCta(CtaState.WaitingForUser);
 
             if (!string.IsNullOrEmpty(result.Model))
                 ModelName = result.Model;
@@ -619,8 +634,31 @@ public class MainViewModel : ViewModelBase
                         Messages.Add(new MessageViewModel(MessageRole.System, $"Claude asked: {question}"));
                     }
                 }
+
+                UpdateCta(CtaState.AnswerQuestion);
             }
             catch (JsonException) { }
+        });
+    }
+
+    private void HandleExitPlanMode()
+    {
+        Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            var questionMsg = new MessageViewModel(MessageRole.System, "Exit plan mode and start implementation?")
+            {
+                QuestionDisplay = new QuestionDisplayModel
+                {
+                    QuestionText = "Exit plan mode and start implementation?",
+                    Options =
+                    [
+                        new QuestionOption { Label = "Yes, go ahead", Description = "Approve the plan and start implementation" },
+                        new QuestionOption { Label = "No, revise the plan", Description = "Stay in plan mode and revise" }
+                    ]
+                }
+            };
+            Messages.Add(questionMsg);
+            UpdateCta(CtaState.ConfirmOperation);
         });
     }
 
@@ -648,6 +686,7 @@ public class MainViewModel : ViewModelBase
             _currentAssistantMessage = null;
             IsProcessing = false;
             StatusText = "Error";
+            UpdateCta(CtaState.WaitingForUser);
 
             _notificationService.NotifyIfInactive();
         });
@@ -681,6 +720,7 @@ public class MainViewModel : ViewModelBase
         _cliService.Cancel();
         IsProcessing = false;
         StatusText = "Cancelled";
+        UpdateCta(CtaState.WaitingForUser);
 
         if (_currentAssistantMessage is not null)
         {
@@ -717,6 +757,8 @@ public class MainViewModel : ViewModelBase
         {
             _settingsService.Save(_settings);
         }
+
+        UpdateCta(CtaState.Ready);
     }
 
     public string? WorkingDirectory => _cliService.WorkingDirectory;
@@ -822,6 +864,7 @@ public class MainViewModel : ViewModelBase
 
         Messages.Add(new MessageViewModel(MessageRole.System,
             $"Loaded chat from history. {(entry.SessionId is not null ? "Session restored — you can continue." : "No session to restore.")}"));
+        UpdateCta(CtaState.WaitingForUser);
     }
 
     public void AddAttachment(FileAttachment attachment)
@@ -897,4 +940,30 @@ public class MainViewModel : ViewModelBase
 
         previewWindow.ShowDialog();
     }
+
+    private void UpdateCta(CtaState state)
+    {
+        _ctaState = state;
+        CtaText = state switch
+        {
+            CtaState.Welcome => "",
+            CtaState.Ready => "Start a conversation with Claude",
+            CtaState.Processing => "",
+            CtaState.WaitingForUser => "Claude is waiting for your response",
+            CtaState.AnswerQuestion => "Answer the question above",
+            CtaState.ConfirmOperation => "Confirm the operation above",
+            _ => ""
+        };
+        OnPropertyChanged(nameof(HasCta));
+    }
+}
+
+internal enum CtaState
+{
+    Welcome,
+    Ready,
+    Processing,
+    WaitingForUser,
+    AnswerQuestion,
+    ConfirmOperation
 }

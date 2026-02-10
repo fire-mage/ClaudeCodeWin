@@ -29,6 +29,7 @@
             <RowDefinition Height="*"/>        <!-- Chat -->
             <RowDefinition Height="Auto"/>     <!-- Message queue -->
             <RowDefinition Height="Auto"/>     <!-- Attachments -->
+            <RowDefinition Height="Auto"/>     <!-- CTA hint -->
             <RowDefinition Height="Auto"/>     <!-- Input -->
             <RowDefinition Height="Auto"/>     <!-- Changed files -->
             <RowDefinition Height="Auto"/>     <!-- Status bar -->
@@ -509,8 +510,20 @@
             </ItemsControl>
         </Border>
 
+        <!-- CTA hint -->
+        <Border Grid.Row="4"
+                Padding="12,6"
+                Visibility="{Binding HasCta, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="{Binding CtaText}"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Foreground="{StaticResource PrimaryBrush}"
+                       HorizontalAlignment="Center"
+                       Opacity="0.85"/>
+        </Border>
+
         <!-- Input area -->
-        <Grid Grid.Row="4" Margin="8">
+        <Grid Grid.Row="5" Margin="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -612,7 +625,7 @@
         </Grid>
 
         <!-- Changed files indicator -->
-        <Border Grid.Row="5"
+        <Border Grid.Row="6"
                 Background="{StaticResource SurfaceBrush}"
                 Padding="8,3"
                 Visibility="{Binding HasChangedFiles, Converter={StaticResource BoolToVis}}"
@@ -657,7 +670,7 @@
         </Border>
 
         <!-- Status bar -->
-        <Border Grid.Row="6" Style="{StaticResource StatusBarStyle}">
+        <Border Grid.Row="7" Style="{StaticResource StatusBarStyle}">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>

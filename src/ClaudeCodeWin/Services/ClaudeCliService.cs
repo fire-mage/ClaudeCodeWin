@@ -37,6 +37,7 @@ public class ClaudeCliService
     public event Action<ResultData>? OnCompleted;
     public event Action<string>? OnError;
     public event Action<string>? OnAskUserQuestion; // raw JSON input of AskUserQuestion tool
+    public event Action? OnExitPlanMode; // ExitPlanMode tool requires user confirmation
     public event Action<string>? OnFileChanged; // filePath from Write/Edit/NotebookEdit tools
     public event Action<string, string, List<string>>? OnSessionStarted; // sessionId, model, tools
 
@@ -550,6 +551,11 @@ public class ClaudeCliService
         if (_currentToolName == "AskUserQuestion" && _toolInputBuffer.Length > 0)
         {
             OnAskUserQuestion?.Invoke(_toolInputBuffer.ToString());
+        }
+
+        if (_currentToolName == "ExitPlanMode")
+        {
+            OnExitPlanMode?.Invoke();
         }
 
         // Detect file changes from Write/Edit/NotebookEdit tools
