@@ -127,6 +127,12 @@ public class ToolUseViewModel : ViewModelBase
     public string ResultPreview =>
         _resultContent.Length > 200 ? _resultContent[..200] + "..." : _resultContent;
 
+    /// <summary>
+    /// Mini-diff lines for Edit tool (old_string → new_string).
+    /// </summary>
+    public List<EditDiffLine> EditDiffLines { get; private set; } = [];
+    public bool HasEditDiff => EditDiffLines.Count > 0;
+
     public bool IsExpanded
     {
         get => _isExpanded;
@@ -158,6 +164,54 @@ public class ToolUseViewModel : ViewModelBase
         Input = completeInput;
         Summary = ParseToolSummary(ToolName, completeInput);
         IsComplete = true;
+        ParseEditDiff(completeInput);
+    }
+
+    private void ParseEditDiff(string inputJson)
+    {
+        if (ToolName != "Edit" || string.IsNullOrEmpty(inputJson))
+            return;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(inputJson);
+            var root = doc.RootElement;
+
+            var oldStr = root.TryGetProperty("old_string", out var os) ? os.GetString() ?? "" : "";
+            var newStr = root.TryGetProperty("new_string", out var ns) ? ns.GetString() ?? "" : "";
+
+            if (string.IsNullOrEmpty(oldStr) && string.IsNullOrEmpty(newStr))
+                return;
+
+            var lines = new List<EditDiffLine>();
+
+            // Show removed lines (old_string)
+            if (!string.IsNullOrEmpty(oldStr))
+            {
+                foreach (var line in oldStr.Split('\n'))
+                    lines.Add(new EditDiffLine(EditDiffLineType.Removed, line.TrimEnd('\r')));
+            }
+
+            // Show added lines (new_string)
+            if (!string.IsNullOrEmpty(newStr))
+            {
+                foreach (var line in newStr.Split('\n'))
+                    lines.Add(new EditDiffLine(EditDiffLineType.Added, line.TrimEnd('\r')));
+            }
+
+            // Limit to ~30 lines for display
+            if (lines.Count > 30)
+            {
+                var truncated = lines.Take(28).ToList();
+                truncated.Add(new EditDiffLine(EditDiffLineType.Info, $"... ({lines.Count - 28} more lines)"));
+                lines = truncated;
+            }
+
+            EditDiffLines = lines;
+            OnPropertyChanged(nameof(EditDiffLines));
+            OnPropertyChanged(nameof(HasEditDiff));
+        }
+        catch (JsonException) { }
     }
 
     public static string ParseToolSummary(string toolName, string inputJson)
@@ -248,4 +302,18 @@ public class QuestionOption
 {
     public string Label { get; set; } = "";
     public string Description { get; set; } = "";
+}
+
+public enum EditDiffLineType { Added, Removed, Info }
+
+public record EditDiffLine(EditDiffLineType Type, string Text)
+{
+    public string Prefix => Type switch
+    {
+        EditDiffLineType.Added => "+ ",
+        EditDiffLineType.Removed => "- ",
+        _ => "  "
+    };
+
+    public string DisplayText => Prefix + Text;
 }

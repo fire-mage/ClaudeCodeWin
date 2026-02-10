@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Media;
 using ClaudeCodeWin.Models;
+using ClaudeCodeWin.ViewModels;
 
 namespace ClaudeCodeWin.Converters;
 
@@ -46,6 +48,23 @@ public class RoleToMaxWidthConverter : IValueConverter
         return value is MessageRole role && role == MessageRole.User
             ? 500.0
             : double.PositiveInfinity;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+public class EditDiffLineTypeToBrushConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var key = value switch
+        {
+            EditDiffLineType.Added => "SuccessBrush",
+            EditDiffLineType.Removed => "ErrorBrush",
+            _ => "TextSecondaryBrush"
+        };
+        return Application.Current.FindResource(key);
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

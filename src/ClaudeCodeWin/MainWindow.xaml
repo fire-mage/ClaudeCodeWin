@@ -17,6 +17,7 @@
         <converters:RoleToAlignmentConverter x:Key="RoleToAlign"/>
         <converters:RoleToBubbleBrushConverter x:Key="RoleToBubble"/>
         <converters:RoleToMaxWidthConverter x:Key="RoleToMaxWidth"/>
+        <converters:EditDiffLineTypeToBrushConverter x:Key="DiffLineBrush"/>
     </Window.Resources>
 
     <Window.TaskbarItemInfo>
@@ -194,7 +195,35 @@
                                                                                       Command="{Binding ToggleExpandedCommand}"/>
                                                                     </StackPanel.InputBindings>
                                                                 </StackPanel>
-                                                                <!-- Expanded: show result preview -->
+                                                                <!-- Expanded: show edit diff if available -->
+                                                                <ItemsControl ItemsSource="{Binding EditDiffLines}"
+                                                                              Margin="16,3,0,2"
+                                                                              Visibility="{Binding HasEditDiff, Converter={StaticResource BoolToVis}}">
+                                                                    <ItemsControl.Style>
+                                                                        <Style TargetType="ItemsControl">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            <Style.Triggers>
+                                                                                <MultiDataTrigger>
+                                                                                    <MultiDataTrigger.Conditions>
+                                                                                        <Condition Binding="{Binding HasEditDiff}" Value="True"/>
+                                                                                        <Condition Binding="{Binding IsExpanded}" Value="True"/>
+                                                                                    </MultiDataTrigger.Conditions>
+                                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                                </MultiDataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </ItemsControl.Style>
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <TextBlock Text="{Binding DisplayText}"
+                                                                                       FontFamily="Cascadia Code,Consolas,Courier New"
+                                                                                       FontSize="11"
+                                                                                       Foreground="{Binding Type, Converter={StaticResource DiffLineBrush}}"
+                                                                                       Padding="0,0.5"/>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                                <!-- Expanded: show result preview (when no diff) -->
                                                                 <TextBox Text="{Binding ResultPreview, Mode=OneWay}"
                                                                          IsReadOnly="True"
                                                                          TextWrapping="Wrap"
@@ -208,8 +237,22 @@
                                                                          IsTabStop="False"
                                                                          MaxHeight="200"
                                                                          VerticalScrollBarVisibility="Auto"
-                                                                         Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}"
-                                                                         Margin="16,3,0,2"/>
+                                                                         Margin="16,3,0,2">
+                                                                    <TextBox.Style>
+                                                                        <Style TargetType="TextBox">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            <Style.Triggers>
+                                                                                <MultiDataTrigger>
+                                                                                    <MultiDataTrigger.Conditions>
+                                                                                        <Condition Binding="{Binding IsExpanded}" Value="True"/>
+                                                                                        <Condition Binding="{Binding HasEditDiff}" Value="False"/>
+                                                                                    </MultiDataTrigger.Conditions>
+                                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                                </MultiDataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBox.Style>
+                                                                </TextBox>
                                                             </StackPanel>
                                                         </Border>
                                                     </DataTemplate>
