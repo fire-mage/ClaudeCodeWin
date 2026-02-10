@@ -46,6 +46,12 @@ public class MessageViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Attachments sent with this message (screenshots, files).
+    /// </summary>
+    public List<FileAttachment> Attachments { get; set; } = [];
+    public bool HasAttachments => Attachments.Count > 0;
+
+    /// <summary>
     /// When non-null, this message shows a question with clickable option buttons.
     /// </summary>
     public QuestionDisplayModel? QuestionDisplay { get; set; }
@@ -164,7 +170,85 @@ public class ToolUseViewModel : ViewModelBase
         Input = completeInput;
         Summary = ParseToolSummary(ToolName, completeInput);
         IsComplete = true;
-        ParseEditDiff(completeInput);
+
+        if (ToolName == "Edit")
+            ParseEditDiff(completeInput);
+        else if (ToolName == "Write")
+            ParseWriteContent(completeInput);
+        else if (ToolName == "TodoWrite")
+            ParseTodoWrite(completeInput);
+    }
+
+    private void ParseWriteContent(string inputJson)
+    {
+        if (string.IsNullOrEmpty(inputJson))
+            return;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(inputJson);
+            var root = doc.RootElement;
+
+            var content = root.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
+            if (string.IsNullOrEmpty(content))
+                return;
+
+            var lines = new List<EditDiffLine>();
+            var contentLines = content.Split('\n');
+
+            foreach (var line in contentLines)
+                lines.Add(new EditDiffLine(EditDiffLineType.Info, line.TrimEnd('\r')));
+
+            if (lines.Count > 30)
+            {
+                var truncated = lines.Take(28).ToList();
+                truncated.Add(new EditDiffLine(EditDiffLineType.Info, $"... ({lines.Count - 28} more lines)"));
+                lines = truncated;
+            }
+
+            EditDiffLines = lines;
+            OnPropertyChanged(nameof(EditDiffLines));
+            OnPropertyChanged(nameof(HasEditDiff));
+        }
+        catch (JsonException) { }
+    }
+
+    private void ParseTodoWrite(string inputJson)
+    {
+        if (string.IsNullOrEmpty(inputJson))
+            return;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(inputJson);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("todos", out var todos) || todos.ValueKind != JsonValueKind.Array)
+                return;
+
+            var lines = new List<EditDiffLine>();
+            foreach (var todo in todos.EnumerateArray())
+            {
+                var status = todo.TryGetProperty("status", out var s) ? s.GetString() ?? "" : "";
+                var content = todo.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
+
+                var icon = status switch
+                {
+                    "completed" => "\u2705",    // green checkmark
+                    "in_progress" => "\u25B6",  // play
+                    _ => "\u2B1C"               // white square
+                };
+
+                lines.Add(new EditDiffLine(
+                    status == "completed" ? EditDiffLineType.Added : EditDiffLineType.Info,
+                    $"{icon} {content}"));
+            }
+
+            EditDiffLines = lines;
+            OnPropertyChanged(nameof(EditDiffLines));
+            OnPropertyChanged(nameof(HasEditDiff));
+        }
+        catch (JsonException) { }
     }
 
     private void ParseEditDiff(string inputJson)
@@ -237,6 +321,7 @@ public class ToolUseViewModel : ViewModelBase
                 "WebSearch" => ExtractString(root, "query"),
                 "WebFetch" => ExtractString(root, "url"),
                 "AskUserQuestion" => FormatAskQuestion(root),
+                "TodoWrite" => FormatTodoSummary(root),
                 _ => ""
             };
         }
@@ -270,6 +355,24 @@ public class ToolUseViewModel : ViewModelBase
     {
         var cmd = ExtractString(root, "command");
         return cmd.Length > 80 ? cmd[..80] + "..." : cmd;
+    }
+
+    private static string FormatTodoSummary(JsonElement root)
+    {
+        if (!root.TryGetProperty("todos", out var todos) || todos.ValueKind != JsonValueKind.Array)
+            return "";
+
+        int total = 0, done = 0, inProgress = 0;
+        foreach (var todo in todos.EnumerateArray())
+        {
+            total++;
+            var status = todo.TryGetProperty("status", out var s) ? s.GetString() : "";
+            if (status == "completed") done++;
+            else if (status == "in_progress") inProgress++;
+        }
+
+        if (total == 0) return "";
+        return $"{done}/{total} done" + (inProgress > 0 ? $", {inProgress} active" : "");
     }
 
     private static string FormatAskQuestion(JsonElement root)

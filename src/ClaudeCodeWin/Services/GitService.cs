@@ -4,21 +4,27 @@ namespace ClaudeCodeWin.Services;
 
 public class GitService
 {
-    public (string? Branch, int DirtyCount) GetStatus(string? workingDir)
+    public (string? Branch, int DirtyCount, int UnpushedCount) GetStatus(string? workingDir)
     {
         if (string.IsNullOrEmpty(workingDir))
-            return (null, 0);
+            return (null, 0, 0);
 
         var branch = RunGit("rev-parse --abbrev-ref HEAD", workingDir);
         if (branch is null)
-            return (null, 0);
+            return (null, 0, 0);
 
         var porcelain = RunGit("status --porcelain", workingDir);
         var dirtyCount = string.IsNullOrEmpty(porcelain)
             ? 0
             : porcelain.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
 
-        return (branch.Trim(), dirtyCount);
+        // Count commits ahead of remote (unpushed)
+        var unpushedCount = 0;
+        var ahead = RunGit($"rev-list @{{u}}..HEAD --count", workingDir);
+        if (ahead is not null && int.TryParse(ahead.Trim(), out var count))
+            unpushedCount = count;
+
+        return (branch.Trim(), dirtyCount, unpushedCount);
     }
 
     public string? RunGit(string arguments, string? workingDir)

@@ -70,3 +70,21 @@ public class EditDiffLineTypeToBrushConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
+
+public class GitStatusToBrushConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var text = value as string ?? "";
+        var key = text switch
+        {
+            _ when text.Contains("uncommitted") || text.Contains("unpushed") => "WarningBrush",
+            _ when text.Contains("clean") => "SuccessBrush",
+            _ => "TextSecondaryBrush" // "no git" or empty
+        };
+        return Application.Current.FindResource(key);
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}

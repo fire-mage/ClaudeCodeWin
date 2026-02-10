@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 
 namespace ClaudeCodeWin.Services;
 
@@ -109,6 +110,94 @@ public class ClaudeCodeDependencyService
         if (File.Exists(NativePath))
             return NativePath;
         return null; // Will use "claude" from PATH
+    }
+
+    private static readonly string CredentialsPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".claude", ".credentials.json");
+
+    /// <summary>
+    /// Check if user is authenticated (has valid OAuth token).
+    /// </summary>
+    public bool IsAuthenticated()
+    {
+        try
+        {
+            if (!File.Exists(CredentialsPath))
+                return false;
+
+            var json = File.ReadAllText(CredentialsPath);
+            using var doc = JsonDocument.Parse(json);
+
+            if (doc.RootElement.TryGetProperty("claudeAiOauth", out var oauth)
+                && oauth.TryGetProperty("accessToken", out var token)
+                && !string.IsNullOrEmpty(token.GetString()))
+            {
+                return true;
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    /// <summary>
+    /// Launch claude CLI in a visible terminal for interactive login.
+    /// The CLI will open a browser for OAuth authentication.
+    /// Returns when the terminal process exits.
+    /// </summary>
+    public async Task<bool> LaunchLoginAsync(string? claudeExePath = null)
+    {
+        var exe = claudeExePath ?? (File.Exists(NativePath) ? NativePath : "claude");
+
+        try
+        {
+            // Launch claude in a visible cmd window — it will show TUI and open browser for OAuth
+            var psi = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c \"\"{exe}\" & pause\"",
+                UseShellExecute = true,
+                CreateNoWindow = false,
+            };
+
+            using var process = Process.Start(psi);
+            if (process is null) return false;
+
+            await process.WaitForExitAsync();
+
+            return IsAuthenticated();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Check if Git for Windows is installed (required by Claude Code CLI on native Windows).
+    /// </summary>
+    public bool IsGitInstalled()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = "--version",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            using var process = Process.Start(psi);
+            if (process is null) return false;
+            process.WaitForExit(5000);
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static async Task<string?> TryGetVersionAsync(string exePath)

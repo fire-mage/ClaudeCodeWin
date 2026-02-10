@@ -18,6 +18,7 @@
         <converters:RoleToBubbleBrushConverter x:Key="RoleToBubble"/>
         <converters:RoleToMaxWidthConverter x:Key="RoleToMaxWidth"/>
         <converters:EditDiffLineTypeToBrushConverter x:Key="DiffLineBrush"/>
+        <converters:GitStatusToBrushConverter x:Key="GitStatusBrush"/>
     </Window.Resources>
 
     <Window.TaskbarItemInfo>
@@ -139,6 +140,43 @@
                                             </ContextMenu>
                                         </TextBox.ContextMenu>
                                     </TextBox>
+
+                                    <!-- Attachments (screenshots, files sent with this message) -->
+                                    <ItemsControl ItemsSource="{Binding Attachments}"
+                                                  Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVis}}"
+                                                  Margin="0,6,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{StaticResource SurfaceLightBrush}"
+                                                        CornerRadius="4" Padding="6,4" Margin="0,0,0,3"
+                                                        Cursor="Hand"
+                                                        MouseLeftButtonUp="AttachmentPreview_Click">
+                                                    <StackPanel>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding FileTypeIcon}" FontSize="12"
+                                                                       Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                                            <TextBlock Text="{Binding FileName}" FontSize="11"
+                                                                       Foreground="{StaticResource PrimaryBrush}"
+                                                                       VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <!-- Image thumbnail -->
+                                                        <Image MaxHeight="200" MaxWidth="400"
+                                                               Stretch="Uniform" StretchDirection="DownOnly"
+                                                               Margin="0,4,0,0"
+                                                               HorizontalAlignment="Left"
+                                                               Tag="{Binding FilePath}"
+                                                               Loaded="AttachmentImage_Loaded">
+                                                            <Image.Style>
+                                                                <Style TargetType="Image">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </Style>
+                                                            </Image.Style>
+                                                        </Image>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
 
                                     <!-- Tool uses — compact summary with expandable details -->
                                     <Border Background="{StaticResource ToolBubbleBrush}"
@@ -664,6 +702,33 @@
                         Style="{StaticResource CancelButton}"
                         Command="{Binding CancelCommand}"
                         Visibility="{Binding IsProcessing, Converter={StaticResource BoolToVis}}"/>
+                <!-- Quick prompts dropdown -->
+                <Border x:Name="QuickPromptButton"
+                        Cursor="Hand" Background="Transparent"
+                        Margin="0,4,0,0"
+                        Visibility="{Binding HasDialogHistory, Converter={StaticResource BoolToVis}}"
+                        MouseLeftButtonUp="QuickPrompt_Click">
+                    <TextBlock Text="Quick &#x25BC;" FontSize="11"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               HorizontalAlignment="Center"
+                               Padding="4,2"/>
+                    <Border.ContextMenu>
+                        <ContextMenu x:Name="QuickPromptMenu">
+                            <MenuItem Header="Commit &amp; Push"
+                                      ToolTip="Ask Claude to commit changes and push to GitHub"
+                                      Click="QuickPromptItem_Click"
+                                      Tag="Please commit all current changes with a descriptive message and push to the remote repository."/>
+                            <MenuItem Header="Deploy to Test"
+                                      ToolTip="Ask Claude to deploy the project to test environment"
+                                      Click="QuickPromptItem_Click"
+                                      Tag="Please deploy this project to the test environment."/>
+                            <MenuItem Header="Deploy to Prod"
+                                      ToolTip="Ask Claude to deploy the project to production"
+                                      Click="QuickPromptItem_Click"
+                                      Tag="Please deploy this project to the production environment."/>
+                        </ContextMenu>
+                    </Border.ContextMenu>
+                </Border>
             </StackPanel>
         </Grid>
 
@@ -734,14 +799,16 @@
                            Opacity="0.7"
                            Margin="0,0,16,0"/>
                 <TextBlock Grid.Column="3" Text="{Binding GitStatusText}"
-                           FontSize="12" Foreground="{StaticResource AccentBrush}"
-                           VerticalAlignment="Center" Margin="0,0,16,0"/>
+                           FontSize="12"
+                           Foreground="{Binding GitStatusText, Converter={StaticResource GitStatusBrush}}"
+                           VerticalAlignment="Center" Margin="0,0,16,0"
+                           ToolTip="Git repository status. Commit your changes regularly for safe rollback."/>
                 <Border Grid.Column="4" VerticalAlignment="Center" Margin="0,0,16,0"
                         Cursor="Hand" Background="Transparent"
                         MouseLeftButtonUp="MemoryIndicator_Click"
-                        ToolTip="Click to open session menu">
+                        ToolTip="Usage limits from your Anthropic subscription.&#x0a;Session resets every 5 hours, weekly every 7 days.&#x0a;Click for session menu.">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding TokenUsageText}"
+                        <TextBlock Text="{Binding UsageText}"
                                    FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
                                    VerticalAlignment="Center"/>
                         <TextBlock Text=" &#x25BC;" FontSize="7"

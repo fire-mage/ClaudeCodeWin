@@ -417,6 +417,80 @@ public partial class MainWindow : Window
         }
     }
 
+    private void AttachmentImage_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Image img && img.Tag is string filePath)
+        {
+            try
+            {
+                var ext = Path.GetExtension(filePath);
+                var imageExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" };
+
+                if (!imageExts.Contains(ext) || !File.Exists(filePath))
+                    return;
+
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.UriSource = new Uri(filePath, UriKind.Absolute);
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.DecodePixelWidth = 400; // thumbnail
+                bitmap.EndInit();
+                bitmap.Freeze();
+
+                img.Source = bitmap;
+                img.Visibility = Visibility.Visible;
+            }
+            catch
+            {
+                // Can't load image — keep collapsed
+            }
+        }
+    }
+
+    private void AttachmentPreview_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is Models.FileAttachment att)
+        {
+            if (att.IsImage && File.Exists(att.FilePath))
+            {
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.UriSource = new Uri(att.FilePath, UriKind.Absolute);
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.EndInit();
+
+                var image = new System.Windows.Controls.Image
+                {
+                    Source = bitmap,
+                    Stretch = Stretch.Uniform,
+                    StretchDirection = StretchDirection.DownOnly
+                };
+
+                var previewWindow = new Window
+                {
+                    Title = att.FileName,
+                    Width = Math.Min(bitmap.PixelWidth + 40, 1200),
+                    Height = Math.Min(bitmap.PixelHeight + 60, 800),
+                    MinWidth = 300,
+                    MinHeight = 200,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Owner = this,
+                    Background = (Brush)FindResource("BackgroundBrush"),
+                    Content = new ScrollViewer
+                    {
+                        Content = image,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        Padding = new Thickness(8)
+                    }
+                };
+
+                previewWindow.ShowDialog();
+            }
+        }
+    }
+
     private void RebuildRecentProjectsMenu()
     {
         RecentProjectsMenu.Items.Clear();
@@ -491,6 +565,25 @@ public partial class MainWindow : Window
         if (historyWindow.ShowDialog() == true && historyWindow.SelectedEntry is not null)
         {
             ViewModel.LoadChatFromHistory(historyWindow.SelectedEntry);
+        }
+    }
+
+    private void QuickPrompt_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement element && element.ContextMenu is not null)
+        {
+            element.ContextMenu.PlacementTarget = element;
+            element.ContextMenu.IsOpen = true;
+            e.Handled = true;
+        }
+    }
+
+    private void QuickPromptItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem && menuItem.Tag is string prompt)
+        {
+            if (ViewModel.QuickPromptCommand.CanExecute(prompt))
+                ViewModel.QuickPromptCommand.Execute(prompt);
         }
     }
 

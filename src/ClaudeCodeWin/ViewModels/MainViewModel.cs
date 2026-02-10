@@ -53,10 +53,7 @@ public class MainViewModel : ViewModelBase
     private bool _isFirstDelta;
     private string _projectPath = "";
     private string _gitStatusText = "";
-    private string _tokenUsageText = "";
-    private long _sessionInputTokens;
-    private long _sessionOutputTokens;
-    private int _sessionTurnCount;
+    private string _usageText = "";
     private string? _currentChatId;
     private string _ctaText = "";
     private CtaState _ctaState = CtaState.Welcome;
@@ -114,10 +111,10 @@ public class MainViewModel : ViewModelBase
         set => SetProperty(ref _gitStatusText, value);
     }
 
-    public string TokenUsageText
+    public string UsageText
     {
-        get => _tokenUsageText;
-        set => SetProperty(ref _tokenUsageText, value);
+        get => _usageText;
+        set => SetProperty(ref _usageText, value);
     }
 
     public string CtaText
@@ -127,6 +124,8 @@ public class MainViewModel : ViewModelBase
     }
 
     public bool HasCta => !string.IsNullOrEmpty(_ctaText);
+
+    public bool HasDialogHistory => Messages.Count > 0;
 
     public RelayCommand SendCommand { get; }
     public RelayCommand CancelCommand { get; }
@@ -141,6 +140,7 @@ public class MainViewModel : ViewModelBase
     public RelayCommand ReturnQueuedToInputCommand { get; }
     public RelayCommand ViewChangedFileCommand { get; }
     public RelayCommand AnswerQuestionCommand { get; }
+    public RelayCommand QuickPromptCommand { get; }
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
@@ -230,8 +230,14 @@ public class MainViewModel : ViewModelBase
             if (p is string answer)
                 _ = SendDirectAsync(answer, null);
         });
+        QuickPromptCommand = new RelayCommand(p =>
+        {
+            if (p is string prompt)
+                _ = SendDirectAsync(prompt, null);
+        });
 
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
+        Messages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasDialogHistory));
         MessageQueue.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasQueuedMessages));
         ChangedFiles.CollectionChanged += (_, _) =>
         {
@@ -409,6 +415,8 @@ public class MainViewModel : ViewModelBase
     private async Task SendDirectAsync(string text, List<FileAttachment>? attachments)
     {
         var userMsg = new MessageViewModel(MessageRole.User, text);
+        if (attachments is not null)
+            userMsg.Attachments = [.. attachments];
         Messages.Add(userMsg);
 
         if (attachments is not null)
@@ -537,12 +545,6 @@ public class MainViewModel : ViewModelBase
             if (!string.IsNullOrEmpty(result.Model))
                 ModelName = result.Model;
 
-            // Accumulate token usage
-            _sessionInputTokens += result.InputTokens + result.CacheReadTokens + result.CacheCreationTokens;
-            _sessionOutputTokens += result.OutputTokens;
-            _sessionTurnCount++;
-            UpdateTokenUsageText();
-
             // Save session for persistence
             if (!string.IsNullOrEmpty(result.SessionId) && !string.IsNullOrEmpty(WorkingDirectory))
             {
@@ -566,25 +568,6 @@ public class MainViewModel : ViewModelBase
                 _ = SendDirectAsync(next.Text, null);
             }
         });
-    }
-
-    private void UpdateTokenUsageText()
-    {
-        var parts = new List<string>();
-        if (_sessionInputTokens > 0)
-            parts.Add($"In: {FormatTokenCount(_sessionInputTokens)}");
-        if (_sessionOutputTokens > 0)
-            parts.Add($"Out: {FormatTokenCount(_sessionOutputTokens)}");
-        if (_sessionTurnCount > 0)
-            parts.Add($"Turns: {_sessionTurnCount}");
-        TokenUsageText = parts.Count > 0 ? string.Join(" | ", parts) : "";
-    }
-
-    private static string FormatTokenCount(long count)
-    {
-        if (count >= 1_000_000) return $"{count / 1_000_000.0:F1}M";
-        if (count >= 1_000) return $"{count / 1_000.0:F1}K";
-        return count.ToString();
     }
 
     private void HandleAskUserQuestion(string rawJson)
@@ -645,20 +628,8 @@ public class MainViewModel : ViewModelBase
     {
         Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            var questionMsg = new MessageViewModel(MessageRole.System, "Exit plan mode and start implementation?")
-            {
-                QuestionDisplay = new QuestionDisplayModel
-                {
-                    QuestionText = "Exit plan mode and start implementation?",
-                    Options =
-                    [
-                        new QuestionOption { Label = "Yes, go ahead", Description = "Approve the plan and start implementation" },
-                        new QuestionOption { Label = "No, revise the plan", Description = "Stay in plan mode and revise" }
-                    ]
-                }
-            };
-            Messages.Add(questionMsg);
-            UpdateCta(CtaState.ConfirmOperation);
+            Messages.Add(new MessageViewModel(MessageRole.System, "Plan approved automatically. Starting implementation..."));
+            _ = SendDirectAsync("Yes, go ahead", null);
         });
     }
 
@@ -746,10 +717,6 @@ public class MainViewModel : ViewModelBase
         _cliService.ResetSession();
         ModelName = "";
         StatusText = "Ready";
-        _sessionInputTokens = 0;
-        _sessionOutputTokens = 0;
-        _sessionTurnCount = 0;
-        UpdateTokenUsageText();
 
         // Clear saved session for current project
         if (!string.IsNullOrEmpty(WorkingDirectory)
@@ -765,13 +732,25 @@ public class MainViewModel : ViewModelBase
 
     private void RefreshGitStatus()
     {
-        var (branch, dirtyCount) = _gitService.GetStatus(WorkingDirectory);
+        var (branch, dirtyCount, unpushedCount) = _gitService.GetStatus(WorkingDirectory);
         if (branch is null)
         {
-            GitStatusText = "";
+            GitStatusText = "no git";
             return;
         }
-        GitStatusText = dirtyCount > 0 ? $"{branch} | {dirtyCount} dirty" : branch;
+
+        var parts = new List<string> { branch };
+
+        if (dirtyCount > 0)
+            parts.Add($"{dirtyCount} uncommitted");
+
+        if (unpushedCount > 0)
+            parts.Add($"{unpushedCount} unpushed");
+
+        if (dirtyCount == 0 && unpushedCount == 0)
+            parts.Add("clean");
+
+        GitStatusText = string.Join(" | ", parts);
     }
 
     private void SaveChatHistory()
@@ -825,10 +804,6 @@ public class MainViewModel : ViewModelBase
 
         Messages.Clear();
         MessageQueue.Clear();
-        _sessionInputTokens = 0;
-        _sessionOutputTokens = 0;
-        _sessionTurnCount = 0;
-        UpdateTokenUsageText();
 
         _currentChatId = entry.Id;
 
@@ -948,7 +923,7 @@ public class MainViewModel : ViewModelBase
         {
             CtaState.Welcome => "",
             CtaState.Ready => "Start a conversation with Claude",
-            CtaState.Processing => "",
+            CtaState.Processing => "Claude is working. Send your message to queue it for when Claude finishes.",
             CtaState.WaitingForUser => "Claude is waiting for your response",
             CtaState.AnswerQuestion => "Answer the question above",
             CtaState.ConfirmOperation => "Confirm the operation above",
