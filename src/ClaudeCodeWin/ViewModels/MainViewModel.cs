@@ -103,8 +103,16 @@ public class MainViewModel : ViewModelBase
     public string ModelName
     {
         get => _modelName;
-        set => SetProperty(ref _modelName, value);
+        set
+        {
+            if (SetProperty(ref _modelName, value))
+                OnPropertyChanged(nameof(CanSwitchToOpus));
+        }
     }
+
+    public bool CanSwitchToOpus =>
+        !string.IsNullOrEmpty(_modelName)
+        && !_modelName.Contains("opus", StringComparison.OrdinalIgnoreCase);
 
     public string ProjectPath
     {
@@ -148,6 +156,7 @@ public class MainViewModel : ViewModelBase
     public RelayCommand ViewChangedFileCommand { get; }
     public RelayCommand AnswerQuestionCommand { get; }
     public RelayCommand QuickPromptCommand { get; }
+    public RelayCommand SwitchToOpusCommand { get; }
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
@@ -242,6 +251,7 @@ public class MainViewModel : ViewModelBase
             if (p is string prompt)
                 _ = SendDirectAsync(prompt, null);
         });
+        SwitchToOpusCommand = new RelayCommand(SwitchToOpus);
 
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
         Messages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasDialogHistory));
@@ -739,6 +749,13 @@ public class MainViewModel : ViewModelBase
         UpdateCta(CtaState.Ready);
     }
 
+    private void SwitchToOpus()
+    {
+        _cliService.ModelOverride = "opus";
+        StartNewSession();
+        Messages.Add(new MessageViewModel(MessageRole.System, "Switching to Opus. Next message will use claude-opus."));
+    }
+
     public string? WorkingDirectory => _cliService.WorkingDirectory;
 
     private void RefreshGitStatus()
@@ -934,7 +951,7 @@ public class MainViewModel : ViewModelBase
         {
             CtaState.Welcome => "",
             CtaState.Ready => "Start a conversation with Claude",
-            CtaState.Processing => "Claude is working. Send your message to queue it for when Claude finishes.",
+            CtaState.Processing => "Claude is working. Send a message to queue it, or press Escape to cancel.",
             CtaState.WaitingForUser => "Claude is waiting for your response",
             CtaState.AnswerQuestion => "Answer the question above",
             CtaState.ConfirmOperation => "Confirm the operation above",

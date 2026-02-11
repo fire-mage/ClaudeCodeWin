@@ -444,6 +444,19 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ModelIndicator_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement element
+            && element.ContextMenu is not null
+            && DataContext is ClaudeCodeWin.ViewModels.MainViewModel vm
+            && vm.CanSwitchToOpus)
+        {
+            element.ContextMenu.PlacementTarget = element;
+            element.ContextMenu.IsOpen = true;
+            e.Handled = true;
+        }
+    }
+
     private void AttachmentImage_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is System.Windows.Controls.Image img && img.Tag is string filePath)

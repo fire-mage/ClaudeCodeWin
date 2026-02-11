@@ -43,6 +43,7 @@ public class ClaudeCliService
 
     public string ClaudeExePath { get; set; } = "claude";
     public string? WorkingDirectory { get; set; }
+    public string? ModelOverride { get; set; }
 
     /// <summary>
     /// Start a new persistent CLI process for the session.
@@ -198,6 +199,9 @@ public class ClaudeCliService
     private string BuildArguments()
     {
         var sb = new StringBuilder("-p --output-format stream-json --input-format stream-json --verbose --include-partial-messages --dangerously-skip-permissions");
+
+        if (!string.IsNullOrEmpty(ModelOverride))
+            sb.Append($" --model \"{ModelOverride}\"");
 
         if (!string.IsNullOrEmpty(_sessionId))
             sb.Append($" --resume \"{_sessionId}\"");

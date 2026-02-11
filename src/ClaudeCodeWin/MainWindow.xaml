@@ -764,10 +764,6 @@
                         Command="{Binding SendCommand}"
                         IsEnabled="{Binding IsUpdating, Converter={StaticResource InverseBool}}"
                         Margin="0,0,0,4"/>
-                <Button Content="Cancel"
-                        Style="{StaticResource CancelButton}"
-                        Command="{Binding CancelCommand}"
-                        Visibility="{Binding IsProcessing, Converter={StaticResource BoolToVis}}"/>
                 <!-- Quick prompts dropdown -->
                 <Border x:Name="QuickPromptButton"
                         Cursor="Hand" Background="Transparent"
@@ -895,9 +891,19 @@
                         </ContextMenu>
                     </Border.ContextMenu>
                 </Border>
-                <TextBlock Grid.Column="5" Text="{Binding ModelName}"
-                           FontSize="12" Foreground="{StaticResource PrimaryBrush}"
-                           VerticalAlignment="Center"/>
+                <Border Grid.Column="5" VerticalAlignment="Center"
+                        Background="Transparent"
+                        MouseLeftButtonUp="ModelIndicator_Click">
+                    <TextBlock Text="{Binding ModelName}"
+                               FontSize="12" Foreground="{StaticResource PrimaryBrush}"/>
+                    <Border.ContextMenu>
+                        <ContextMenu x:Name="ModelContextMenu">
+                            <MenuItem Header="Switch to Opus (new session)"
+                                      Command="{Binding SwitchToOpusCommand}"
+                                      ToolTip="Start a new session with claude-opus model."/>
+                        </ContextMenu>
+                    </Border.ContextMenu>
+                </Border>
             </Grid>
         </Border>
     </Grid>
