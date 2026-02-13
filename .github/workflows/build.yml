@@ -86,6 +86,7 @@ jobs:
         with:
           name: ClaudeCodeWin-${{ matrix.arch }}
           path: publish/ClaudeCodeWin-*
+          retention-days: 1
 
   release:
     needs: [version, build]
