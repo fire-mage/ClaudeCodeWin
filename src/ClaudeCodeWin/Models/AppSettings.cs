@@ -15,4 +15,7 @@ public class AppSettings
 
     // Session persistence per project
     public Dictionary<string, SavedSession> SavedSessions { get; set; } = [];
+
+    // Auto-confirm ExitPlanMode (plan approval without user interaction)
+    public bool AutoConfirmPlanMode { get; set; } = true;
 }

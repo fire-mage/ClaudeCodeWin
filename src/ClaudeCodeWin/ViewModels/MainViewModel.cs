@@ -59,6 +59,14 @@ public class MainViewModel : ViewModelBase
     private CtaState _ctaState = CtaState.Welcome;
     private bool _isUpdating;
 
+    // ExitPlanMode auto-confirm state
+    private bool _pendingExitPlanMode;
+    private int _exitPlanModeAutoCount;
+
+    // AskUserQuestion multi-answer state
+    private int _pendingQuestionCount;
+    private readonly List<string> _collectedAnswers = [];
+
     public ObservableCollection<MessageViewModel> Messages { get; } = [];
     public ObservableCollection<FileAttachment> Attachments { get; } = [];
     public ObservableCollection<string> RecentFolders { get; } = [];
@@ -139,6 +147,17 @@ public class MainViewModel : ViewModelBase
     }
 
     public bool HasCta => !string.IsNullOrEmpty(_ctaText);
+
+    public bool AutoConfirmEnabled
+    {
+        get => _settings.AutoConfirmPlanMode;
+        set
+        {
+            _settings.AutoConfirmPlanMode = value;
+            _settingsService.Save(_settings);
+            OnPropertyChanged();
+        }
+    }
 
     public bool HasDialogHistory => Messages.Any(m => m.Role == MessageRole.Assistant);
 
@@ -244,7 +263,27 @@ public class MainViewModel : ViewModelBase
         AnswerQuestionCommand = new RelayCommand(p =>
         {
             if (p is string answer)
-                _ = SendDirectAsync(answer, null);
+            {
+                if (_pendingQuestionCount <= 1)
+                {
+                    // Single question — send immediately
+                    _pendingQuestionCount = 0;
+                    _collectedAnswers.Clear();
+                    _ = SendDirectAsync(answer, null);
+                }
+                else
+                {
+                    // Multiple questions — collect answers
+                    _collectedAnswers.Add(answer);
+                    if (_collectedAnswers.Count >= _pendingQuestionCount)
+                    {
+                        var combined = string.Join("\n", _collectedAnswers);
+                        _pendingQuestionCount = 0;
+                        _collectedAnswers.Clear();
+                        _ = SendDirectAsync(combined, null);
+                    }
+                }
+            }
         });
         QuickPromptCommand = new RelayCommand(p =>
         {
@@ -430,6 +469,9 @@ public class MainViewModel : ViewModelBase
             return;
         }
 
+        // User manually typed — reset ExitPlanMode loop counter
+        _exitPlanModeAutoCount = 0;
+
         await SendDirectAsync(text, Attachments.Count > 0 ? [.. Attachments] : null);
     }
 
@@ -588,6 +630,17 @@ public class MainViewModel : ViewModelBase
                 MessageQueue.RemoveAt(0);
                 _ = SendDirectAsync(next.Text, null);
             }
+            // Auto-confirm ExitPlanMode AFTER result is fully processed
+            else if (_pendingExitPlanMode)
+            {
+                _pendingExitPlanMode = false;
+                _ = SendDirectAsync("Yes, go ahead", null);
+            }
+            else
+            {
+                // Normal turn completion — reset ExitPlanMode loop counter
+                _exitPlanModeAutoCount = 0;
+            }
         });
     }
 
@@ -603,6 +656,9 @@ public class MainViewModel : ViewModelBase
                 if (!root.TryGetProperty("questions", out var questionsArr)
                     || questionsArr.ValueKind != JsonValueKind.Array)
                     return;
+
+                _pendingQuestionCount = questionsArr.GetArrayLength();
+                _collectedAnswers.Clear();
 
                 foreach (var q in questionsArr.EnumerateArray())
                 {
@@ -649,8 +705,40 @@ public class MainViewModel : ViewModelBase
     {
         Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            Messages.Add(new MessageViewModel(MessageRole.System, "Plan approved automatically. Starting implementation..."));
-            _ = SendDirectAsync("Yes, go ahead", null);
+            _exitPlanModeAutoCount++;
+
+            if (AutoConfirmEnabled && _exitPlanModeAutoCount <= 2)
+            {
+                // Defer auto-send until HandleCompleted runs (wait for result event)
+                _pendingExitPlanMode = true;
+                Messages.Add(new MessageViewModel(MessageRole.System, "Plan approved automatically. Waiting for turn to complete..."));
+            }
+            else
+            {
+                // Too many consecutive ExitPlanMode calls — loop detected, switch to manual
+                if (AutoConfirmEnabled && _exitPlanModeAutoCount > 2)
+                {
+                    AutoConfirmEnabled = false;
+                    Messages.Add(new MessageViewModel(MessageRole.System,
+                        "Auto-confirm disabled (loop detected). Please confirm manually."));
+                }
+
+                // Show confirmation buttons to user
+                var questionMsg = new MessageViewModel(MessageRole.System, "Exit plan mode?")
+                {
+                    QuestionDisplay = new QuestionDisplayModel
+                    {
+                        QuestionText = "Claude wants to exit plan mode and start implementing. Approve?",
+                        Options =
+                        [
+                            new QuestionOption { Label = "Yes, go ahead", Description = "Approve plan and start implementation" },
+                            new QuestionOption { Label = "No, keep planning", Description = "Stay in plan mode" }
+                        ]
+                    }
+                };
+                Messages.Add(questionMsg);
+                UpdateCta(CtaState.AnswerQuestion);
+            }
         });
     }
 

@@ -52,6 +52,10 @@
                     <MenuItem Header="Recent _Projects" x:Name="RecentProjectsMenu"
                               ToolTip="Recently opened project folders. Click to switch, use X to remove."/>
                     <Separator/>
+                    <MenuItem Header="_Auto-confirm Plan Mode" IsCheckable="True"
+                              IsChecked="{Binding AutoConfirmEnabled}"
+                              ToolTip="When enabled, automatically approves Claude's plan and starts implementation.&#x0a;When disabled, shows confirmation buttons for manual approval.&#x0a;Auto-disables if a loop is detected."/>
+                    <Separator/>
                     <MenuItem Header="E_xit" Click="MenuItem_Exit_Click"
                               ToolTip="Close the application. Window position and size are saved automatically."/>
                 </MenuItem>
