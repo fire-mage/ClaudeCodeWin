@@ -6,6 +6,7 @@ public class ContextSnapshotService
 {
     private readonly Dictionary<string, string> _cache = new();
     private readonly object _lock = new();
+    private Task? _generationTask;
 
     /// <summary>
     /// Returns cached snapshot markdown or null if not yet generated.
@@ -43,13 +44,30 @@ public class ContextSnapshotService
     }
 
     /// <summary>
-    /// Generates snapshots for multiple project paths (blocking).
-    /// Call from Task.Run.
+    /// Starts background generation for multiple projects and tracks the task.
     /// </summary>
-    public void GenerateForProjects(IEnumerable<string> projectPaths)
+    public void StartGenerationInBackground(IEnumerable<string> projectPaths)
     {
-        foreach (var path in projectPaths)
-            Generate(path);
+        var paths = projectPaths.ToList();
+        _generationTask = Task.Run(() =>
+        {
+            foreach (var path in paths)
+                Generate(path);
+        });
+    }
+
+    /// <summary>
+    /// Waits for background generation to complete (with timeout).
+    /// Returns true if completed, false if timed out.
+    /// </summary>
+    public async Task<bool> WaitForGenerationAsync(int timeoutMs = 10000)
+    {
+        var task = _generationTask;
+        if (task == null || task.IsCompleted)
+            return true;
+
+        var completed = await Task.WhenAny(task, Task.Delay(timeoutMs));
+        return completed == task;
     }
 
     /// <summary>

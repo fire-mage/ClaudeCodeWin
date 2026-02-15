@@ -386,7 +386,7 @@ public class MainViewModel : ViewModelBase
             if (_settings.ContextSnapshotEnabled)
             {
                 var recentPaths = _projectRegistry.GetMostRecentProjects(5).Select(p => p.Path).ToList();
-                _ = Task.Run(() => _contextSnapshotService.GenerateForProjects(recentPaths));
+                _contextSnapshotService.StartGenerationInBackground(recentPaths);
             }
 
             if (settings.SavedSessions.TryGetValue(settings.WorkingDirectory, out var saved)
@@ -445,7 +445,7 @@ public class MainViewModel : ViewModelBase
 
         // Generate context snapshot in background
         if (_settings.ContextSnapshotEnabled)
-            _ = Task.Run(() => _contextSnapshotService.Generate(folder));
+            _contextSnapshotService.StartGenerationInBackground([folder]);
 
         // Try to restore saved session, otherwise start fresh
         if (_settings.SavedSessions.TryGetValue(folder, out var saved)
@@ -522,6 +522,9 @@ public class MainViewModel : ViewModelBase
 
             if (_settings.ContextSnapshotEnabled)
             {
+                // Wait for background snapshot generation (max 10s)
+                await _contextSnapshotService.WaitForGenerationAsync(10000);
+
                 // Inject snapshots for recent projects from registry
                 var recentPaths = _projectRegistry.GetMostRecentProjects(5).Select(p => p.Path).ToList();
                 var (combined, snapshotCount) = _contextSnapshotService.GetCombinedSnapshot(recentPaths);
