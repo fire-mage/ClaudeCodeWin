@@ -39,6 +39,7 @@ public class ClaudeCliService
     public event Action<string>? OnAskUserQuestion; // raw JSON input of AskUserQuestion tool
     public event Action? OnExitPlanMode; // ExitPlanMode tool requires user confirmation
     public event Action<string>? OnFileChanged; // filePath from Write/Edit/NotebookEdit tools
+    public event Action<string, string, string, JsonElement>? OnControlRequest; // requestId, toolName, toolUseId, input
     public event Action<string, string, List<string>>? OnSessionStarted; // sessionId, model, tools
 
     public string ClaudeExePath { get; set; } = "claude";
@@ -145,6 +146,54 @@ public class ClaudeCliService
         }
     }
 
+    /// <summary>
+    /// Send a control_response to the CLI process (for permission prompts like ExitPlanMode, AskUserQuestion).
+    /// </summary>
+    public void SendControlResponse(string requestId, string behavior,
+        string? updatedInputJson = null, string? toolUseId = null, string? errorMessage = null)
+    {
+        lock (_processLock)
+        {
+            if (_process is null || _process.HasExited) return;
+
+            try
+            {
+                string json;
+                if (behavior == "allow")
+                {
+                    var updatedInput = updatedInputJson ?? "{}";
+                    var rid = EscapeJson(requestId);
+                    var tuid = EscapeJson(toolUseId ?? "");
+
+                    json = "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\","
+                         + "\"request_id\":\"" + rid + "\","
+                         + "\"response\":{\"behavior\":\"allow\","
+                         + "\"updatedInput\":" + updatedInput + ","
+                         + "\"toolUseID\":\"" + tuid + "\"}}}";
+                }
+                else
+                {
+                    var rid = EscapeJson(requestId);
+                    var err = EscapeJson(errorMessage ?? "User denied");
+
+                    json = "{\"type\":\"control_response\",\"response\":{\"subtype\":\"error\","
+                         + "\"request_id\":\"" + rid + "\","
+                         + "\"error\":\"" + err + "\"}}";
+                }
+
+                _process.StandardInput.WriteLine(json);
+                _process.StandardInput.Flush();
+            }
+            catch (Exception ex)
+            {
+                OnError?.Invoke($"Failed to send control response: {ex.Message}");
+            }
+        }
+    }
+
+    private static string EscapeJson(string s) =>
+        s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+
     public void Cancel()
     {
         StopSession();
@@ -198,7 +247,7 @@ public class ClaudeCliService
 
     private string BuildArguments()
     {
-        var sb = new StringBuilder("-p --output-format stream-json --input-format stream-json --verbose --include-partial-messages --dangerously-skip-permissions");
+        var sb = new StringBuilder("-p --output-format stream-json --input-format stream-json --verbose --include-partial-messages --dangerously-skip-permissions --permission-prompt-tool stdio");
 
         if (!string.IsNullOrEmpty(ModelOverride))
             sb.Append($" --model \"{ModelOverride}\"");
@@ -333,6 +382,10 @@ public class ClaudeCliService
 
                 case "result":
                     HandleResult(root);
+                    break;
+
+                case "control_request":
+                    HandleControlRequest(root);
                     break;
 
                 // Legacy top-level events (fallback in case CLI sends them)
@@ -616,6 +669,25 @@ public class ClaudeCliService
 
             OnFileChanged?.Invoke(filePath);
         }
+    }
+
+    private void HandleControlRequest(JsonElement root)
+    {
+        if (!root.TryGetProperty("request_id", out var ridProp)) return;
+        var requestId = ridProp.GetString() ?? "";
+
+        if (!root.TryGetProperty("request", out var request)) return;
+        if (!request.TryGetProperty("subtype", out var subtype)
+            || subtype.GetString() != "can_use_tool") return;
+
+        var toolName = request.TryGetProperty("tool_name", out var tn)
+            ? tn.GetString() ?? "" : "";
+        var toolUseId = request.TryGetProperty("tool_use_id", out var tid)
+            ? tid.GetString() ?? "" : "";
+        var input = request.TryGetProperty("input", out var inp)
+            ? inp.Clone() : default;
+
+        OnControlRequest?.Invoke(requestId, toolName, toolUseId, input);
     }
 
     private void HandleResult(JsonElement root)
