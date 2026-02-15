@@ -71,6 +71,10 @@ public class MainViewModel : ViewModelBase
     private int _contextWindowSize;
     private bool _contextWarningShown;
 
+    // Track project roots already registered this session (avoid re-registering)
+    private readonly HashSet<string> _registeredProjectRoots =
+        new(StringComparer.OrdinalIgnoreCase);
+
     // ExitPlanMode auto-confirm state
     private int _exitPlanModeAutoCount;
 
@@ -378,6 +382,7 @@ public class MainViewModel : ViewModelBase
         // Restore session and git status if project was already set
         if (!string.IsNullOrEmpty(settings.WorkingDirectory))
         {
+            _registeredProjectRoots.Add(Path.GetFullPath(settings.WorkingDirectory));
             RefreshGitStatus();
             _ = Task.Run(() => _fileIndexService.BuildIndex(settings.WorkingDirectory));
             _ = Task.Run(() => _projectRegistry.RegisterProject(settings.WorkingDirectory, _gitService));
@@ -435,6 +440,7 @@ public class MainViewModel : ViewModelBase
         _settingsService.Save(_settings);
         ShowWelcome = false;
         ProjectPath = folder;
+        _registeredProjectRoots.Add(Path.GetFullPath(folder));
         RefreshGitStatus();
 
         // Register project in registry
@@ -618,7 +624,43 @@ public class MainViewModel : ViewModelBase
                     _currentAssistantMessage.ToolUses.Add(new ToolUseViewModel(toolName, toolUseId, input));
                 }
             }
+
+            TryRegisterProjectFromToolUse(toolName, input);
         });
+    }
+
+    private void TryRegisterProjectFromToolUse(string toolName, string inputJson)
+    {
+        string? filePath = null;
+        try
+        {
+            if (string.IsNullOrEmpty(inputJson) || !inputJson.StartsWith('{'))
+                return;
+
+            using var doc = JsonDocument.Parse(inputJson);
+            var root = doc.RootElement;
+
+            filePath = toolName switch
+            {
+                "Read" or "Write" or "Edit" =>
+                    root.TryGetProperty("file_path", out var fp) ? fp.GetString() : null,
+                "NotebookEdit" =>
+                    root.TryGetProperty("notebook_path", out var np) ? np.GetString() : null,
+                "Glob" or "Grep" =>
+                    root.TryGetProperty("path", out var p) ? p.GetString() : null,
+                _ => null
+            };
+        }
+        catch { return; }
+
+        if (string.IsNullOrEmpty(filePath) || !Path.IsPathRooted(filePath))
+            return;
+
+        var projectRoot = ProjectRegistryService.DetectProjectRoot(filePath);
+        if (projectRoot is null || !_registeredProjectRoots.Add(projectRoot))
+            return;
+
+        _ = Task.Run(() => _projectRegistry.RegisterProject(projectRoot, _gitService));
     }
 
     private void HandleToolResult(string toolName, string toolUseId, string content)

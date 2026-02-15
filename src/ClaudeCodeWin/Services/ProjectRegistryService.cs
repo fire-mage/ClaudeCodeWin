@@ -118,6 +118,48 @@ public class ProjectRegistryService
         return string.Join("\n", lines);
     }
 
+    private static readonly string[] ProjectMarkerFiles =
+        ["*.sln", "*.csproj", "package.json", "go.mod", "Cargo.toml", "pyproject.toml"];
+
+    /// <summary>
+    /// Walk up from a file path to find the project root directory.
+    /// Looks for .git directory or common project marker files.
+    /// Returns null if no project root is found within 10 levels.
+    /// </summary>
+    public static string? DetectProjectRoot(string filePath)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(Path.GetFullPath(filePath));
+            if (dir is null) return null;
+
+            for (var i = 0; i < 10 && dir is not null; i++)
+            {
+                if (Directory.Exists(Path.Combine(dir, ".git")))
+                    return dir;
+
+                foreach (var marker in ProjectMarkerFiles)
+                {
+                    if (marker.Contains('*'))
+                    {
+                        if (Directory.EnumerateFiles(dir, marker).Any())
+                            return dir;
+                    }
+                    else
+                    {
+                        if (File.Exists(Path.Combine(dir, marker)))
+                            return dir;
+                    }
+                }
+
+                dir = Path.GetDirectoryName(dir);
+            }
+        }
+        catch { }
+
+        return null;
+    }
+
     private static string? DetectGitRemote(string folderPath, GitService gitService)
     {
         var remote = gitService.RunGit("config --get remote.origin.url", folderPath);
