@@ -68,6 +68,8 @@ public partial class App : Application
         var updateService = new UpdateService();
         var fileIndexService = new FileIndexService();
         var chatHistoryService = new ChatHistoryService();
+        var projectRegistry = new ProjectRegistryService();
+        projectRegistry.Load();
 
         // Apply settings
         var settings = settingsService.Load();
@@ -80,7 +82,7 @@ public partial class App : Application
 
         var usageService = new UsageService();
 
-        var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService);
+        var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService, projectRegistry);
         var mainWindow = new MainWindow(mainViewModel, notificationService, settingsService, settings, fileIndexService, chatHistoryService);
 
         // Wire up usage service → status bar

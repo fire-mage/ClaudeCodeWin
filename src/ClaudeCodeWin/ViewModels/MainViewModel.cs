@@ -28,6 +28,11 @@ public class MainViewModel : ViewModelBase
         - **Message queue**: messages sent while you are processing get queued and auto-sent sequentially.
         - **AskUserQuestion support**: When you use the AskUserQuestion tool, the user sees interactive buttons and can select an option. The selected answer is sent back to you as the next user message.
 
+        ## Project registry
+        - A `<project-registry>` section is injected at the start of each session with a list of all known local projects (path, git remote, tech stack, last opened date).
+        - Use this to find projects on the local machine instead of searching external repositories.
+        - The registry at `%APPDATA%\ClaudeCodeWin\project-registry.json` is auto-updated every time a project folder is opened.
+
         ## Important rules
         - When editing tasks.json or scripts.json, the format is a JSON array with camelCase keys. After editing, remind the user to click "Reload Tasks" or "Reload Scripts" in the menu.
         </system-instruction>
@@ -41,6 +46,7 @@ public class MainViewModel : ViewModelBase
     private readonly UpdateService _updateService;
     private readonly FileIndexService _fileIndexService;
     private readonly ChatHistoryService _chatHistoryService;
+    private readonly ProjectRegistryService _projectRegistry;
     private VersionInfo? _pendingUpdate;
     private string? _downloadedUpdatePath;
 
@@ -183,7 +189,7 @@ public class MainViewModel : ViewModelBase
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
         SettingsService settingsService, AppSettings settings, GitService gitService,
         UpdateService updateService, FileIndexService fileIndexService,
-        ChatHistoryService chatHistoryService)
+        ChatHistoryService chatHistoryService, ProjectRegistryService projectRegistry)
     {
         _cliService = cliService;
         _notificationService = notificationService;
@@ -193,6 +199,7 @@ public class MainViewModel : ViewModelBase
         _updateService = updateService;
         _fileIndexService = fileIndexService;
         _chatHistoryService = chatHistoryService;
+        _projectRegistry = projectRegistry;
 
         SendCommand = new RelayCommand(() => _ = SendMessageAsync());
         CancelCommand = new RelayCommand(CancelProcessing, () => IsProcessing);
@@ -356,6 +363,7 @@ public class MainViewModel : ViewModelBase
         {
             RefreshGitStatus();
             _ = Task.Run(() => _fileIndexService.BuildIndex(settings.WorkingDirectory));
+            _ = Task.Run(() => _projectRegistry.RegisterProject(settings.WorkingDirectory, _gitService));
 
             if (settings.SavedSessions.TryGetValue(settings.WorkingDirectory, out var saved)
                 && DateTime.Now - saved.CreatedAt < TimeSpan.FromHours(24))
@@ -404,6 +412,9 @@ public class MainViewModel : ViewModelBase
         ShowWelcome = false;
         ProjectPath = folder;
         RefreshGitStatus();
+
+        // Register project in registry
+        _ = Task.Run(() => _projectRegistry.RegisterProject(folder, _gitService));
 
         // Rebuild file index in background
         _ = Task.Run(() => _fileIndexService.BuildIndex(folder));
@@ -491,6 +502,11 @@ public class MainViewModel : ViewModelBase
                     Messages.Add(new MessageViewModel(MessageRole.System, "Context injected: CONTEXT_SNAPSHOT.md"));
                 }
             }
+
+            // Inject project registry
+            var registrySummary = _projectRegistry.BuildRegistrySummary();
+            if (!string.IsNullOrEmpty(registrySummary))
+                preamble += $"\n\n<project-registry>\n{registrySummary}\n</project-registry>";
 
             finalPrompt = $"{preamble}\n\n{text}";
         }
