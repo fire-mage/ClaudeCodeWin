@@ -18,4 +18,7 @@ public class AppSettings
 
     // Auto-confirm ExitPlanMode (plan approval without user interaction)
     public bool AutoConfirmPlanMode { get; set; } = true;
+
+    // Context Snapshot: auto-generate project context for Claude on session start
+    public bool ContextSnapshotEnabled { get; set; } = true;
 }

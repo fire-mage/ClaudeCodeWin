@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using ClaudeCodeWin.ContextSnapshot;
 using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 using ClaudeCodeWin.Services;
@@ -47,6 +48,7 @@ public class MainViewModel : ViewModelBase
     private readonly FileIndexService _fileIndexService;
     private readonly ChatHistoryService _chatHistoryService;
     private readonly ProjectRegistryService _projectRegistry;
+    private readonly ContextSnapshotService _contextSnapshotService;
     private VersionInfo? _pendingUpdate;
     private string? _downloadedUpdatePath;
 
@@ -200,7 +202,8 @@ public class MainViewModel : ViewModelBase
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
         SettingsService settingsService, AppSettings settings, GitService gitService,
         UpdateService updateService, FileIndexService fileIndexService,
-        ChatHistoryService chatHistoryService, ProjectRegistryService projectRegistry)
+        ChatHistoryService chatHistoryService, ProjectRegistryService projectRegistry,
+        ContextSnapshotService contextSnapshotService)
     {
         _cliService = cliService;
         _notificationService = notificationService;
@@ -211,6 +214,7 @@ public class MainViewModel : ViewModelBase
         _fileIndexService = fileIndexService;
         _chatHistoryService = chatHistoryService;
         _projectRegistry = projectRegistry;
+        _contextSnapshotService = contextSnapshotService;
 
         SendCommand = new RelayCommand(() => _ = SendMessageAsync());
         CancelCommand = new RelayCommand(CancelProcessing, () => IsProcessing);
@@ -378,6 +382,13 @@ public class MainViewModel : ViewModelBase
             _ = Task.Run(() => _fileIndexService.BuildIndex(settings.WorkingDirectory));
             _ = Task.Run(() => _projectRegistry.RegisterProject(settings.WorkingDirectory, _gitService));
 
+            // Generate context snapshots for recent projects from registry (not just current dir)
+            if (_settings.ContextSnapshotEnabled)
+            {
+                var recentPaths = _projectRegistry.GetMostRecentProjects(5).Select(p => p.Path).ToList();
+                _ = Task.Run(() => _contextSnapshotService.GenerateForProjects(recentPaths));
+            }
+
             if (settings.SavedSessions.TryGetValue(settings.WorkingDirectory, out var saved)
                 && DateTime.Now - saved.CreatedAt < TimeSpan.FromHours(24))
             {
@@ -431,6 +442,10 @@ public class MainViewModel : ViewModelBase
 
         // Rebuild file index in background
         _ = Task.Run(() => _fileIndexService.BuildIndex(folder));
+
+        // Generate context snapshot in background
+        if (_settings.ContextSnapshotEnabled)
+            _ = Task.Run(() => _contextSnapshotService.Generate(folder));
 
         // Try to restore saved session, otherwise start fresh
         if (_settings.SavedSessions.TryGetValue(folder, out var saved)
@@ -505,14 +520,16 @@ public class MainViewModel : ViewModelBase
         {
             var preamble = SystemInstruction;
 
-            if (!string.IsNullOrEmpty(WorkingDirectory))
+            if (_settings.ContextSnapshotEnabled)
             {
-                var snapshotPath = Path.Combine(WorkingDirectory, "CONTEXT_SNAPSHOT.md");
-                if (File.Exists(snapshotPath))
+                // Inject snapshots for recent projects from registry
+                var recentPaths = _projectRegistry.GetMostRecentProjects(5).Select(p => p.Path).ToList();
+                var (combined, snapshotCount) = _contextSnapshotService.GetCombinedSnapshot(recentPaths);
+                if (!string.IsNullOrEmpty(combined))
                 {
-                    var snapshot = File.ReadAllText(snapshotPath);
-                    preamble += $"\n\n<context-snapshot>\n{snapshot}\n</context-snapshot>";
-                    Messages.Add(new MessageViewModel(MessageRole.System, "Context injected: CONTEXT_SNAPSHOT.md"));
+                    preamble += $"\n\n<context-snapshot>\n{combined}\n</context-snapshot>";
+                    Messages.Add(new MessageViewModel(MessageRole.System,
+                        $"Context snapshot injected ({snapshotCount} projects)"));
                 }
             }
 

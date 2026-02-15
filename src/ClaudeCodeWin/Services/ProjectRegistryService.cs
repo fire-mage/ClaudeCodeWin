@@ -20,6 +20,16 @@ public class ProjectRegistryService
 
     public IReadOnlyList<ProjectInfo> Projects => _projects;
 
+    /// <summary>
+    /// Returns the N most recently opened projects whose folders still exist on disk.
+    /// </summary>
+    public IReadOnlyList<ProjectInfo> GetMostRecentProjects(int count) =>
+        _projects
+            .Where(p => Directory.Exists(p.Path))
+            .OrderByDescending(x => x.LastOpened)
+            .Take(count)
+            .ToList();
+
     public void Load()
     {
         if (!File.Exists(RegistryPath))

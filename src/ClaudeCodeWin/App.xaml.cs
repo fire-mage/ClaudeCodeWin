@@ -1,4 +1,5 @@
 using System.Windows;
+using ClaudeCodeWin.ContextSnapshot;
 using ClaudeCodeWin.Services;
 using ClaudeCodeWin.ViewModels;
 
@@ -81,8 +82,9 @@ public partial class App : Application
             cliService.WorkingDirectory = settings.WorkingDirectory;
 
         var usageService = new UsageService();
+        var contextSnapshotService = new ContextSnapshotService();
 
-        var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService, projectRegistry);
+        var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService, projectRegistry, contextSnapshotService);
         var mainWindow = new MainWindow(mainViewModel, notificationService, settingsService, settings, fileIndexService, chatHistoryService);
 
         // Wire up usage service → status bar
