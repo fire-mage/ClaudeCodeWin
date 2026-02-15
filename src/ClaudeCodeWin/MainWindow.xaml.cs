@@ -70,16 +70,25 @@ public partial class MainWindow : Window
             {
                 ScrollToBottomIfAtBottom();
 
-                // Subscribe to text changes on new streaming messages
+                // Subscribe to changes on new messages
                 if (args.NewItems is not null)
                 {
                     foreach (MessageViewModel msg in args.NewItems)
                     {
+                        // Text streaming
                         msg.PropertyChanged += (_, pe) =>
                         {
-                            if (pe.PropertyName == nameof(MessageViewModel.Text))
+                            if (pe.PropertyName is nameof(MessageViewModel.Text)
+                                or nameof(MessageViewModel.IsThinking)
+                                or nameof(MessageViewModel.HasToolUses))
                                 ScrollToBottomIfAtBottom();
                         };
+
+                        // Tool uses being added (expands the bubble)
+                        if (msg.ToolUses is INotifyCollectionChanged toolNcc)
+                        {
+                            toolNcc.CollectionChanged += (_, _) => ScrollToBottomIfAtBottom();
+                        }
                     }
                 }
             };
@@ -409,16 +418,21 @@ public partial class MainWindow : Window
     {
         if (_isUserNearBottom)
         {
+            // Use Loaded priority so WPF finishes layout/measure before we scroll
             Dispatcher.InvokeAsync(() =>
                 ChatScrollViewer.ScrollToEnd(),
-                System.Windows.Threading.DispatcherPriority.Background);
+                System.Windows.Threading.DispatcherPriority.Loaded);
         }
     }
 
     private void ChatScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
-        _isUserNearBottom = IsNearBottom();
-        ScrollToBottomButton.Visibility = _isUserNearBottom
+        // Only update user intent when the user actually scrolled (not when content grew)
+        if (e.ExtentHeightChange == 0)
+        {
+            _isUserNearBottom = IsNearBottom();
+        }
+        ScrollToBottomButton.Visibility = IsNearBottom()
             ? Visibility.Collapsed
             : Visibility.Visible;
     }
