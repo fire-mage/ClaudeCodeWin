@@ -62,11 +62,8 @@ public class MainViewModel : ViewModelBase
     // ExitPlanMode auto-confirm state
     private int _exitPlanModeAutoCount;
 
-    // AskUserQuestion multi-answer state
-    private int _pendingQuestionCount;
-    private readonly List<string> _collectedAnswers = [];
-
     // Control request protocol state
+    private int _pendingQuestionCount;
     private string? _pendingControlRequestId;
     private string? _pendingControlToolUseId;
     private JsonElement? _pendingQuestionInput;
@@ -270,31 +267,7 @@ public class MainViewModel : ViewModelBase
             if (p is not string answer) return;
 
             if (_pendingControlRequestId is not null)
-            {
-                // Control protocol mode — collect answers and send control_response
                 HandleControlAnswer(answer);
-            }
-            else
-            {
-                // Legacy fallback — send as plain text
-                if (_pendingQuestionCount <= 1)
-                {
-                    _pendingQuestionCount = 0;
-                    _collectedAnswers.Clear();
-                    _ = SendDirectAsync(answer, null);
-                }
-                else
-                {
-                    _collectedAnswers.Add(answer);
-                    if (_collectedAnswers.Count >= _pendingQuestionCount)
-                    {
-                        var combined = string.Join("\n", _collectedAnswers);
-                        _pendingQuestionCount = 0;
-                        _collectedAnswers.Clear();
-                        _ = SendDirectAsync(combined, null);
-                    }
-                }
-            }
         });
         QuickPromptCommand = new RelayCommand(p =>
         {
@@ -368,8 +341,6 @@ public class MainViewModel : ViewModelBase
         _cliService.OnCompleted += HandleCompleted;
         _cliService.OnError += HandleError;
         _cliService.OnControlRequest += HandleControlRequest;
-        _cliService.OnAskUserQuestion += HandleAskUserQuestion; // Fallback for old CLI versions
-        _cliService.OnExitPlanMode += HandleExitPlanMode; // Fallback for old CLI versions
         _cliService.OnFileChanged += HandleFileChanged;
 
         // Initialize recent folders from settings
@@ -650,63 +621,6 @@ public class MainViewModel : ViewModelBase
         });
     }
 
-    private void HandleAskUserQuestion(string rawJson)
-    {
-        Application.Current.Dispatcher.InvokeAsync(() =>
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(rawJson);
-                var root = doc.RootElement;
-
-                if (!root.TryGetProperty("questions", out var questionsArr)
-                    || questionsArr.ValueKind != JsonValueKind.Array)
-                    return;
-
-                _pendingQuestionCount = questionsArr.GetArrayLength();
-                _collectedAnswers.Clear();
-
-                foreach (var q in questionsArr.EnumerateArray())
-                {
-                    var question = q.TryGetProperty("question", out var qText) ? qText.GetString() ?? "" : "";
-                    var options = new List<QuestionOption>();
-
-                    if (q.TryGetProperty("options", out var opts) && opts.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var opt in opts.EnumerateArray())
-                        {
-                            options.Add(new QuestionOption
-                            {
-                                Label = opt.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "",
-                                Description = opt.TryGetProperty("description", out var d) ? d.GetString() ?? "" : ""
-                            });
-                        }
-                    }
-
-                    if (options.Count > 0)
-                    {
-                        var questionMsg = new MessageViewModel(MessageRole.System, question)
-                        {
-                            QuestionDisplay = new QuestionDisplayModel
-                            {
-                                QuestionText = question,
-                                Options = options
-                            }
-                        };
-                        Messages.Add(questionMsg);
-                    }
-                    else
-                    {
-                        Messages.Add(new MessageViewModel(MessageRole.System, $"Claude asked: {question}"));
-                    }
-                }
-
-                UpdateCta(CtaState.AnswerQuestion);
-            }
-            catch (JsonException) { }
-        });
-    }
-
     private void HandleControlRequest(string requestId, string toolName, string toolUseId, JsonElement input)
     {
         Application.Current.Dispatcher.InvokeAsync(() =>
@@ -780,7 +694,6 @@ public class MainViewModel : ViewModelBase
                 return;
 
             _pendingQuestionCount = questionsArr.GetArrayLength();
-            _collectedAnswers.Clear();
 
             foreach (var q in questionsArr.EnumerateArray())
             {
@@ -896,36 +809,6 @@ public class MainViewModel : ViewModelBase
             _pendingQuestionCount = 0;
             UpdateCta(CtaState.Processing);
         }
-    }
-
-    private void HandleExitPlanMode()
-    {
-        // Legacy fallback (no control protocol) — send as plain text
-        Application.Current.Dispatcher.InvokeAsync(() =>
-        {
-            if (AutoConfirmEnabled)
-            {
-                Messages.Add(new MessageViewModel(MessageRole.System, "Plan approved automatically (legacy mode)."));
-                _ = SendDirectAsync("Yes, go ahead", null);
-            }
-            else
-            {
-                var questionMsg = new MessageViewModel(MessageRole.System, "Exit plan mode?")
-                {
-                    QuestionDisplay = new QuestionDisplayModel
-                    {
-                        QuestionText = "Claude wants to exit plan mode and start implementing. Approve?",
-                        Options =
-                        [
-                            new QuestionOption { Label = "Yes, go ahead", Description = "Approve plan and start implementation" },
-                            new QuestionOption { Label = "No, keep planning", Description = "Stay in plan mode" }
-                        ]
-                    }
-                };
-                Messages.Add(questionMsg);
-                UpdateCta(CtaState.AnswerQuestion);
-            }
-        });
     }
 
     private void HandleFileChanged(string filePath)
