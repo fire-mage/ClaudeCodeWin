@@ -88,3 +88,21 @@ public class GitStatusToBrushConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
+
+public class StatusTextToBrushConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var text = value as string ?? "";
+        var key = text switch
+        {
+            "NO INTERNET" => "ErrorBrush",
+            "Error" => "ErrorBrush",
+            _ => "TextSecondaryBrush"
+        };
+        return Application.Current.FindResource(key);
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}

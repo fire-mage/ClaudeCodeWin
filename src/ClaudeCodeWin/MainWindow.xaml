@@ -19,6 +19,7 @@
         <converters:RoleToMaxWidthConverter x:Key="RoleToMaxWidth"/>
         <converters:EditDiffLineTypeToBrushConverter x:Key="DiffLineBrush"/>
         <converters:GitStatusToBrushConverter x:Key="GitStatusBrush"/>
+        <converters:StatusTextToBrushConverter x:Key="StatusTextBrush"/>
     </Window.Resources>
 
     <Window.TaskbarItemInfo>
@@ -862,7 +863,8 @@
                 </Grid.ColumnDefinitions>
 
                 <TextBlock Grid.Column="0" Text="{Binding StatusText}"
-                           FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                           FontSize="12"
+                           Foreground="{Binding StatusText, Converter={StaticResource StatusTextBrush}}"
                            VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="2" Text="{Binding ProjectPath}"
                            FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"

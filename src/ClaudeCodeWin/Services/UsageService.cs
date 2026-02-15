@@ -26,6 +26,7 @@ public class UsageService
     public double WeeklyUtilization { get; private set; }
     public DateTime? WeeklyResetsAt { get; private set; }
     public bool IsLoaded { get; private set; }
+    public bool IsOnline { get; private set; } = true;
 
     // Events
     public event Action? OnUsageUpdated;
@@ -103,11 +104,36 @@ public class UsageService
             }
 
             IsLoaded = true;
-            OnUsageUpdated?.Invoke();
+            if (!IsOnline)
+            {
+                IsOnline = true;
+                OnUsageUpdated?.Invoke();
+            }
+            else
+            {
+                OnUsageUpdated?.Invoke();
+            }
+        }
+        catch (HttpRequestException)
+        {
+            if (IsOnline)
+            {
+                IsOnline = false;
+                OnUsageUpdated?.Invoke();
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // Timeout — also a network issue
+            if (IsOnline)
+            {
+                IsOnline = false;
+                OnUsageUpdated?.Invoke();
+            }
         }
         catch
         {
-            // Network error — silently ignore, will retry on next poll
+            // Other errors — silently ignore
         }
     }
 

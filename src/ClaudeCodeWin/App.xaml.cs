@@ -88,6 +88,16 @@ public partial class App : Application
         // Wire up usage service → status bar
         usageService.OnUsageUpdated += () =>
         {
+            if (!usageService.IsOnline)
+            {
+                mainViewModel.StatusText = "NO INTERNET";
+                return;
+            }
+
+            // Restore status when back online
+            if (mainViewModel.StatusText == "NO INTERNET")
+                mainViewModel.StatusText = mainViewModel.IsProcessing ? "Processing..." : "Ready";
+
             if (!usageService.IsLoaded) return;
             var session = $"Session: {usageService.SessionUtilization:F0}%";
             var sessionCountdown = usageService.GetSessionCountdown();
