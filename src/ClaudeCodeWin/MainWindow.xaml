@@ -56,6 +56,9 @@
                     <MenuItem Header="_Auto-confirm Plan Mode" IsCheckable="True"
                               IsChecked="{Binding AutoConfirmEnabled}"
                               ToolTip="When enabled, automatically approves Claude's plan and starts implementation.&#x0a;When disabled, shows confirmation buttons for manual approval.&#x0a;Auto-disables if a loop is detected."/>
+                    <MenuItem Header="E_xpand Context (1M tokens)"
+                              Command="{Binding ExpandContextCommand}"
+                              ToolTip="Toggle between standard (200K) and extended (1M) context window.&#x0a;Starts a new session with the expanded context. Useful for very long conversations.&#x0a;Note: 1M context may not be available on all subscription plans."/>
                     <Separator/>
                     <MenuItem Header="E_xit" Click="MenuItem_Exit_Click"
                               ToolTip="Close the application. Window position and size are saved automatically."/>
@@ -136,6 +139,12 @@
                                     MaxWidth="{Binding Role, Converter={StaticResource RoleToMaxWidth}}"
                                     Visibility="{Binding IsThinking, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
                                 <StackPanel>
+                                    <!-- Timestamp -->
+                                    <TextBlock Text="{Binding Timestamp, StringFormat='HH:mm'}"
+                                               FontSize="10"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               Opacity="0.5"
+                                               Margin="0,0,0,2"/>
                                     <!-- Main text (selectable) -->
                                     <TextBox Text="{Binding Text, Mode=OneWay}"
                                              IsReadOnly="True"
@@ -860,6 +869,7 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <TextBlock Grid.Column="0" Text="{Binding StatusText}"
@@ -877,7 +887,12 @@
                            Foreground="{Binding GitStatusText, Converter={StaticResource GitStatusBrush}}"
                            VerticalAlignment="Center" Margin="0,0,16,0"
                            ToolTip="Git repository status. Commit your changes regularly for safe rollback."/>
-                <Border Grid.Column="4" VerticalAlignment="Center" Margin="0,0,16,0"
+                <TextBlock Grid.Column="4" Text="{Binding ContextUsageText}"
+                           FontSize="11"
+                           Foreground="{StaticResource AccentBrush}"
+                           VerticalAlignment="Center" Margin="0,0,16,0"
+                           ToolTip="Context window usage. Shows what percentage of Claude's memory is used.&#x0a;At 80%+ consider starting a new session or expanding to 1M tokens."/>
+                <Border Grid.Column="5" VerticalAlignment="Center" Margin="0,0,16,0"
                         Cursor="Hand" Background="Transparent"
                         MouseLeftButtonUp="MemoryIndicator_Click"
                         ToolTip="Usage limits from your Anthropic subscription.&#x0a;Session resets every 5 hours, weekly every 7 days.&#x0a;Click for session menu.">
@@ -894,10 +909,13 @@
                             <MenuItem Header="New Session" Command="{Binding NewSessionCommand}"
                                       InputGestureText="Ctrl+N"
                                       ToolTip="Start a fresh conversation. Clears history and resets memory usage."/>
+                            <MenuItem Header="Expand Context (1M tokens)"
+                                      Command="{Binding ExpandContextCommand}"
+                                      ToolTip="Toggle between standard and extended context window."/>
                         </ContextMenu>
                     </Border.ContextMenu>
                 </Border>
-                <Border Grid.Column="5" VerticalAlignment="Center"
+                <Border Grid.Column="6" VerticalAlignment="Center"
                         Background="Transparent"
                         MouseLeftButtonUp="ModelIndicator_Click">
                     <TextBlock Text="{Binding ModelName}"

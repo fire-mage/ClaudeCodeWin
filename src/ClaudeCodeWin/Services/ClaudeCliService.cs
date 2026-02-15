@@ -32,6 +32,7 @@ public class ClaudeCliService
 
     // Events
     public event Action<string>? OnTextDelta;
+    public event Action? OnTextBlockStart; // fires when a new text content_block starts
     public event Action<string, string, string>? OnToolUseStarted; // toolName, toolUseId, input
     public event Action<string, string, string>? OnToolResult; // toolName, toolUseId, content
     public event Action<ResultData>? OnCompleted;
@@ -559,7 +560,18 @@ public class ClaudeCliService
         if (!root.TryGetProperty("content_block", out var block))
             return;
 
-        if (block.TryGetProperty("type", out var bt) && bt.GetString() == "tool_use")
+        if (!block.TryGetProperty("type", out var bt))
+            return;
+
+        var blockType = bt.GetString();
+
+        if (blockType == "text")
+        {
+            OnTextBlockStart?.Invoke();
+            return;
+        }
+
+        if (blockType == "tool_use")
         {
             var toolName = block.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
             var toolUseId = block.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? "" : "";

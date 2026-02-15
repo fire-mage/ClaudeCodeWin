@@ -57,13 +57,17 @@ public class MainViewModel : ViewModelBase
     private MessageViewModel? _currentAssistantMessage;
     private bool _showWelcome;
     private bool _isFirstDelta;
+    private bool _hadToolsSinceLastText;
     private string _projectPath = "";
     private string _gitStatusText = "";
     private string _usageText = "";
+    private string _contextUsageText = "";
     private string? _currentChatId;
     private string _ctaText = "";
     private CtaState _ctaState = CtaState.Welcome;
     private bool _isUpdating;
+    private int _contextWindowSize;
+    private bool _contextWarningShown;
 
     // ExitPlanMode auto-confirm state
     private int _exitPlanModeAutoCount;
@@ -148,6 +152,12 @@ public class MainViewModel : ViewModelBase
         set => SetProperty(ref _usageText, value);
     }
 
+    public string ContextUsageText
+    {
+        get => _contextUsageText;
+        set => SetProperty(ref _contextUsageText, value);
+    }
+
     public string CtaText
     {
         get => _ctaText;
@@ -184,6 +194,7 @@ public class MainViewModel : ViewModelBase
     public RelayCommand AnswerQuestionCommand { get; }
     public RelayCommand QuickPromptCommand { get; }
     public RelayCommand SwitchToOpusCommand { get; }
+    public RelayCommand ExpandContextCommand { get; }
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
@@ -282,6 +293,7 @@ public class MainViewModel : ViewModelBase
                 _ = SendDirectAsync(prompt, null);
         });
         SwitchToOpusCommand = new RelayCommand(SwitchToOpus);
+        ExpandContextCommand = new RelayCommand(ExpandContext);
 
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
         Messages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasDialogHistory));
@@ -342,6 +354,7 @@ public class MainViewModel : ViewModelBase
         // Start periodic update checks
         _updateService.StartPeriodicCheck();
 
+        _cliService.OnTextBlockStart += HandleTextBlockStart;
         _cliService.OnTextDelta += HandleTextDelta;
         _cliService.OnToolUseStarted += HandleToolUseStarted;
         _cliService.OnToolResult += HandleToolResult;
@@ -519,6 +532,24 @@ public class MainViewModel : ViewModelBase
         await Task.Run(() => _cliService.SendMessage(finalPrompt, attachments));
     }
 
+    private void HandleTextBlockStart()
+    {
+        Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            if (_currentAssistantMessage is null) return;
+
+            // If tools were used since the last text block, start a new message bubble
+            if (_hadToolsSinceLastText)
+            {
+                _currentAssistantMessage.IsStreaming = false;
+                _currentAssistantMessage = new MessageViewModel(MessageRole.Assistant) { IsStreaming = true };
+                Messages.Add(_currentAssistantMessage);
+                _hadToolsSinceLastText = false;
+                _isFirstDelta = true;
+            }
+        });
+    }
+
     private void HandleTextDelta(string text)
     {
         Application.Current.Dispatcher.InvokeAsync(() =>
@@ -545,6 +576,8 @@ public class MainViewModel : ViewModelBase
         {
             if (_currentAssistantMessage is not null)
             {
+                _hadToolsSinceLastText = true;
+
                 if (_isFirstDelta)
                 {
                     _isFirstDelta = false;
@@ -600,12 +633,30 @@ public class MainViewModel : ViewModelBase
             }
 
             _currentAssistantMessage = null;
+            _hadToolsSinceLastText = false;
             IsProcessing = false;
             StatusText = "Ready";
             UpdateCta(CtaState.WaitingForUser);
 
             if (!string.IsNullOrEmpty(result.Model))
                 ModelName = result.Model;
+
+            // Track context usage
+            if (result.ContextWindow > 0)
+                _contextWindowSize = result.ContextWindow;
+            if (_contextWindowSize > 0 && result.InputTokens > 0)
+            {
+                var totalTokens = result.InputTokens + result.OutputTokens;
+                var pct = (int)(totalTokens * 100.0 / _contextWindowSize);
+                ContextUsageText = $"Ctx: {pct}%";
+
+                if (pct >= 80 && !_contextWarningShown)
+                {
+                    _contextWarningShown = true;
+                    Messages.Add(new MessageViewModel(MessageRole.System,
+                        $"Context is {pct}% full ({totalTokens:N0}/{_contextWindowSize:N0} tokens). Consider starting a new session or expanding to 1M."));
+                }
+            }
 
             // Save session for persistence
             if (!string.IsNullOrEmpty(result.SessionId) && !string.IsNullOrEmpty(WorkingDirectory))
@@ -911,6 +962,9 @@ public class MainViewModel : ViewModelBase
         _cliService.ResetSession();
         ModelName = "";
         StatusText = "Ready";
+        ContextUsageText = "";
+        _contextWarningShown = false;
+        _contextWindowSize = 0;
 
         // Clear saved session for current project
         if (!string.IsNullOrEmpty(WorkingDirectory)
@@ -927,6 +981,37 @@ public class MainViewModel : ViewModelBase
         _cliService.ModelOverride = "opus";
         StartNewSession();
         Messages.Add(new MessageViewModel(MessageRole.System, "Switching to Opus. Next message will use claude-opus."));
+    }
+
+    private void ExpandContext()
+    {
+        // Get current model base name (strip existing [1m] suffix if any)
+        var currentModel = _modelName;
+        if (string.IsNullOrEmpty(currentModel))
+            currentModel = "sonnet";
+
+        if (currentModel.Contains("[1m]"))
+        {
+            // Already in 1M mode — switch back to standard
+            _cliService.ModelOverride = currentModel.Replace("[1m]", "");
+            StartNewSession();
+            Messages.Add(new MessageViewModel(MessageRole.System, "Switched back to standard context window (200K)."));
+        }
+        else
+        {
+            // Expand to 1M
+            // Normalize known full model IDs to short aliases
+            var baseModel = currentModel switch
+            {
+                var m when m.Contains("opus") => "opus",
+                var m when m.Contains("haiku") => "haiku",
+                _ => "sonnet"
+            };
+            _cliService.ModelOverride = $"{baseModel}[1m]";
+            StartNewSession();
+            _contextWarningShown = false;
+            Messages.Add(new MessageViewModel(MessageRole.System, "Expanding context window to 1M tokens. Starting new session."));
+        }
     }
 
     public string? WorkingDirectory => _cliService.WorkingDirectory;
