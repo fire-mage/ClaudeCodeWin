@@ -215,6 +215,11 @@ public class MainViewModel : ViewModelBase
     public RelayCommand ExpandContextCommand { get; }
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
+    public void SetUpdateChannel(string channel)
+    {
+        _updateService.UpdateChannel = channel;
+    }
+
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
         SettingsService settingsService, AppSettings settings, GitService gitService,
         UpdateService updateService, FileIndexService fileIndexService,
@@ -372,6 +377,7 @@ public class MainViewModel : ViewModelBase
         };
 
         // Start periodic update checks
+        _updateService.UpdateChannel = settings.UpdateChannel ?? "stable";
         _updateService.StartPeriodicCheck();
 
         _cliService.OnTextBlockStart += HandleTextBlockStart;

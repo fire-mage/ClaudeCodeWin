@@ -275,20 +275,8 @@ public class TaskRunnerService
         [
             new TaskDefinition
             {
-                Name = "Echo Test",
-                Command = "echo Hello from ClaudeCodeWin!",
-                ConfirmBeforeRun = false
-            },
-            new TaskDefinition
-            {
-                Name = "Git Status",
-                Command = "git status",
-                ConfirmBeforeRun = false
-            },
-            new TaskDefinition
-            {
-                Name = "Git Log (last 10)",
-                Command = "git log --oneline -10",
+                Name = "Hello Task",
+                Command = "echo Tasks are working! You can add your own tasks such as deploy scripts, build commands, or git workflows. Go to Tasks > Edit Tasks... or ask Claude to add a task for you.",
                 ConfirmBeforeRun = false
             }
         ];

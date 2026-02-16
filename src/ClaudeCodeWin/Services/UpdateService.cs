@@ -30,7 +30,7 @@ public record VersionAsset(
 
 public class UpdateService
 {
-    private const string VersionUrl = "https://mainfish.s3.eu-central-1.amazonaws.com/admin/claudecodewin/version.json";
+    private const string BaseUrl = "https://mainfish.s3.eu-central-1.amazonaws.com/admin/claudecodewin";
     private static readonly TimeSpan CheckInterval = TimeSpan.FromHours(4);
 
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
@@ -42,6 +42,13 @@ public class UpdateService
     public event Action<string>? OnError;
 
     public string CurrentVersion { get; }
+
+    /// <summary>"stable" or "beta"</summary>
+    public string UpdateChannel { get; set; } = "stable";
+
+    private string VersionUrl => UpdateChannel == "beta"
+        ? $"{BaseUrl}/version-beta.json"
+        : $"{BaseUrl}/version.json";
 
     public UpdateService()
     {

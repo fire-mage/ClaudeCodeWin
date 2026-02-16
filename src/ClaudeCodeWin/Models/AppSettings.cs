@@ -27,4 +27,7 @@ public class AppSettings
 
     // Known servers where Claude's SSH key is authorized
     public List<ServerInfo> Servers { get; set; } = [];
+
+    // Update channel: "stable" (default) or "beta"
+    public string UpdateChannel { get; set; } = "stable";
 }

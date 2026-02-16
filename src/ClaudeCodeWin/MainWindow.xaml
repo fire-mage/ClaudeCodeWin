@@ -70,6 +70,9 @@
                           ToolTip="Manage Claude's SSH key and known servers.&#x0a;Configure which servers Claude can connect to and deploy to."/>
                 <MenuItem Header="_Help"
                           ToolTip="Updates and application information">
+                    <MenuItem Header="_Beta Updates" x:Name="BetaUpdatesMenuItem" IsCheckable="True"
+                              Click="MenuItem_BetaUpdates_Click"
+                              ToolTip="Toggle between stable and beta update channels.&#x0a;Beta channel receives updates earlier for testing."/>
                     <MenuItem Header="Check for _Updates..." Command="{Binding CheckForUpdatesCommand}"
                               ToolTip="Check if a newer version is available on the update server.&#x0a;If found, download and install with one click. Also checks automatically every 4 hours."/>
                     <Separator/>
