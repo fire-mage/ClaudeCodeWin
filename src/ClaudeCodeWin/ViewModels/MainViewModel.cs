@@ -269,8 +269,8 @@ public class MainViewModel : ViewModelBase
         CheckForUpdatesCommand = new AsyncRelayCommand(async () =>
         {
             StatusText = "Checking for updates...";
-            await _updateService.CheckForUpdateAsync();
-            if (_pendingUpdate is null)
+            var update = await _updateService.CheckForUpdateAsync();
+            if (update is null)
             {
                 StatusText = "Ready";
                 MessageBox.Show($"You are on the latest version ({_updateService.CurrentVersion}).",

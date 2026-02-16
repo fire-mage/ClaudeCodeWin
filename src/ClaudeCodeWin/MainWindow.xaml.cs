@@ -726,12 +726,6 @@ public partial class MainWindow : Window
             container.BringIntoView();
     }
 
-    private void MenuItem_Servers_Click(object sender, RoutedEventArgs e)
-    {
-        var dlg = new ServerRegistryWindow(_settings, _settingsService) { Owner = this };
-        dlg.ShowDialog();
-    }
-
     private void MenuItem_Settings_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new SettingsWindow(_settings, _settingsService, ViewModel) { Owner = this };

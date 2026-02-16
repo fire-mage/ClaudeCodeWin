@@ -73,7 +73,7 @@ public class UpdateService
         _timer = null;
     }
 
-    public async Task CheckForUpdateAsync()
+    public async Task<VersionInfo?> CheckForUpdateAsync()
     {
         try
         {
@@ -83,24 +83,26 @@ public class UpdateService
                 PropertyNameCaseInsensitive = true
             });
 
-            if (manifest is null) return;
+            if (manifest is null) return null;
 
             if (!IsNewerVersion(manifest.Version, CurrentVersion))
-                return;
+                return null;
 
             var archKey = RuntimeInformation.ProcessArchitecture == Architecture.Arm64
                 ? "win-arm64"
                 : "win-x64";
 
             if (!manifest.Assets.TryGetValue(archKey, out var asset))
-                return;
+                return null;
 
             var info = new VersionInfo(manifest.Version, asset.Url, asset.Sha256, manifest.ReleaseNotes);
             OnUpdateAvailable?.Invoke(info);
+            return info;
         }
         catch
         {
             // Silent — don't bother user if update check fails
+            return null;
         }
     }
 

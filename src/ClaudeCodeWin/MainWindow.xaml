@@ -53,21 +53,12 @@
                     <MenuItem Header="Recent _Projects" x:Name="RecentProjectsMenu"
                               ToolTip="Recently opened project folders. Click to switch, use X to remove."/>
                     <Separator/>
-                    <MenuItem Header="_Auto-confirm Plan Mode" IsCheckable="True"
-                              IsChecked="{Binding AutoConfirmEnabled}"
-                              ToolTip="When enabled, automatically approves Claude's plan and starts implementation.&#x0a;When disabled, shows confirmation buttons for manual approval.&#x0a;Auto-disables if a loop is detected."/>
-                    <MenuItem Header="E_xpand Context (1M tokens)"
-                              Command="{Binding ExpandContextCommand}"
-                              ToolTip="Toggle between standard (200K) and extended (1M) context window.&#x0a;Starts a new session with the expanded context. Useful for very long conversations.&#x0a;Note: 1M context may not be available on all subscription plans."/>
-                    <Separator/>
                     <MenuItem Header="E_xit" Click="MenuItem_Exit_Click"
                               ToolTip="Close the application. Window position and size are saved automatically."/>
                 </MenuItem>
                 <MenuItem Header="S_cripts" x:Name="ScriptsMenu" Visibility="Collapsed"/>
                 <MenuItem Header="_Tasks" x:Name="TasksMenu"
                           ToolTip="Shell commands: run predefined terminal commands in your project folder.&#x0a;Output appears in a separate window. Customize via tasks.json.&#x0a;Example: 'Git Status' runs 'git status' and displays the result."/>
-                <MenuItem Header="Se_rvers" Click="MenuItem_Servers_Click"
-                          ToolTip="Manage Claude's SSH key and known servers.&#x0a;Configure which servers Claude can connect to and deploy to."/>
                 <MenuItem Header="_Help"
                           ToolTip="Updates and application information">
                     <MenuItem Header="Check for _Updates..." Command="{Binding CheckForUpdatesCommand}"
