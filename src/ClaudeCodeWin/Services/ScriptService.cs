@@ -53,7 +53,8 @@ public partial class ScriptService
         File.WriteAllText(ScriptsPath, json);
     }
 
-    public void PopulateMenu(MainWindow mainWindow, MainViewModel viewModel, GitService gitService)
+    public void PopulateMenu(MainWindow mainWindow, MainViewModel viewModel, GitService gitService,
+        AppSettings? settings = null, ProjectRegistryService? projectRegistry = null)
     {
         var scripts = LoadScripts();
         var scriptsMenu = mainWindow.ScriptsMenu;
@@ -71,7 +72,7 @@ public partial class ScriptService
 
             menuItem.Click += (_, _) =>
             {
-                var resolved = ResolveVariables(prompt, viewModel.WorkingDirectory, gitService);
+                var resolved = ResolveVariables(prompt, viewModel.WorkingDirectory, gitService, settings, projectRegistry);
                 viewModel.InputText = resolved;
 
                 if (viewModel.SendCommand.CanExecute(null))
@@ -101,14 +102,15 @@ public partial class ScriptService
             Header = "Reload Scripts",
             ToolTip = "Re-read scripts.json and refresh this menu after manual edits."
         };
-        reload.Click += (_, _) => PopulateMenu(mainWindow, viewModel, gitService);
+        reload.Click += (_, _) => PopulateMenu(mainWindow, viewModel, gitService, settings, projectRegistry);
         scriptsMenu.Items.Add(reload);
 
         // Register hotkeys
-        RegisterHotkeys(mainWindow, scripts, viewModel, gitService);
+        RegisterHotkeys(mainWindow, scripts, viewModel, gitService, settings, projectRegistry);
     }
 
-    private string ResolveVariables(string prompt, string? workingDir, GitService gitService)
+    private string ResolveVariables(string prompt, string? workingDir, GitService gitService,
+        AppSettings? settings = null, ProjectRegistryService? projectRegistry = null)
     {
         var result = prompt;
 
@@ -137,6 +139,30 @@ public partial class ScriptService
             result = result.Replace("{snapshot}", content.Trim());
         }
 
+        // {ssh-key}
+        if (result.Contains("{ssh-key}") && settings is not null)
+            result = result.Replace("{ssh-key}", settings.SshKeyPath ?? "");
+
+        // {servers}
+        if (result.Contains("{servers}") && settings is not null)
+        {
+            var serverLines = settings.Servers.Select(s =>
+            {
+                var projects = s.Projects.Count > 0 ? $" ({string.Join(", ", s.Projects)})" : "";
+                return $"{s.Name}: {s.User}@{s.Host}:{s.Port}{projects}";
+            });
+            result = result.Replace("{servers}", string.Join("\n", serverLines));
+        }
+
+        // {project-notes}
+        if (result.Contains("{project-notes}") && projectRegistry is not null)
+        {
+            var notes = projectRegistry.Projects
+                .Where(p => !string.IsNullOrEmpty(p.Notes))
+                .Select(p => $"{p.Name}: {p.Notes}");
+            result = result.Replace("{project-notes}", string.Join("\n", notes));
+        }
+
         // {file:path}
         result = FileVariableRegex().Replace(result, match =>
         {
@@ -158,7 +184,8 @@ public partial class ScriptService
     }
 
     private void RegisterHotkeys(Window window, List<ScriptDefinition> scripts,
-        MainViewModel viewModel, GitService gitService)
+        MainViewModel viewModel, GitService gitService,
+        AppSettings? settings, ProjectRegistryService? projectRegistry)
     {
         foreach (var script in scripts.Where(s => !string.IsNullOrEmpty(s.HotKey)))
         {
@@ -187,7 +214,7 @@ public partial class ScriptService
                 var binding = new KeyBinding(
                     new Infrastructure.RelayCommand(() =>
                     {
-                        var resolved = ResolveVariables(prompt, viewModel.WorkingDirectory, gitService);
+                        var resolved = ResolveVariables(prompt, viewModel.WorkingDirectory, gitService, settings, projectRegistry);
                         viewModel.InputText = resolved;
 
                         if (viewModel.SendCommand.CanExecute(null))

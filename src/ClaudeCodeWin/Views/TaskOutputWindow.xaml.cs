@@ -14,6 +14,9 @@ public partial class TaskOutputWindow : Window
     private CancellationTokenSource? _cts;
     private Brush _currentForeground = Brushes.White;
     private bool _isBold;
+    private readonly StringBuilder _plainOutput = new();
+
+    public event Action<string, string>? OnTaskCompleted; // taskName, plainTextOutput
 
     private static readonly Regex AnsiRegex = new(@"\x1b\[([0-9;]*)m", RegexOptions.Compiled);
 
@@ -156,6 +159,7 @@ public partial class TaskOutputWindow : Window
             FontWeight = _isBold ? FontWeights.Bold : FontWeights.Normal
         };
         OutputParagraph.Inlines.Add(run);
+        _plainOutput.Append(text);
     }
 
     private void ProcessAnsiCodes(string codes)
@@ -219,6 +223,12 @@ public partial class TaskOutputWindow : Window
             StatusIcon.Foreground = (Brush)FindResource("ErrorBrush");
             StatusText.Text = "Failed";
         }
+
+        // Fire completion event with plain text output (truncated to 5000 chars)
+        var output = _plainOutput.ToString();
+        if (output.Length > 5000)
+            output = output[..5000] + "\n... (truncated)";
+        OnTaskCompleted?.Invoke(Title, output);
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)

@@ -21,4 +21,10 @@ public class AppSettings
 
     // Context Snapshot: auto-generate project context for Claude on session start
     public bool ContextSnapshotEnabled { get; set; } = true;
+
+    // SSH key path for Claude's own SSH access
+    public string? SshKeyPath { get; set; }
+
+    // Known servers where Claude's SSH key is authorized
+    public List<ServerInfo> Servers { get; set; } = [];
 }

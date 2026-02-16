@@ -9,4 +9,5 @@ public class ProjectInfo
     public string? TechStack { get; set; }
     public DateTime LastOpened { get; set; }
     public DateTime RegisteredAt { get; set; }
+    public string? Notes { get; set; }
 }

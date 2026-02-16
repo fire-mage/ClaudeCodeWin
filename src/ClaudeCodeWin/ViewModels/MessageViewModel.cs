@@ -13,6 +13,7 @@ public class MessageViewModel : ViewModelBase
     private bool _isStreaming;
     private bool _isThinking;
     private string _toolActivitySummary = string.Empty;
+    private bool _isBookmarked;
 
     public MessageRole Role { get; }
     public DateTime Timestamp { get; }
@@ -56,6 +57,12 @@ public class MessageViewModel : ViewModelBase
     /// </summary>
     public QuestionDisplayModel? QuestionDisplay { get; set; }
     public bool HasQuestion => QuestionDisplay is not null;
+
+    public bool IsBookmarked
+    {
+        get => _isBookmarked;
+        set => SetProperty(ref _isBookmarked, value);
+    }
 
     public MessageViewModel(MessageRole role, string text = "")
     {

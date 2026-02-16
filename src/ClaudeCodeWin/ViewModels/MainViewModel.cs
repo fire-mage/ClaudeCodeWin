@@ -34,6 +34,11 @@ public class MainViewModel : ViewModelBase
         - Use this to find projects on the local machine instead of searching external repositories.
         - The registry at `%APPDATA%\ClaudeCodeWin\project-registry.json` is auto-updated every time a project folder is opened.
 
+        ## SSH access
+        - A `<ssh-access>` section may be injected with Claude's SSH private key path and known servers.
+        - When connecting via SSH or deploying, always use the configured SSH key with `-i` flag.
+        - Refer to the known servers list for host/port/user details instead of asking the user.
+
         ## Important rules
         - When editing tasks.json or scripts.json, the format is a JSON array with camelCase keys. After editing, remind the user to click "Reload Tasks" or "Reload Scripts" in the menu.
         </system-instruction>
@@ -70,6 +75,7 @@ public class MainViewModel : ViewModelBase
     private bool _isUpdating;
     private int _contextWindowSize;
     private bool _contextWarningShown;
+    private string _todoProgressText = "";
 
     // Track project roots already registered this session (avoid re-registering)
     private readonly HashSet<string> _registeredProjectRoots =
@@ -162,6 +168,12 @@ public class MainViewModel : ViewModelBase
     {
         get => _contextUsageText;
         set => SetProperty(ref _contextUsageText, value);
+    }
+
+    public string TodoProgressText
+    {
+        get => _todoProgressText;
+        set => SetProperty(ref _todoProgressText, value);
     }
 
     public string CtaText
@@ -547,6 +559,11 @@ public class MainViewModel : ViewModelBase
             if (!string.IsNullOrEmpty(registrySummary))
                 preamble += $"\n\n<project-registry>\n{registrySummary}\n</project-registry>";
 
+            // Inject SSH access info
+            var sshInfo = BuildSshInfo();
+            if (!string.IsNullOrEmpty(sshInfo))
+                preamble += $"\n\n<ssh-access>\n{sshInfo}\n</ssh-access>";
+
             finalPrompt = $"{preamble}\n\n{text}";
         }
 
@@ -623,6 +640,10 @@ public class MainViewModel : ViewModelBase
                 {
                     _currentAssistantMessage.ToolUses.Add(new ToolUseViewModel(toolName, toolUseId, input));
                 }
+
+                // Update TodoWrite progress in status bar
+                if (toolName == "TodoWrite")
+                    UpdateTodoProgress(input);
             }
 
             TryRegisterProjectFromToolUse(toolName, input);
@@ -1025,6 +1046,7 @@ public class MainViewModel : ViewModelBase
         ModelName = "";
         StatusText = "Ready";
         ContextUsageText = "";
+        TodoProgressText = "";
         _contextWarningShown = false;
         _contextWindowSize = 0;
 
@@ -1190,6 +1212,15 @@ public class MainViewModel : ViewModelBase
         UpdateCta(CtaState.WaitingForUser);
     }
 
+    public void AddTaskOutput(string taskName, string output)
+    {
+        Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            Messages.Add(new MessageViewModel(MessageRole.System,
+                $"Task \"{taskName}\" output:\n{output}"));
+        });
+    }
+
     public void AddAttachment(FileAttachment attachment)
     {
         if (Attachments.All(a => a.FilePath != attachment.FilePath))
@@ -1262,6 +1293,60 @@ public class MainViewModel : ViewModelBase
         };
 
         previewWindow.ShowDialog();
+    }
+
+    private void UpdateTodoProgress(string inputJson)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(inputJson)) return;
+            using var doc = JsonDocument.Parse(inputJson);
+            if (!doc.RootElement.TryGetProperty("todos", out var todos)
+                || todos.ValueKind != JsonValueKind.Array)
+                return;
+
+            int total = 0, done = 0;
+            foreach (var todo in todos.EnumerateArray())
+            {
+                total++;
+                var status = todo.TryGetProperty("status", out var s) ? s.GetString() : "";
+                if (status == "completed") done++;
+            }
+
+            TodoProgressText = total > 0 ? $"Tasks: {done}/{total}" : "";
+        }
+        catch (JsonException) { }
+    }
+
+    private string? BuildSshInfo()
+    {
+        var hasKey = !string.IsNullOrEmpty(_settings.SshKeyPath);
+        var hasServers = _settings.Servers.Count > 0;
+
+        if (!hasKey && !hasServers)
+            return null;
+
+        var lines = new List<string> { "## SSH Access" };
+
+        if (hasKey)
+        {
+            lines.Add($"- Claude's SSH private key path: `{_settings.SshKeyPath}`");
+            lines.Add($"- When deploying or connecting via SSH, use this key with `-i \"{_settings.SshKeyPath}\"` flag");
+        }
+
+        if (hasServers)
+        {
+            lines.Add("");
+            lines.Add("### Known servers");
+            foreach (var s in _settings.Servers)
+            {
+                var desc = !string.IsNullOrEmpty(s.Description) ? $" — {s.Description}" : "";
+                var projects = s.Projects.Count > 0 ? $" (Projects: {string.Join(", ", s.Projects)})" : "";
+                lines.Add($"- **{s.Name}**: `{s.User}@{s.Host}:{s.Port}`{desc}{projects}");
+            }
+        }
+
+        return string.Join("\n", lines);
     }
 
     private void UpdateCta(CtaState state)

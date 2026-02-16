@@ -260,6 +260,10 @@ public class TaskRunnerService
         }
 
         var outputWindow = new TaskOutputWindow { Owner = owner };
+        outputWindow.OnTaskCompleted += (taskName, output) =>
+        {
+            viewModel.AddTaskOutput(taskName, output);
+        };
         outputWindow.Show();
 
         _ = outputWindow.RunTaskAsync(task, viewModel.WorkingDirectory);

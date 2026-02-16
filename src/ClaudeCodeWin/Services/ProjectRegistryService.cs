@@ -112,10 +112,31 @@ public class ProjectRegistryService
             meta.Add($"last opened: {p.LastOpened:yyyy-MM-dd}");
 
             parts.Add($"  ({string.Join(" | ", meta)})");
+            if (!string.IsNullOrEmpty(p.Notes))
+                parts.Add($"  Notes: {p.Notes}");
             lines.Add(string.Join("\n", parts));
         }
 
         return string.Join("\n", lines);
+    }
+
+    public void UpdateNotes(string folderPath, string? notes)
+    {
+        var normalized = Path.GetFullPath(folderPath);
+        var project = _projects.FirstOrDefault(p =>
+            string.Equals(p.Path, normalized, StringComparison.OrdinalIgnoreCase));
+        if (project is not null)
+        {
+            project.Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+            Save();
+        }
+    }
+
+    public string? GetNotes(string folderPath)
+    {
+        var normalized = Path.GetFullPath(folderPath);
+        return _projects.FirstOrDefault(p =>
+            string.Equals(p.Path, normalized, StringComparison.OrdinalIgnoreCase))?.Notes;
     }
 
     private static readonly string[] ProjectMarkerFiles =

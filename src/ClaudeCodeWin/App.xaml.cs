@@ -85,7 +85,7 @@ public partial class App : Application
         var contextSnapshotService = new ContextSnapshotService();
 
         var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService, projectRegistry, contextSnapshotService);
-        var mainWindow = new MainWindow(mainViewModel, notificationService, settingsService, settings, fileIndexService, chatHistoryService);
+        var mainWindow = new MainWindow(mainViewModel, notificationService, settingsService, settings, fileIndexService, chatHistoryService, projectRegistry);
 
         // Wire up usage service → status bar
         usageService.OnUsageUpdated += () =>
@@ -112,7 +112,7 @@ public partial class App : Application
         usageService.Start();
 
         // Setup scripts menu
-        scriptService.PopulateMenu(mainWindow, mainViewModel, gitService);
+        scriptService.PopulateMenu(mainWindow, mainViewModel, gitService, settings, projectRegistry);
 
         // Setup tasks menu
         taskRunnerService.PopulateMenu(mainWindow, mainViewModel);

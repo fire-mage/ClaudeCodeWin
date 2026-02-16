@@ -18,13 +18,14 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings;
     private readonly FileIndexService _fileIndexService;
     private readonly ChatHistoryService _chatHistoryService;
+    private readonly ProjectRegistryService _projectRegistry;
     private CancellationTokenSource? _autocompleteCts;
 
     private MainViewModel ViewModel => (MainViewModel)DataContext;
 
     public MainWindow(MainViewModel viewModel, NotificationService notificationService,
         SettingsService settingsService, AppSettings settings, FileIndexService fileIndexService,
-        ChatHistoryService chatHistoryService)
+        ChatHistoryService chatHistoryService, ProjectRegistryService projectRegistry)
     {
         InitializeComponent();
         DataContext = viewModel;
@@ -33,6 +34,7 @@ public partial class MainWindow : Window
         _settings = settings;
         _fileIndexService = fileIndexService;
         _chatHistoryService = chatHistoryService;
+        _projectRegistry = projectRegistry;
 
         notificationService.Initialize(this);
 
@@ -561,6 +563,7 @@ public partial class MainWindow : Window
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var textBlock = new TextBlock
             {
@@ -572,12 +575,39 @@ public partial class MainWindow : Window
             Grid.SetColumn(textBlock, 0);
             grid.Children.Add(textBlock);
 
+            var folderForNotes = folder;
+            var hasNotes = !string.IsNullOrEmpty(_projectRegistry.GetNotes(folder));
+            var notesBtn = new Button
+            {
+                Content = hasNotes ? "\U0001F4DD" : "\U0001F4C4",
+                FontSize = 10,
+                Padding = new Thickness(4, 0, 4, 0),
+                Margin = new Thickness(12, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Background = System.Windows.Media.Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Foreground = hasNotes
+                    ? (System.Windows.Media.Brush)FindResource("AccentBrush")
+                    : (System.Windows.Media.Brush)FindResource("TextSecondaryBrush"),
+                ToolTip = "Edit project notes"
+            };
+            notesBtn.Click += (_, e) =>
+            {
+                e.Handled = true;
+                var dlg = new ProjectNotesDialog(_projectRegistry, folderForNotes) { Owner = this };
+                if (dlg.ShowDialog() == true)
+                    RebuildRecentProjectsMenu();
+            };
+            Grid.SetColumn(notesBtn, 1);
+            grid.Children.Add(notesBtn);
+
             var removeBtn = new Button
             {
                 Content = "\u2715",
                 FontSize = 10,
                 Padding = new Thickness(4, 0, 4, 0),
-                Margin = new Thickness(12, 0, 0, 0),
+                Margin = new Thickness(4, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = System.Windows.Input.Cursors.Hand,
                 Background = System.Windows.Media.Brushes.Transparent,
@@ -594,7 +624,7 @@ public partial class MainWindow : Window
                 if (result == MessageBoxResult.Yes)
                     ViewModel.RemoveRecentFolderCommand.Execute(folderForRemove);
             };
-            Grid.SetColumn(removeBtn, 1);
+            Grid.SetColumn(removeBtn, 2);
             grid.Children.Add(removeBtn);
 
             var menuItem = new MenuItem { Header = grid };
@@ -639,6 +669,67 @@ public partial class MainWindow : Window
             if (ViewModel.QuickPromptCommand.CanExecute(prompt))
                 ViewModel.QuickPromptCommand.Execute(prompt);
         }
+    }
+
+    private void ToggleBookmark_Click(object sender, RoutedEventArgs e)
+    {
+        // Walk up the visual tree from the context menu to find the MessageViewModel
+        if (sender is MenuItem menuItem)
+        {
+            var contextMenu = menuItem.Parent as ContextMenu;
+            var textBox = contextMenu?.PlacementTarget as System.Windows.Controls.TextBox;
+            if (textBox?.DataContext is MessageViewModel msg)
+            {
+                msg.IsBookmarked = !msg.IsBookmarked;
+                menuItem.Header = msg.IsBookmarked ? "Remove Bookmark" : "Bookmark";
+                UpdateBookmarksButton();
+            }
+        }
+    }
+
+    private void UpdateBookmarksButton()
+    {
+        var hasBookmarks = ViewModel.Messages.Any(m => m.IsBookmarked);
+        BookmarksButton.Visibility = hasBookmarks ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void BookmarksButton_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        var bookmarked = ViewModel.Messages.Where(m => m.IsBookmarked).ToList();
+        if (bookmarked.Count == 0) return;
+
+        BookmarksContextMenu.Items.Clear();
+        foreach (var msg in bookmarked)
+        {
+            var preview = msg.Text.Length > 60 ? msg.Text[..60] + "..." : msg.Text;
+            preview = preview.Replace("\r", "").Replace("\n", " ");
+            var item = new MenuItem
+            {
+                Header = $"{msg.Timestamp:HH:mm} | {preview}",
+                Foreground = (Brush)FindResource("TextBrush")
+            };
+            var target = msg;
+            item.Click += (_, _) => ScrollToMessage(target);
+            BookmarksContextMenu.Items.Add(item);
+        }
+
+        BookmarksContextMenu.PlacementTarget = (UIElement)sender;
+        BookmarksContextMenu.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private void ScrollToMessage(MessageViewModel msg)
+    {
+        // Find the container for this message and scroll to it
+        var container = MessagesControl.ItemContainerGenerator.ContainerFromItem(msg) as FrameworkElement;
+        if (container is not null)
+            container.BringIntoView();
+    }
+
+    private void MenuItem_Servers_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new ServerRegistryWindow(_settings, _settingsService) { Owner = this };
+        dlg.ShowDialog();
     }
 
     private void MenuItem_About_Click(object sender, RoutedEventArgs e)

@@ -66,6 +66,8 @@
                 <MenuItem Header="S_cripts" x:Name="ScriptsMenu" Visibility="Collapsed"/>
                 <MenuItem Header="_Tasks" x:Name="TasksMenu"
                           ToolTip="Shell commands: run predefined terminal commands in your project folder.&#x0a;Output appears in a separate window. Customize via tasks.json.&#x0a;Example: 'Git Status' runs 'git status' and displays the result."/>
+                <MenuItem Header="Se_rvers" Click="MenuItem_Servers_Click"
+                          ToolTip="Manage Claude's SSH key and known servers.&#x0a;Configure which servers Claude can connect to and deploy to."/>
                 <MenuItem Header="_Help"
                           ToolTip="Updates and application information">
                     <MenuItem Header="Check for _Updates..." Command="{Binding CheckForUpdatesCommand}"
@@ -145,6 +147,13 @@
                                                Foreground="{StaticResource TextSecondaryBrush}"
                                                Opacity="0.5"
                                                Margin="0,0,0,2"/>
+                                    <!-- Bookmark indicator -->
+                                    <TextBlock Text="&#x2605;" FontSize="14"
+                                               Foreground="{StaticResource AccentBrush}"
+                                               HorizontalAlignment="Right"
+                                               Margin="0,-2,0,0"
+                                               Visibility="{Binding IsBookmarked, Converter={StaticResource BoolToVis}}"
+                                               ToolTip="Bookmarked"/>
                                     <!-- Main text (selectable) -->
                                     <TextBox Text="{Binding Text, Mode=OneWay}"
                                              IsReadOnly="True"
@@ -163,6 +172,8 @@
                                                 <MenuItem Header="Copy Selection" Command="ApplicationCommands.Copy"/>
                                                 <MenuItem Header="Copy All" Click="CopyAllMessage_Click"
                                                           Tag="{Binding Text}"/>
+                                                <Separator/>
+                                                <MenuItem Header="Bookmark" Click="ToggleBookmark_Click"/>
                                             </ContextMenu>
                                         </TextBox.ContextMenu>
                                     </TextBox>
@@ -406,6 +417,33 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </ScrollViewer>
+
+        <!-- Bookmarks button -->
+        <Border x:Name="BookmarksButton"
+                Grid.Row="1"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Margin="0,0,24,48"
+                Panel.ZIndex="5"
+                Visibility="Collapsed"
+                Cursor="Hand"
+                MouseLeftButtonUp="BookmarksButton_Click"
+                ToolTip="Jump to bookmarked messages">
+            <Border Background="{StaticResource SurfaceLightBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="16"
+                    Padding="10,6">
+                <TextBlock Text="&#x2605; Bookmarks" FontSize="12" FontWeight="SemiBold"
+                           Foreground="{StaticResource AccentBrush}"/>
+            </Border>
+            <Border.ContextMenu>
+                <ContextMenu x:Name="BookmarksContextMenu"
+                             Background="{StaticResource SurfaceBrush}"
+                             BorderBrush="{StaticResource BorderBrush}"
+                             Foreground="{StaticResource TextBrush}"/>
+            </Border.ContextMenu>
+        </Border>
 
         <!-- Scroll to bottom button -->
         <Button x:Name="ScrollToBottomButton"
@@ -870,6 +908,7 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <TextBlock Grid.Column="0" Text="{Binding StatusText}"
@@ -887,12 +926,17 @@
                            Foreground="{Binding GitStatusText, Converter={StaticResource GitStatusBrush}}"
                            VerticalAlignment="Center" Margin="0,0,16,0"
                            ToolTip="Git repository status. Commit your changes regularly for safe rollback."/>
-                <TextBlock Grid.Column="4" Text="{Binding ContextUsageText}"
+                <TextBlock Grid.Column="4" Text="{Binding TodoProgressText}"
+                           FontSize="11"
+                           Foreground="{StaticResource PrimaryBrush}"
+                           VerticalAlignment="Center" Margin="0,0,16,0"
+                           ToolTip="Current task progress from Claude's todo list."/>
+                <TextBlock Grid.Column="5" Text="{Binding ContextUsageText}"
                            FontSize="11"
                            Foreground="{StaticResource AccentBrush}"
                            VerticalAlignment="Center" Margin="0,0,16,0"
                            ToolTip="Context window usage. Shows what percentage of Claude's memory is used.&#x0a;At 80%+ consider starting a new session or expanding to 1M tokens."/>
-                <Border Grid.Column="5" VerticalAlignment="Center" Margin="0,0,16,0"
+                <Border Grid.Column="6" VerticalAlignment="Center" Margin="0,0,16,0"
                         Cursor="Hand" Background="Transparent"
                         MouseLeftButtonUp="MemoryIndicator_Click"
                         ToolTip="Usage limits from your Anthropic subscription.&#x0a;Session resets every 5 hours, weekly every 7 days.&#x0a;Click for session menu.">
@@ -915,7 +959,7 @@
                         </ContextMenu>
                     </Border.ContextMenu>
                 </Border>
-                <Border Grid.Column="6" VerticalAlignment="Center"
+                <Border Grid.Column="7" VerticalAlignment="Center"
                         Background="Transparent"
                         MouseLeftButtonUp="ModelIndicator_Click">
                     <TextBlock Text="{Binding ModelName}"
