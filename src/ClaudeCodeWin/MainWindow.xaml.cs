@@ -45,9 +45,6 @@ public partial class MainWindow : Window
         viewModel.RecentFolders.CollectionChanged += (_, _) => RebuildRecentProjectsMenu();
         RebuildRecentProjectsMenu();
 
-        // Initialize Beta Updates checkbox from settings
-        BetaUpdatesMenuItem.IsChecked = settings.UpdateChannel == "beta";
-
         // Set window icon from embedded resource
         try
         {
@@ -735,12 +732,10 @@ public partial class MainWindow : Window
         dlg.ShowDialog();
     }
 
-    private void MenuItem_BetaUpdates_Click(object sender, RoutedEventArgs e)
+    private void MenuItem_Settings_Click(object sender, RoutedEventArgs e)
     {
-        var channel = BetaUpdatesMenuItem.IsChecked ? "beta" : "stable";
-        _settings.UpdateChannel = channel;
-        _settingsService.Save(_settings);
-        ViewModel.SetUpdateChannel(channel);
+        var dlg = new SettingsWindow(_settings, _settingsService, ViewModel) { Owner = this };
+        dlg.ShowDialog();
     }
 
     private void MenuItem_About_Click(object sender, RoutedEventArgs e)
