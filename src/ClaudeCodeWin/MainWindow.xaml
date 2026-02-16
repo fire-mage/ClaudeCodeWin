@@ -57,7 +57,7 @@
                               ToolTip="Close the application. Window position and size are saved automatically."/>
                 </MenuItem>
                 <MenuItem Header="S_cripts" x:Name="ScriptsMenu" Visibility="Collapsed"/>
-                <MenuItem Header="_Tasks" x:Name="TasksMenu"
+                <MenuItem Header="My _Tasks" x:Name="TasksMenu"
                           ToolTip="Shell commands: run predefined terminal commands in your project folder.&#x0a;Output appears in a separate window. Customize via tasks.json.&#x0a;Example: 'Git Status' runs 'git status' and displays the result."/>
                 <MenuItem Header="_Help"
                           ToolTip="Updates and application information">
