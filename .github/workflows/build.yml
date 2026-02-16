@@ -81,10 +81,30 @@ jobs:
           $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
           echo "$hash  ClaudeCodeWin-${version}-${{ matrix.arch }}.exe" > "publish/ClaudeCodeWin-${version}-${{ matrix.arch }}.exe.sha256"
 
-      - name: Upload to GitHub Release
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.arch }}
+          path: publish/ClaudeCodeWin-*
+          retention-days: 1
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lah artifacts/
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.version }}
           name: v${{ needs.version.outputs.version }}
           generate_release_notes: true
-          files: publish/ClaudeCodeWin-*
+          files: artifacts/*
