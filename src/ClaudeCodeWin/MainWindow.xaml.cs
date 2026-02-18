@@ -504,6 +504,46 @@ public partial class MainWindow : Window
         }
     }
 
+    private void InlineImage_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is string filePath && File.Exists(filePath))
+        {
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.UriSource = new Uri(filePath, UriKind.Absolute);
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.EndInit();
+
+            var image = new System.Windows.Controls.Image
+            {
+                Source = bitmap,
+                Stretch = Stretch.Uniform,
+                StretchDirection = StretchDirection.DownOnly
+            };
+
+            var previewWindow = new Window
+            {
+                Title = Path.GetFileName(filePath),
+                Width = Math.Min(bitmap.PixelWidth + 40, 1200),
+                Height = Math.Min(bitmap.PixelHeight + 60, 800),
+                MinWidth = 300,
+                MinHeight = 200,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = (Brush)FindResource("BackgroundBrush"),
+                Content = new ScrollViewer
+                {
+                    Content = image,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    Padding = new Thickness(8)
+                }
+            };
+
+            previewWindow.ShowDialog();
+        }
+    }
+
     private void AttachmentPreview_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (sender is FrameworkElement fe && fe.DataContext is Models.FileAttachment att)

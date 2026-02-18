@@ -161,12 +161,17 @@
                                              IsTabStop="False"
                                              Cursor="IBeam">
                                         <TextBox.ContextMenu>
-                                            <ContextMenu>
-                                                <MenuItem Header="Copy Selection" Command="ApplicationCommands.Copy"/>
+                                            <ContextMenu Background="{StaticResource SurfaceBrush}"
+                                                         BorderBrush="{StaticResource BorderBrush}"
+                                                         Foreground="{StaticResource TextBrush}">
+                                                <MenuItem Header="Copy Selection" Command="ApplicationCommands.Copy"
+                                                          Foreground="{StaticResource TextBrush}"/>
                                                 <MenuItem Header="Copy All" Click="CopyAllMessage_Click"
-                                                          Tag="{Binding Text}"/>
+                                                          Tag="{Binding Text}"
+                                                          Foreground="{StaticResource TextBrush}"/>
                                                 <Separator/>
-                                                <MenuItem Header="Bookmark" Click="ToggleBookmark_Click"/>
+                                                <MenuItem Header="Bookmark" Click="ToggleBookmark_Click"
+                                                          Foreground="{StaticResource TextBrush}"/>
                                             </ContextMenu>
                                         </TextBox.ContextMenu>
                                     </TextBox>
@@ -203,6 +208,32 @@
                                                             </Image.Style>
                                                         </Image>
                                                     </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <!-- Inline images (detected from file paths in text) -->
+                                    <ItemsControl ItemsSource="{Binding InlineImages}"
+                                                  Visibility="{Binding HasInlineImages, Converter={StaticResource BoolToVis}}"
+                                                  Margin="0,6,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{StaticResource SurfaceLightBrush}"
+                                                        CornerRadius="4" Padding="6,4" Margin="0,0,0,3"
+                                                        Cursor="Hand"
+                                                        MouseLeftButtonUp="InlineImage_Click">
+                                                    <Image MaxHeight="300" MaxWidth="500"
+                                                           Stretch="Uniform" StretchDirection="DownOnly"
+                                                           HorizontalAlignment="Left"
+                                                           Tag="{Binding}"
+                                                           Loaded="AttachmentImage_Loaded">
+                                                        <Image.Style>
+                                                            <Style TargetType="Image">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </Style>
+                                                        </Image.Style>
+                                                    </Image>
                                                 </Border>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
@@ -326,6 +357,40 @@
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
+                                        </Expander>
+                                    </Border>
+
+                                    <!-- Task/console output — collapsed by default -->
+                                    <Border Background="{StaticResource ToolBubbleBrush}"
+                                            CornerRadius="4" Padding="6,4" Margin="0,6,0,0"
+                                            Visibility="{Binding HasTaskOutput, Converter={StaticResource BoolToVis}}">
+                                        <Expander IsExpanded="False"
+                                                  Foreground="{StaticResource TextSecondaryBrush}">
+                                            <Expander.Header>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="&#x25B6; " FontSize="10"
+                                                               Foreground="{StaticResource PrimaryBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Console output"
+                                                               FontSize="12"
+                                                               Foreground="{StaticResource PrimaryBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Expander.Header>
+                                            <TextBox Text="{Binding TaskOutputText, Mode=OneWay}"
+                                                     IsReadOnly="True"
+                                                     TextWrapping="Wrap"
+                                                     FontFamily="Cascadia Code,Consolas,Courier New"
+                                                     FontSize="11"
+                                                     Background="Transparent"
+                                                     BorderThickness="0"
+                                                     Padding="4"
+                                                     Foreground="{StaticResource TextSecondaryBrush}"
+                                                     SelectionBrush="{StaticResource SelectionBrush}"
+                                                     IsTabStop="False"
+                                                     MaxHeight="400"
+                                                     VerticalScrollBarVisibility="Auto"
+                                                     Margin="4,3,0,2"/>
                                         </Expander>
                                     </Border>
 
@@ -942,12 +1007,17 @@
                                    VerticalAlignment="Center" Margin="2,1,0,0"/>
                     </StackPanel>
                     <Border.ContextMenu>
-                        <ContextMenu x:Name="MemoryContextMenu">
+                        <ContextMenu x:Name="MemoryContextMenu"
+                                     Background="{StaticResource SurfaceBrush}"
+                                     BorderBrush="{StaticResource BorderBrush}"
+                                     Foreground="{StaticResource TextBrush}">
                             <MenuItem Header="New Session" Command="{Binding NewSessionCommand}"
                                       InputGestureText="Ctrl+N"
+                                      Foreground="{StaticResource TextBrush}"
                                       ToolTip="Start a fresh conversation. Clears history and resets memory usage."/>
                             <MenuItem Header="Expand Context (1M tokens)"
                                       Command="{Binding ExpandContextCommand}"
+                                      Foreground="{StaticResource TextBrush}"
                                       ToolTip="Toggle between standard and extended context window."/>
                         </ContextMenu>
                     </Border.ContextMenu>
@@ -958,9 +1028,13 @@
                     <TextBlock Text="{Binding ModelName}"
                                FontSize="12" Foreground="{StaticResource PrimaryBrush}"/>
                     <Border.ContextMenu>
-                        <ContextMenu x:Name="ModelContextMenu">
+                        <ContextMenu x:Name="ModelContextMenu"
+                                     Background="{StaticResource SurfaceBrush}"
+                                     BorderBrush="{StaticResource BorderBrush}"
+                                     Foreground="{StaticResource TextBrush}">
                             <MenuItem Header="Switch to Opus (new session)"
                                       Command="{Binding SwitchToOpusCommand}"
+                                      Foreground="{StaticResource TextBrush}"
                                       ToolTip="Start a new session with claude-opus model."/>
                         </ContextMenu>
                     </Border.ContextMenu>

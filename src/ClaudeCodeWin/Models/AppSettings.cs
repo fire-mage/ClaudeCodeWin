@@ -25,6 +25,9 @@ public class AppSettings
     // SSH key path for Claude's own SSH access
     public string? SshKeyPath { get; set; }
 
+    // Master password for SSH servers that don't accept SSH key auth
+    public string? SshMasterPassword { get; set; }
+
     // Known servers where Claude's SSH key is authorized
     public List<ServerInfo> Servers { get; set; } = [];
 

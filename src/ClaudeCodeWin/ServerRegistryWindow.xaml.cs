@@ -32,6 +32,7 @@ public partial class ServerRegistryWindow : Window
         }).ToList();
 
         SshKeyPathBox.Text = settings.SshKeyPath ?? "";
+        SshMasterPasswordBox.Password = settings.SshMasterPassword ?? "";
         RefreshServerList();
     }
 
@@ -58,6 +59,11 @@ public partial class ServerRegistryWindow : Window
     private void ClearSshKey_Click(object sender, RoutedEventArgs e)
     {
         SshKeyPathBox.Text = "";
+    }
+
+    private void ClearSshPassword_Click(object sender, RoutedEventArgs e)
+    {
+        SshMasterPasswordBox.Password = "";
     }
 
     private void AddServer_Click(object sender, RoutedEventArgs e)
@@ -178,6 +184,7 @@ public partial class ServerRegistryWindow : Window
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
         _settings.SshKeyPath = string.IsNullOrWhiteSpace(SshKeyPathBox.Text) ? null : SshKeyPathBox.Text;
+        _settings.SshMasterPassword = string.IsNullOrEmpty(SshMasterPasswordBox.Password) ? null : SshMasterPasswordBox.Password;
         _settings.Servers = _servers;
         _settingsService.Save(_settings);
         DialogResult = true;

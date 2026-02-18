@@ -289,7 +289,7 @@ public class MainViewModel : ViewModelBase
             {
                 MessageQueue.Remove(qm);
                 CancelProcessing();
-                _ = SendDirectAsync(qm.Text, null);
+                _ = SendDirectAsync(qm.Text, qm.Attachments);
             }
         });
         ReturnQueuedToInputCommand = new RelayCommand(p =>
@@ -298,6 +298,12 @@ public class MainViewModel : ViewModelBase
             {
                 MessageQueue.Remove(qm);
                 InputText = qm.Text;
+                // Restore attachments back to the attachment bar
+                if (qm.Attachments is not null)
+                {
+                    foreach (var att in qm.Attachments)
+                        AddAttachment(att);
+                }
             }
         });
         ViewChangedFileCommand = new RelayCommand(p =>
@@ -507,11 +513,14 @@ public class MainViewModel : ViewModelBase
         if (string.IsNullOrEmpty(text))
             return;
 
-        // If Claude is busy, queue the message
+        // If Claude is busy, queue the message (including any attachments)
         if (IsProcessing)
         {
-            MessageQueue.Add(new QueuedMessage(text));
+            List<FileAttachment>? queuedAttachments = Attachments.Count > 0 ? [.. Attachments] : null;
+            MessageQueue.Add(new QueuedMessage(text, queuedAttachments));
             InputText = string.Empty;
+            if (queuedAttachments is not null)
+                Attachments.Clear();
             return;
         }
 
@@ -767,7 +776,7 @@ public class MainViewModel : ViewModelBase
             {
                 var next = MessageQueue[0];
                 MessageQueue.RemoveAt(0);
-                _ = SendDirectAsync(next.Text, null);
+                _ = SendDirectAsync(next.Text, next.Attachments);
             }
             else
             {
@@ -896,6 +905,9 @@ public class MainViewModel : ViewModelBase
         var requestId = _pendingControlRequestId!;
         var toolUseId = _pendingControlToolUseId;
 
+        // Clear question buttons from all messages (they've been answered)
+        ClearQuestionDisplays();
+
         // ExitPlanMode — simple allow/deny
         if (_pendingQuestionInput is null)
         {
@@ -964,6 +976,15 @@ public class MainViewModel : ViewModelBase
             _pendingQuestionAnswers.Clear();
             _pendingQuestionCount = 0;
             UpdateCta(CtaState.Processing);
+        }
+    }
+
+    private void ClearQuestionDisplays()
+    {
+        foreach (var msg in Messages)
+        {
+            if (msg.QuestionDisplay is not null)
+                msg.QuestionDisplay = null;
         }
     }
 
@@ -1222,8 +1243,11 @@ public class MainViewModel : ViewModelBase
     {
         Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            Messages.Add(new MessageViewModel(MessageRole.System,
-                $"Task \"{taskName}\" output:\n{output}"));
+            var msg = new MessageViewModel(MessageRole.System, $"Task \"{taskName}\" completed")
+            {
+                TaskOutputText = output
+            };
+            Messages.Add(msg);
         });
     }
 
@@ -1327,9 +1351,10 @@ public class MainViewModel : ViewModelBase
     private string? BuildSshInfo()
     {
         var hasKey = !string.IsNullOrEmpty(_settings.SshKeyPath);
+        var hasPassword = !string.IsNullOrEmpty(_settings.SshMasterPassword);
         var hasServers = _settings.Servers.Count > 0;
 
-        if (!hasKey && !hasServers)
+        if (!hasKey && !hasPassword && !hasServers)
             return null;
 
         var lines = new List<string> { "## SSH Access" };
@@ -1338,6 +1363,12 @@ public class MainViewModel : ViewModelBase
         {
             lines.Add($"- Claude's SSH private key path: `{_settings.SshKeyPath}`");
             lines.Add($"- When deploying or connecting via SSH, use this key with `-i \"{_settings.SshKeyPath}\"` flag");
+        }
+
+        if (hasPassword)
+        {
+            lines.Add($"- SSH master password for servers that don't accept key auth: `{_settings.SshMasterPassword}`");
+            lines.Add("- Use `sshpass -p '{password}' ssh ...` when key-based auth is not available");
         }
 
         if (hasServers)

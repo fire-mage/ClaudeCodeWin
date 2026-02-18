@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.IO;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 
@@ -9,19 +10,64 @@ namespace ClaudeCodeWin.ViewModels;
 
 public class MessageViewModel : ViewModelBase
 {
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" };
+
+    private static readonly Regex FilePathRegex = new(
+        @"(?:[A-Za-z]:\\[^\s""<>|*?]+|/[^\s""<>|*?]+)\.(?:png|jpg|jpeg|gif|bmp|webp)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private string _text = string.Empty;
     private bool _isStreaming;
     private bool _isThinking;
     private string _toolActivitySummary = string.Empty;
     private bool _isBookmarked;
+    private string? _taskOutputText;
 
     public MessageRole Role { get; }
     public DateTime Timestamp { get; }
 
+    /// <summary>
+    /// Image file paths detected in the message text, displayed inline.
+    /// </summary>
+    public ObservableCollection<string> InlineImages { get; } = [];
+    public bool HasInlineImages => InlineImages.Count > 0;
+
     public string Text
     {
         get => _text;
-        set => SetProperty(ref _text, value);
+        set
+        {
+            SetProperty(ref _text, value);
+            DetectImagePaths(value);
+        }
+    }
+
+    private void DetectImagePaths(string text)
+    {
+        if (string.IsNullOrEmpty(text) || Role != MessageRole.Assistant) return;
+
+        foreach (Match match in FilePathRegex.Matches(text))
+        {
+            var path = match.Value;
+            if (File.Exists(path) && !InlineImages.Contains(path))
+            {
+                InlineImages.Add(path);
+                OnPropertyChanged(nameof(HasInlineImages));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Add an inline image from a base64 data string saved to a temp file.
+    /// </summary>
+    public void AddInlineImage(string filePath)
+    {
+        if (!InlineImages.Contains(filePath))
+        {
+            InlineImages.Add(filePath);
+            OnPropertyChanged(nameof(HasInlineImages));
+        }
     }
 
     public bool IsStreaming
@@ -55,8 +101,33 @@ public class MessageViewModel : ViewModelBase
     /// <summary>
     /// When non-null, this message shows a question with clickable option buttons.
     /// </summary>
-    public QuestionDisplayModel? QuestionDisplay { get; set; }
+    private QuestionDisplayModel? _questionDisplay;
+    public QuestionDisplayModel? QuestionDisplay
+    {
+        get => _questionDisplay;
+        set
+        {
+            _questionDisplay = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasQuestion));
+        }
+    }
     public bool HasQuestion => QuestionDisplay is not null;
+
+    /// <summary>
+    /// Collapsible task console output attached to this message.
+    /// </summary>
+    public string? TaskOutputText
+    {
+        get => _taskOutputText;
+        set
+        {
+            _taskOutputText = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasTaskOutput));
+        }
+    }
+    public bool HasTaskOutput => !string.IsNullOrEmpty(_taskOutputText);
 
     public bool IsBookmarked
     {

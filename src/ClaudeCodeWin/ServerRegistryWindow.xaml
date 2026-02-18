@@ -11,6 +11,8 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -45,8 +47,35 @@
                     Cursor="Hand"/>
         </Grid>
 
+        <!-- SSH Master Password -->
+        <TextBlock Grid.Row="2" Text="SSH Master Password" FontSize="14" FontWeight="SemiBold"
+                   Foreground="{StaticResource TextBrush}" Margin="0,0,0,6"/>
+
+        <Grid Grid.Row="3" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <PasswordBox Grid.Column="0" x:Name="SshMasterPasswordBox"
+                         Background="{StaticResource SurfaceBrush}"
+                         Foreground="{StaticResource TextBrush}"
+                         BorderBrush="{StaticResource BorderBrush}"
+                         BorderThickness="1"
+                         Padding="10,8"
+                         FontSize="14"
+                         FontFamily="Cascadia Code,Consolas,Courier New"
+                         VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Content="Clear"
+                    Click="ClearSshPassword_Click"
+                    Padding="16,6" Margin="8,0,0,0"
+                    Background="{StaticResource SurfaceBrush}"
+                    Foreground="{StaticResource TextSecondaryBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    Cursor="Hand"/>
+        </Grid>
+
         <!-- Servers header -->
-        <Grid Grid.Row="2" Margin="0,0,0,8">
+        <Grid Grid.Row="4" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -75,7 +104,7 @@
         </Grid>
 
         <!-- Server list -->
-        <ListView Grid.Row="3" x:Name="ServerList"
+        <ListView Grid.Row="5" x:Name="ServerList"
                   Background="{StaticResource SurfaceBrush}"
                   BorderBrush="{StaticResource BorderBrush}"
                   BorderThickness="1"
@@ -135,7 +164,7 @@
         </ListView>
 
         <!-- Bottom buttons -->
-        <StackPanel Grid.Row="4" Orientation="Horizontal"
+        <StackPanel Grid.Row="6" Orientation="Horizontal"
                     HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button Content="Save" Click="SaveButton_Click"
                     Style="{StaticResource PrimaryButton}"
