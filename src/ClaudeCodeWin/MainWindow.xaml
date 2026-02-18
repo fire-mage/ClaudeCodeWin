@@ -161,17 +161,12 @@
                                              IsTabStop="False"
                                              Cursor="IBeam">
                                         <TextBox.ContextMenu>
-                                            <ContextMenu Background="{StaticResource SurfaceBrush}"
-                                                         BorderBrush="{StaticResource BorderBrush}"
-                                                         Foreground="{StaticResource TextBrush}">
-                                                <MenuItem Header="Copy Selection" Command="ApplicationCommands.Copy"
-                                                          Foreground="{StaticResource TextBrush}"/>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Selection" Command="ApplicationCommands.Copy"/>
                                                 <MenuItem Header="Copy All" Click="CopyAllMessage_Click"
-                                                          Tag="{Binding Text}"
-                                                          Foreground="{StaticResource TextBrush}"/>
+                                                          Tag="{Binding Text}"/>
                                                 <Separator/>
-                                                <MenuItem Header="Bookmark" Click="ToggleBookmark_Click"
-                                                          Foreground="{StaticResource TextBrush}"/>
+                                                <MenuItem Header="Bookmark" Click="ToggleBookmark_Click"/>
                                             </ContextMenu>
                                         </TextBox.ContextMenu>
                                     </TextBox>
@@ -1007,17 +1002,12 @@
                                    VerticalAlignment="Center" Margin="2,1,0,0"/>
                     </StackPanel>
                     <Border.ContextMenu>
-                        <ContextMenu x:Name="MemoryContextMenu"
-                                     Background="{StaticResource SurfaceBrush}"
-                                     BorderBrush="{StaticResource BorderBrush}"
-                                     Foreground="{StaticResource TextBrush}">
+                        <ContextMenu x:Name="MemoryContextMenu">
                             <MenuItem Header="New Session" Command="{Binding NewSessionCommand}"
                                       InputGestureText="Ctrl+N"
-                                      Foreground="{StaticResource TextBrush}"
                                       ToolTip="Start a fresh conversation. Clears history and resets memory usage."/>
                             <MenuItem Header="Expand Context (1M tokens)"
                                       Command="{Binding ExpandContextCommand}"
-                                      Foreground="{StaticResource TextBrush}"
                                       ToolTip="Toggle between standard and extended context window."/>
                         </ContextMenu>
                     </Border.ContextMenu>
@@ -1028,13 +1018,9 @@
                     <TextBlock Text="{Binding ModelName}"
                                FontSize="12" Foreground="{StaticResource PrimaryBrush}"/>
                     <Border.ContextMenu>
-                        <ContextMenu x:Name="ModelContextMenu"
-                                     Background="{StaticResource SurfaceBrush}"
-                                     BorderBrush="{StaticResource BorderBrush}"
-                                     Foreground="{StaticResource TextBrush}">
+                        <ContextMenu x:Name="ModelContextMenu">
                             <MenuItem Header="Switch to Opus (new session)"
                                       Command="{Binding SwitchToOpusCommand}"
-                                      Foreground="{StaticResource TextBrush}"
                                       ToolTip="Start a new session with claude-opus model."/>
                         </ContextMenu>
                     </Border.ContextMenu>
