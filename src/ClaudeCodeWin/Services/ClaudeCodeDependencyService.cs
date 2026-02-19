@@ -198,6 +198,11 @@ public class ClaudeCodeDependencyService
                 StandardErrorEncoding = Encoding.UTF8,
             };
 
+            // Suppress TUI/interactive mode — force plain text output
+            psi.Environment["CI"] = "1";
+            psi.Environment["TERM"] = "dumb";
+            psi.Environment["NO_COLOR"] = "1";
+
             using var process = new Process { StartInfo = psi };
             process.Start();
             Log($"Installer process started (PID: {process.Id})");
@@ -679,7 +684,12 @@ public class ClaudeCodeDependencyService
         while (await reader.ReadLineAsync() is { } line)
         {
             if (!string.IsNullOrWhiteSpace(line))
-                onProgress?.Invoke(line);
+            {
+                // Strip ANSI escape codes (e.g. [1A, [1C, [?2026h, colors, etc.)
+                var clean = System.Text.RegularExpressions.Regex.Replace(line, @"\x1B\[[^@-~]*[@-~]|\x1B\].*?\x07|\x1B\[[\?]?\d*[a-zA-Z]", "").Trim();
+                if (!string.IsNullOrWhiteSpace(clean))
+                    onProgress?.Invoke(clean);
+            }
         }
     }
 }
