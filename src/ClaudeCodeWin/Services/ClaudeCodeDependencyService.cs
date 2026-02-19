@@ -186,13 +186,30 @@ public class ClaudeCodeDependencyService
         {
             if (!string.IsNullOrWhiteSpace(line))
             {
-                // Strip ANSI escape codes from TUI output
-                var clean = System.Text.RegularExpressions.Regex.Replace(
-                    line, @"\x1B\[[^@-~]*[@-~]|\x1B\].*?\x07|\x1B\[[\?]?\d*[a-zA-Z]", "").Trim();
+                var clean = StripAnsi(line);
                 if (!string.IsNullOrWhiteSpace(clean))
                     onProgress?.Invoke(clean);
             }
         }
+    }
+
+    private static string StripAnsi(string line)
+    {
+        // 1. Replace cursor-forward (\x1B[{N}C) with N spaces — React Ink uses these for layout
+        line = System.Text.RegularExpressions.Regex.Replace(
+            line, @"\x1B\[(\d+)C", m => new string(' ', int.Parse(m.Groups[1].Value)));
+
+        // 2. Strip all remaining ANSI escape sequences
+        line = System.Text.RegularExpressions.Regex.Replace(
+            line, @"\x1B\[[^@-~]*[@-~]|\x1B\].*?\x07|\x1B[()][A-Z0-9]", "");
+
+        // 3. Strip any remaining bare ESC + single char sequences
+        line = System.Text.RegularExpressions.Regex.Replace(line, @"\x1B.", "");
+
+        // 4. Collapse multiple spaces into one
+        line = System.Text.RegularExpressions.Regex.Replace(line, @"  +", " ");
+
+        return line.Trim();
     }
 
     /// <summary>
