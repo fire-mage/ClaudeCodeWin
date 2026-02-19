@@ -88,6 +88,15 @@ public class ClaudeCodeDependencyService
                 return new DependencyStatus(true, NativePath);
         }
 
+        // 3. Search other known locations (installer may have put it elsewhere)
+        var found = FindDownloadedBinary();
+        if (found is not null)
+        {
+            var foundOk = await TryGetVersionAsync(found);
+            if (foundOk is not null)
+                return new DependencyStatus(true, found);
+        }
+
         return new DependencyStatus(false, null);
     }
 
@@ -167,6 +176,33 @@ public class ClaudeCodeDependencyService
                 return true;
             }
 
+            // Fallback: installer may have downloaded the binary but failed to copy it
+            // (e.g. OOM in Windows Sandbox). Search known locations and copy manually.
+            Log("Searching for downloaded binary in known locations...");
+            var found = FindDownloadedBinary();
+            if (found is not null)
+            {
+                Log($"Found binary at: {found}");
+                try
+                {
+                    var binDir = Path.GetDirectoryName(NativePath)!;
+                    Directory.CreateDirectory(binDir);
+                    File.Copy(found, NativePath, overwrite: true);
+                    Log($"Copied to: {NativePath}");
+
+                    status = await CheckAsync();
+                    if (status.IsInstalled)
+                    {
+                        Log($"Claude Code CLI recovered successfully at: {status.ExePath}");
+                        return true;
+                    }
+                }
+                catch (Exception copyEx)
+                {
+                    Log($"Failed to copy binary: {copyEx.Message}");
+                }
+            }
+
             Log("Installation completed but claude CLI was not found.");
             return false;
         }
@@ -178,6 +214,40 @@ public class ClaudeCodeDependencyService
             WriteInstallLog(ex.StackTrace ?? "no stack trace");
             return false;
         }
+    }
+
+    /// <summary>
+    /// Search known locations where the installer may have downloaded claude.exe
+    /// but failed to copy to ~/.local/bin/ (e.g. due to OOM).
+    /// </summary>
+    private static string? FindDownloadedBinary()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        // 1. Check versioned install dir: ~/.local/share/claude/versions/{ver}/claude.exe
+        var versionsDir = Path.Combine(home, ".local", "share", "claude", "versions");
+        if (Directory.Exists(versionsDir))
+        {
+            foreach (var dir in Directory.GetDirectories(versionsDir).OrderByDescending(d => d))
+            {
+                var candidate = Path.Combine(dir, "claude.exe");
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+        }
+
+        // 2. Check staging/cache dir: ~/.cache/claude/staging/claude.exe
+        var stagingExe = Path.Combine(home, ".cache", "claude", "staging", "claude.exe");
+        if (File.Exists(stagingExe))
+            return stagingExe;
+
+        // 3. Check npm global: %AppData%/npm/claude.cmd -> follow to actual exe
+        var npmDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm");
+        var npmExe = Path.Combine(npmDir, "claude.exe");
+        if (File.Exists(npmExe))
+            return npmExe;
+
+        return null;
     }
 
     private static async Task ReadStreamAsync(StreamReader reader, Action<string>? onProgress)
