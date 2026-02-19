@@ -211,7 +211,7 @@ public partial class App : Application
             currentStep++;
             vm.DependencyStep = $"Step {currentStep} of {totalSteps} — First-time setup";
             vm.DependencyTitle = "Installing Claude Code CLI";
-            vm.DependencySubtitle = "Claude Code CLI is the core engine that powers this application. Download may take a minute depending on your connection.";
+            vm.DependencySubtitle = "Claude Code CLI is the core engine that powers this application.\nDownloading ~222MB — this will take a few minutes. Please wait.";
             vm.DependencyStatus = "Fetching latest version...";
             vm.DependencyLog = "";
 
@@ -224,7 +224,7 @@ public partial class App : Application
             }
         }
 
-        // Step: GitHub CLI
+        // Step: GitHub CLI (non-critical — failure doesn't block the app)
         if (needGh)
         {
             currentStep++;
@@ -237,9 +237,8 @@ public partial class App : Application
             var ghOk = await depService.InstallGhAsync(UpdateProgress);
             if (!ghOk)
             {
-                vm.DependencyStatus = "GitHub CLI installation failed. Check your internet connection and try again.";
-                vm.DependencyFailed = true;
-                return false;
+                UpdateProgress("GitHub CLI installation failed (non-critical). You can install it later.");
+                // Don't return false — gh is optional, Git + Claude CLI are sufficient
             }
         }
 

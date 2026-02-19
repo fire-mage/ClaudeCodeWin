@@ -103,7 +103,8 @@ public class ClaudeCodeDependencyService
             WriteInstallLog(msg);
         }
 
-        Log("Starting Claude Code CLI installation (official installer)...");
+        Log("Running official installer (irm https://claude.ai/install.ps1 | iex)...");
+        Log("Downloading ~222MB — this may take several minutes.");
 
         try
         {
@@ -119,14 +120,24 @@ public class ClaudeCodeDependencyService
 
             using var process = new Process { StartInfo = psi };
             process.Start();
-            Log($"Installer started (PID: {process.Id})");
+            WriteInstallLog($"Installer started (PID: {process.Id})");
 
             var outputTask = ReadStreamAsync(process.StandardOutput, msg => Log(msg));
-            var errorTask = ReadStreamAsync(process.StandardError, msg => Log("[ERR] " + msg));
+            var errorTask = ReadStreamAsync(process.StandardError, msg => WriteInstallLog("[ERR] " + msg));
 
-            // The official installer downloads ~222MB + runs 'claude install'.
-            // On slow connections this can take 10+ minutes.
+            // Show progress ticks while waiting (installer doesn't output download progress)
+            var startTime = DateTime.Now;
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+            var progressTask = Task.Run(async () =>
+            {
+                while (!cts.Token.IsCancellationRequested && !process.HasExited)
+                {
+                    await Task.Delay(10_000, cts.Token).ConfigureAwait(false);
+                    var elapsed = DateTime.Now - startTime;
+                    onProgress?.Invoke($"Installing... ({elapsed.Minutes}m {elapsed.Seconds}s elapsed)");
+                }
+            }, cts.Token);
+
             try
             {
                 await process.WaitForExitAsync(cts.Token);
@@ -137,10 +148,12 @@ public class ClaudeCodeDependencyService
                 Log("Installer timed out after 15 minutes.");
             }
 
-            await Task.WhenAll(outputTask, errorTask);
+            await cts.CancelAsync();
+            try { await Task.WhenAll(outputTask, errorTask); } catch { }
+            try { await progressTask; } catch { }
 
             if (process.HasExited)
-                Log($"Installer exited with code {process.ExitCode}");
+                WriteInstallLog($"Installer exited with code {process.ExitCode}");
 
             // Verify installation
             Log("Verifying installation...");
@@ -257,7 +270,8 @@ public class ClaudeCodeDependencyService
     /// </summary>
     public bool IsGitInstalled()
     {
-        return TryRunExe("git", "--version");
+        // Try PATH first, then known install locations (PATH may not be refreshed after install)
+        return TryRunExe("git", "--version") || FindGitExe() is not null;
     }
 
     /// <summary>
@@ -512,11 +526,13 @@ public class ClaudeCodeDependencyService
             Directory.CreateDirectory(tempExtract);
             ZipFile.ExtractToDirectory(tempZip, tempExtract);
 
+            // The zip may contain a single subfolder (e.g. gh_2.87.0_windows_amd64/).
+            // We need to move its contents to GhCliDir so that bin/gh.exe is at GhCliDir/bin/gh.exe.
             var subDirs = Directory.GetDirectories(tempExtract);
-            if (subDirs.Length == 1)
-                Directory.Move(subDirs[0], GhCliDir);
-            else
-                Directory.Move(tempExtract, GhCliDir);
+            var sourceDir = subDirs.Length == 1 ? subDirs[0] : tempExtract;
+
+            // Directory.Move fails across drives and if target exists. Use copy approach.
+            CopyDirectory(sourceDir, GhCliDir);
 
             try { File.Delete(tempZip); } catch { }
             try { if (Directory.Exists(tempExtract)) Directory.Delete(tempExtract, true); } catch { }
@@ -527,8 +543,14 @@ public class ClaudeCodeDependencyService
                 return true;
             }
 
+            // Diagnostic: list what we actually extracted
             onProgress?.Invoke("Extraction completed but gh.exe was not found.");
             onProgress?.Invoke($"Expected at: {GhCliExe}");
+            if (Directory.Exists(GhCliDir))
+            {
+                foreach (var f in Directory.GetFiles(GhCliDir, "*.exe", SearchOption.AllDirectories))
+                    onProgress?.Invoke($"  Found: {f}");
+            }
             return false;
         }
         catch (Exception ex)
@@ -600,4 +622,20 @@ public class ClaudeCodeDependencyService
         }
     }
 
+    private static void CopyDirectory(string sourceDir, string destDir)
+    {
+        Directory.CreateDirectory(destDir);
+
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            var destFile = Path.Combine(destDir, Path.GetFileName(file));
+            File.Copy(file, destFile, overwrite: true);
+        }
+
+        foreach (var dir in Directory.GetDirectories(sourceDir))
+        {
+            var destSubDir = Path.Combine(destDir, Path.GetFileName(dir));
+            CopyDirectory(dir, destSubDir);
+        }
+    }
 }
