@@ -168,6 +168,16 @@ public partial class MainWindow : Window
                top + height > virtualTop && top < virtualBottom;
     }
 
+    private void DepCloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        Application.Current.Shutdown();
+    }
+
+    public void ScrollDependencyLog()
+    {
+        DepLogScroller?.ScrollToEnd();
+    }
+
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         // Autocomplete navigation

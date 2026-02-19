@@ -1027,5 +1027,119 @@
                 </Border>
             </Grid>
         </Border>
+        <!-- Dependency install overlay (covers entire window during setup) -->
+        <Border Grid.Row="0" Grid.RowSpan="8"
+                Background="#DD1e1e2e"
+                Panel.ZIndex="100"
+                Visibility="{Binding ShowDependencyOverlay, Converter={StaticResource BoolToVis}}">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="{StaticResource SurfaceBrush}"
+                    CornerRadius="12" Padding="32"
+                    Width="520"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1">
+                <StackPanel>
+                    <!-- Title -->
+                    <TextBlock Text="{Binding DependencyTitle}"
+                               FontSize="18" FontWeight="Bold"
+                               Foreground="{StaticResource PrimaryBrush}"
+                               Margin="0,0,0,12"/>
+
+                    <!-- Status indicator -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <TextBlock x:Name="DepStatusDot" Text="&#x25CF; " FontSize="16"
+                                   Foreground="{StaticResource PrimaryBrush}"
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ShowDependencyOverlay}" Value="True">
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard x:Name="DepPulse">
+                                                    <Storyboard RepeatBehavior="Forever">
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                         From="1.0" To="0.3"
+                                                                         Duration="0:0:0.8"
+                                                                         AutoReverse="True"/>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                            <DataTrigger.ExitActions>
+                                                <StopStoryboard BeginStoryboardName="DepPulse"/>
+                                            </DataTrigger.ExitActions>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding DependencyFailed}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                            <Setter Property="Opacity" Value="1.0"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding DependencyStatus}"
+                                   FontSize="13"
+                                   Foreground="{StaticResource TextBrush}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Log output -->
+                    <Border Background="{StaticResource BackgroundBrush}"
+                            CornerRadius="6" BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1" Padding="8"
+                            Height="200">
+                        <ScrollViewer x:Name="DepLogScroller" VerticalScrollBarVisibility="Auto">
+                            <TextBlock x:Name="DepLogText"
+                                       Text="{Binding DependencyLog}"
+                                       FontFamily="Cascadia Code,Consolas,Courier New"
+                                       FontSize="11"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       TextWrapping="Wrap"/>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- Close button (only visible on failure) -->
+                    <Button Content="Close"
+                            Padding="24,8"
+                            HorizontalAlignment="Center"
+                            Margin="0,16,0,0"
+                            Click="DepCloseButton_Click"
+                            Visibility="{Binding DependencyFailed, Converter={StaticResource BoolToVis}}">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                                <Setter Property="FontSize" Value="13"/>
+                                <Setter Property="Cursor" Value="Hand"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                    CornerRadius="6"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center"
+                                                                  VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background"
+                                                            Value="{StaticResource PrimaryBrush}"/>
+                                                    <Setter Property="Foreground"
+                                                            Value="{StaticResource BackgroundBrush}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Border>
+
     </Grid>
 </Window>

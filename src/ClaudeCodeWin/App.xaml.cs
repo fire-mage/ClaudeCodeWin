@@ -9,48 +9,55 @@ public partial class App : Application
 {
     private async void Application_Startup(object sender, StartupEventArgs e)
     {
+        // Create all services upfront — they don't depend on Git/Claude being installed
+        var cliService = new ClaudeCliService();
+        var notificationService = new NotificationService();
+        var scriptService = new ScriptService();
+        var settingsService = new SettingsService();
+        var taskRunnerService = new TaskRunnerService();
+        var gitService = new GitService();
+        var updateService = new UpdateService();
+        var fileIndexService = new FileIndexService();
+        var chatHistoryService = new ChatHistoryService();
+        var projectRegistry = new ProjectRegistryService();
+        projectRegistry.Load();
+
+        var settings = settingsService.Load();
+        if (!string.IsNullOrEmpty(settings.WorkingDirectory))
+            cliService.WorkingDirectory = settings.WorkingDirectory;
+
+        var usageService = new UsageService();
+        var contextSnapshotService = new ContextSnapshotService();
+
+        var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService, projectRegistry, contextSnapshotService);
+        var mainWindow = new MainWindow(mainViewModel, notificationService, settingsService, settings, fileIndexService, chatHistoryService, projectRegistry);
+
+        // Show MainWindow immediately so the user sees the app
+        mainWindow.Show();
+
+        // Run dependency checks in the overlay
         var dependencyService = new ClaudeCodeDependencyService();
+        var needsSetup = !dependencyService.IsGitInstalled()
+                         || !(await dependencyService.CheckAsync()).IsInstalled;
 
-        // Step 1: Check Git for Windows (required by Claude Code CLI)
-        if (!dependencyService.IsGitInstalled())
+        if (needsSetup)
         {
-            var gitWindow = new DependencyInstallWindow(
-                "Installing Git for Windows...",
-                dependencyService.InstallGitAsync);
-            gitWindow.ShowDialog();
-
-            if (!gitWindow.Success)
+            var success = await RunDependencySetup(mainViewModel, mainWindow, dependencyService);
+            if (!success)
             {
-                MessageBox.Show(
-                    "Git for Windows is required but could not be installed.\nThe application will now exit.",
-                    "Git Required", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown();
                 return;
             }
         }
 
-        // Step 2: Check that Claude Code CLI is installed
+        // Apply Claude CLI path
         var depStatus = await dependencyService.CheckAsync();
+        if (!string.IsNullOrEmpty(settings.ClaudeExePath))
+            cliService.ClaudeExePath = settings.ClaudeExePath;
+        else if (depStatus.ExePath is not null)
+            cliService.ClaudeExePath = depStatus.ExePath;
 
-        if (!depStatus.IsInstalled)
-        {
-            var installWindow = new DependencyInstallWindow(dependencyService);
-            installWindow.ShowDialog();
-
-            if (!installWindow.Success)
-            {
-                MessageBox.Show(
-                    "Claude Code CLI is required but could not be installed.\nThe application will now exit.",
-                    "Dependency Missing", MessageBoxButton.OK, MessageBoxImage.Error);
-                Shutdown();
-                return;
-            }
-
-            // Re-check after install
-            depStatus = await dependencyService.CheckAsync();
-        }
-
-        // Step 3: Check authentication — if not logged in, launch interactive login
+        // Check authentication — requires interactive terminal, so use separate window
         if (!dependencyService.IsAuthenticated())
         {
             var claudeExe = depStatus.ExePath ?? "claude";
@@ -67,34 +74,6 @@ public partial class App : Application
             }
         }
 
-        // Manual DI — no NuGet containers
-        var cliService = new ClaudeCliService();
-        var notificationService = new NotificationService();
-        var scriptService = new ScriptService();
-        var settingsService = new SettingsService();
-        var taskRunnerService = new TaskRunnerService();
-        var gitService = new GitService();
-        var updateService = new UpdateService();
-        var fileIndexService = new FileIndexService();
-        var chatHistoryService = new ChatHistoryService();
-        var projectRegistry = new ProjectRegistryService();
-        projectRegistry.Load();
-
-        // Apply settings
-        var settings = settingsService.Load();
-        if (!string.IsNullOrEmpty(settings.ClaudeExePath))
-            cliService.ClaudeExePath = settings.ClaudeExePath;
-        else if (depStatus.ExePath is not null)
-            cliService.ClaudeExePath = depStatus.ExePath;
-        if (!string.IsNullOrEmpty(settings.WorkingDirectory))
-            cliService.WorkingDirectory = settings.WorkingDirectory;
-
-        var usageService = new UsageService();
-        var contextSnapshotService = new ContextSnapshotService();
-
-        var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService, projectRegistry, contextSnapshotService);
-        var mainWindow = new MainWindow(mainViewModel, notificationService, settingsService, settings, fileIndexService, chatHistoryService, projectRegistry);
-
         // Wire up usage service → status bar
         usageService.OnUsageUpdated += () =>
         {
@@ -104,7 +83,6 @@ public partial class App : Application
                 return;
             }
 
-            // Restore status when back online
             if (mainViewModel.StatusText == "NO INTERNET")
                 mainViewModel.StatusText = mainViewModel.IsProcessing ? "Processing..." : "Ready";
 
@@ -119,12 +97,62 @@ public partial class App : Application
         };
         usageService.Start();
 
-        // Setup scripts menu
+        // Setup menus
         scriptService.PopulateMenu(mainWindow, mainViewModel, gitService, settings, projectRegistry);
-
-        // Setup tasks menu
         taskRunnerService.PopulateMenu(mainWindow, mainViewModel);
+    }
 
-        mainWindow.Show();
+    private static async Task<bool> RunDependencySetup(
+        MainViewModel vm, MainWindow window, ClaudeCodeDependencyService depService)
+    {
+        vm.ShowDependencyOverlay = true;
+
+        void UpdateProgress(string message)
+        {
+            window.Dispatcher.InvokeAsync(() =>
+            {
+                vm.DependencyStatus = message;
+                if (vm.DependencyLog.Length > 0)
+                    vm.DependencyLog += "\n";
+                vm.DependencyLog += message;
+                window.ScrollDependencyLog();
+            });
+        }
+
+        // Step 1: Git
+        if (!depService.IsGitInstalled())
+        {
+            vm.DependencyTitle = "Installing Git for Windows...";
+            vm.DependencyStatus = "Preparing...";
+            vm.DependencyLog = "";
+
+            var gitOk = await depService.InstallGitAsync(UpdateProgress);
+            if (!gitOk)
+            {
+                vm.DependencyStatus = "Git installation failed.";
+                vm.DependencyFailed = true;
+                return false;
+            }
+        }
+
+        // Step 2: Claude Code CLI
+        var status = await depService.CheckAsync();
+        if (!status.IsInstalled)
+        {
+            vm.DependencyTitle = "Installing Claude Code CLI...";
+            vm.DependencyStatus = "Preparing...";
+            vm.DependencyLog = "";
+
+            var cliOk = await depService.InstallAsync(UpdateProgress);
+            if (!cliOk)
+            {
+                vm.DependencyStatus = "Claude Code CLI installation failed.";
+                vm.DependencyFailed = true;
+                return false;
+            }
+        }
+
+        vm.ShowDependencyOverlay = false;
+        return true;
     }
 }

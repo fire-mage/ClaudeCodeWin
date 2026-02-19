@@ -73,6 +73,11 @@ public class MainViewModel : ViewModelBase
     private string _ctaText = "";
     private CtaState _ctaState = CtaState.Welcome;
     private bool _isUpdating;
+    private bool _showDependencyOverlay;
+    private string _dependencyTitle = "";
+    private string _dependencyStatus = "Preparing...";
+    private string _dependencyLog = "";
+    private bool _dependencyFailed;
     private int _contextWindowSize;
     private bool _contextWarningShown;
     private string _todoProgressText = "";
@@ -113,6 +118,36 @@ public class MainViewModel : ViewModelBase
     {
         get => _isUpdating;
         set => SetProperty(ref _isUpdating, value);
+    }
+
+    public bool ShowDependencyOverlay
+    {
+        get => _showDependencyOverlay;
+        set => SetProperty(ref _showDependencyOverlay, value);
+    }
+
+    public string DependencyTitle
+    {
+        get => _dependencyTitle;
+        set => SetProperty(ref _dependencyTitle, value);
+    }
+
+    public string DependencyStatus
+    {
+        get => _dependencyStatus;
+        set => SetProperty(ref _dependencyStatus, value);
+    }
+
+    public string DependencyLog
+    {
+        get => _dependencyLog;
+        set => SetProperty(ref _dependencyLog, value);
+    }
+
+    public bool DependencyFailed
+    {
+        get => _dependencyFailed;
+        set => SetProperty(ref _dependencyFailed, value);
     }
 
     public bool HasAttachments => Attachments.Count > 0;
