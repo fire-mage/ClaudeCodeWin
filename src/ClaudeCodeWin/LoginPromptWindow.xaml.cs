@@ -20,9 +20,10 @@ public partial class LoginPromptWindow : Window
     private async void LoginButton_Click(object sender, RoutedEventArgs e)
     {
         LoginButton.IsEnabled = false;
-        StatusText.Text = "Waiting for login... (complete sign-in in the terminal window)";
+        StatusText.Text = "Waiting for login... (complete sign-in in the browser)";
 
-        var success = await _dependencyService.LaunchLoginAsync(_claudeExePath);
+        var success = await _dependencyService.LaunchLoginAsync(_claudeExePath,
+            status => Dispatcher.Invoke(() => StatusText.Text = status));
 
         if (success)
         {

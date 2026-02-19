@@ -29,7 +29,7 @@
                    Margin="0,0,0,16">
             To use ClaudeCodeWin, you need to sign in with your Anthropic account (Claude Pro or Max subscription required).
             <LineBreak/><LineBreak/>
-            Clicking the button below will open Claude Code CLI in a terminal window. It will launch your browser for authentication. After signing in, close the terminal window to continue.
+            Clicking the button below will open Claude Code CLI in a terminal window. It will launch your browser for authentication. The terminal will close automatically once sign-in is complete.
         </TextBlock>
 
         <!-- Status -->

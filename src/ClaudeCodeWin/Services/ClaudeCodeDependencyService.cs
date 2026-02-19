@@ -322,8 +322,9 @@ public class ClaudeCodeDependencyService
 
     /// <summary>
     /// Launch claude CLI in a visible terminal for interactive login.
+    /// Polls for credentials and auto-closes the terminal once authenticated.
     /// </summary>
-    public async Task<bool> LaunchLoginAsync(string? claudeExePath = null)
+    public async Task<bool> LaunchLoginAsync(string? claudeExePath = null, Action<string>? onStatus = null)
     {
         var exe = claudeExePath ?? (File.Exists(NativePath) ? NativePath : "claude");
 
@@ -332,7 +333,7 @@ public class ClaudeCodeDependencyService
             var psi = new ProcessStartInfo
             {
                 FileName = "cmd.exe",
-                Arguments = $"/c \"\"{exe}\" & pause\"",
+                Arguments = $"/c \"\"{exe}\"\"",
                 UseShellExecute = true,
                 CreateNoWindow = false,
             };
@@ -340,8 +341,28 @@ public class ClaudeCodeDependencyService
             using var process = Process.Start(psi);
             if (process is null) return false;
 
-            await process.WaitForExitAsync();
+            // Poll for credentials every 2 seconds (up to 5 minutes)
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            while (!cts.Token.IsCancellationRequested)
+            {
+                await Task.Delay(2000, cts.Token).ConfigureAwait(false);
 
+                if (process.HasExited)
+                    break;
+
+                if (IsAuthenticated())
+                {
+                    onStatus?.Invoke("Authentication detected! Closing terminal...");
+                    try { process.Kill(true); } catch { }
+                    return true;
+                }
+            }
+
+            // Process exited on its own or timeout — check one last time
+            return IsAuthenticated();
+        }
+        catch (OperationCanceledException)
+        {
             return IsAuthenticated();
         }
         catch
