@@ -75,7 +75,8 @@ public partial class App : Application
             var success = await RunDependencySetup(mainViewModel, mainWindow, dependencyService);
             if (!success)
             {
-                Shutdown();
+                // Don't Shutdown() — let the overlay stay visible with the error and Close button.
+                // The DepCloseButton_Click handler calls Shutdown() when user clicks Close.
                 return;
             }
         }

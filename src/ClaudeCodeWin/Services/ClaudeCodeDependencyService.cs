@@ -12,6 +12,20 @@ public record DependencyStatus(bool IsInstalled, string? ExePath);
 
 public class ClaudeCodeDependencyService
 {
+    private static readonly string InstallLogPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "ClaudeCodeWin", "install.log");
+
+    private static void WriteInstallLog(string message)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(InstallLogPath)!);
+            File.AppendAllText(InstallLogPath, $"[{DateTime.Now:HH:mm:ss}] {message}\n");
+        }
+        catch { }
+    }
+
     private static readonly string NativePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".local", "bin", "claude.exe");
@@ -45,7 +59,13 @@ public class ClaudeCodeDependencyService
     /// </summary>
     public async Task<bool> InstallAsync(Action<string>? onProgress = null)
     {
-        onProgress?.Invoke("Starting Claude Code CLI installation...");
+        void Log(string msg)
+        {
+            onProgress?.Invoke(msg);
+            WriteInstallLog(msg);
+        }
+
+        Log("Starting Claude Code CLI installation...");
 
         try
         {
@@ -58,12 +78,12 @@ public class ClaudeCodeDependencyService
                 ? "win32-arm64" : "win32-x64";
 
             // Step 1: Get latest version
-            onProgress?.Invoke("Fetching latest version...");
+            Log("Fetching latest version...");
             var version = (await http.GetStringAsync($"{GcsBucket}/latest")).Trim();
-            onProgress?.Invoke($"Latest version: {version}");
+            Log($"Latest version: {version}");
 
             // Step 2: Get manifest and checksum
-            onProgress?.Invoke("Fetching manifest...");
+            Log("Fetching manifest...");
             var manifestJson = await http.GetStringAsync($"{GcsBucket}/{version}/manifest.json");
             using var manifest = JsonDocument.Parse(manifestJson);
             var checksum = manifest.RootElement
@@ -74,10 +94,10 @@ public class ClaudeCodeDependencyService
 
             if (string.IsNullOrEmpty(checksum))
             {
-                onProgress?.Invoke($"Platform {platform} not found in manifest.");
+                Log($"Platform {platform} not found in manifest.");
                 return false;
             }
-            onProgress?.Invoke($"Expected checksum: {checksum[..16]}...");
+            Log($"Expected checksum: {checksum[..16]}...");
 
             // Step 3: Download binary
             var downloadDir = Path.Combine(
@@ -87,12 +107,13 @@ public class ClaudeCodeDependencyService
 
             var binaryPath = Path.Combine(downloadDir, $"claude-{version}-{platform}.exe");
             var binaryUrl = $"{GcsBucket}/{version}/{platform}/claude.exe";
-            onProgress?.Invoke($"Downloading claude.exe ({platform})...");
+            Log($"Downloading claude.exe ({platform}) from {binaryUrl}");
 
             using (var response = await http.GetAsync(binaryUrl, HttpCompletionOption.ResponseHeadersRead))
             {
                 response.EnsureSuccessStatusCode();
                 var totalBytes = response.Content.Headers.ContentLength ?? 0;
+                Log($"Download started, size: {totalBytes / (1024 * 1024)}MB");
 
                 await using var contentStream = await response.Content.ReadAsStreamAsync();
                 await using var fileStream = new FileStream(binaryPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
@@ -109,19 +130,21 @@ public class ClaudeCodeDependencyService
                 }
             }
 
+            Log($"Download complete. File exists: {File.Exists(binaryPath)}, Size: {new FileInfo(binaryPath).Length}");
+
             // Step 4: Verify checksum
-            onProgress?.Invoke("Verifying checksum...");
+            Log("Verifying checksum...");
             var actualChecksum = await ComputeSha256Async(binaryPath);
             if (!string.Equals(actualChecksum, checksum, StringComparison.OrdinalIgnoreCase))
             {
-                onProgress?.Invoke($"Checksum mismatch! Expected: {checksum}, Got: {actualChecksum}");
+                Log($"Checksum mismatch! Expected: {checksum}, Got: {actualChecksum}");
                 try { File.Delete(binaryPath); } catch { }
                 return false;
             }
-            onProgress?.Invoke("Checksum verified.");
+            Log("Checksum verified OK.");
 
             // Step 5: Run 'claude install' to set up launcher and shell integration
-            onProgress?.Invoke("Running installer (claude install)...");
+            Log($"Running: {binaryPath} install latest");
             var psi = new ProcessStartInfo
             {
                 FileName = binaryPath,
@@ -136,10 +159,10 @@ public class ClaudeCodeDependencyService
 
             using var process = new Process { StartInfo = psi };
             process.Start();
-            onProgress?.Invoke($"Installer process started (PID: {process.Id})");
+            Log($"Installer process started (PID: {process.Id})");
 
-            var outputTask = ReadStreamAsync(process.StandardOutput, onProgress);
-            var errorTask = ReadStreamAsync(process.StandardError, msg => onProgress?.Invoke("[ERR] " + msg));
+            var outputTask = ReadStreamAsync(process.StandardOutput, msg => Log(msg));
+            var errorTask = ReadStreamAsync(process.StandardError, msg => Log("[ERR] " + msg));
 
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
             try
@@ -149,46 +172,45 @@ public class ClaudeCodeDependencyService
             catch (OperationCanceledException)
             {
                 try { process.Kill(true); } catch { }
-                onProgress?.Invoke("Installer timed out after 2 minutes.");
-
-                // Even if install timed out, the binary may have been placed successfully
-                onProgress?.Invoke("Checking if binary was installed despite timeout...");
+                Log("Installer timed out after 2 minutes.");
+                Log("Checking if binary was installed despite timeout...");
             }
 
             await Task.WhenAll(outputTask, errorTask);
 
             if (process.HasExited)
-                onProgress?.Invoke($"Installer exited with code {process.ExitCode}");
+                Log($"Installer exited with code {process.ExitCode}");
 
             // Cleanup downloaded binary
             try { File.Delete(binaryPath); } catch { }
 
             // Step 6: Verify installation
-            onProgress?.Invoke("Verifying installation...");
+            Log("Verifying installation...");
             var nativeExists = File.Exists(NativePath);
-            onProgress?.Invoke(nativeExists ? $"Found: {NativePath}" : $"NOT found: {NativePath}");
+            Log(nativeExists ? $"Found: {NativePath}" : $"NOT found: {NativePath}");
 
             if (nativeExists)
             {
                 var ok = await TryGetVersionAsync(NativePath);
-                onProgress?.Invoke(ok is not null ? "Binary works!" : "Binary exists but failed to run");
+                Log(ok is not null ? "Binary works!" : "Binary exists but failed to run");
             }
 
             var status = await CheckAsync();
             if (status.IsInstalled)
             {
-                onProgress?.Invoke($"Claude Code CLI installed successfully!");
+                Log($"Claude Code CLI installed successfully at: {status.ExePath}");
                 return true;
             }
 
-            onProgress?.Invoke("Installation completed but claude CLI was not found.");
+            Log("Installation completed but claude CLI was not found.");
             return false;
         }
         catch (Exception ex)
         {
-            onProgress?.Invoke($"Installation failed: {ex.GetType().Name}: {ex.Message}");
+            Log($"Installation failed: {ex.GetType().Name}: {ex.Message}");
             if (ex.InnerException is not null)
-                onProgress?.Invoke($"  Inner: {ex.InnerException.Message}");
+                Log($"  Inner: {ex.InnerException.Message}");
+            WriteInstallLog(ex.StackTrace ?? "no stack trace");
             return false;
         }
     }
