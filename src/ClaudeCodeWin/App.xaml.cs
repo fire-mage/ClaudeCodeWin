@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using ClaudeCodeWin.ContextSnapshot;
 using ClaudeCodeWin.Services;
@@ -7,8 +8,36 @@ namespace ClaudeCodeWin;
 
 public partial class App : Application
 {
+    private static readonly string CrashLogPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "ClaudeCodeWin", "crash.log");
+
+    private static void WriteCrashLog(string context, Exception ex)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(CrashLogPath)!);
+            var entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {context}\n{ex}\n\n";
+            File.AppendAllText(CrashLogPath, entry);
+        }
+        catch { /* last resort — can't log the log failure */ }
+    }
+
     private async void Application_Startup(object sender, StartupEventArgs e)
     {
+        // Global crash handler — writes to %LocalAppData%\ClaudeCodeWin\crash.log
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            WriteCrashLog("UnhandledException", (Exception)args.ExceptionObject);
+        DispatcherUnhandledException += (_, args) =>
+        {
+            WriteCrashLog("DispatcherUnhandledException", args.Exception);
+            args.Handled = false; // let it crash, but at least we logged it
+        };
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+            WriteCrashLog("UnobservedTaskException", args.Exception);
+
+        try
+        {
         // Create all services upfront — they don't depend on Git/Claude being installed
         var cliService = new ClaudeCliService();
         var notificationService = new NotificationService();
@@ -101,6 +130,16 @@ public partial class App : Application
         // Setup menus
         scriptService.PopulateMenu(mainWindow, mainViewModel, gitService, settings, projectRegistry);
         taskRunnerService.PopulateMenu(mainWindow, mainViewModel);
+
+        }
+        catch (Exception ex)
+        {
+            WriteCrashLog("Application_Startup", ex);
+            MessageBox.Show(
+                $"Startup failed:\n{ex.Message}\n\nSee {CrashLogPath} for details.",
+                "ClaudeCodeWin Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+        }
     }
 
     private static async Task<bool> RunDependencySetup(
