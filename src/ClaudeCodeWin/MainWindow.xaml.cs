@@ -321,9 +321,7 @@ public partial class MainWindow : Window
         var caret = InputTextBox.CaretIndex;
         var word = ExtractCurrentWord(text, caret);
 
-        // For path queries like "src/com", check length of the part after last "/"
-        var searchPart = word.Contains('/') ? word[(word.LastIndexOf('/') + 1)..] : word;
-        if (searchPart.Length < 3 && !word.EndsWith('/'))
+        if (word.Length < 2)
         {
             AutocompletePopup.IsOpen = false;
             return;

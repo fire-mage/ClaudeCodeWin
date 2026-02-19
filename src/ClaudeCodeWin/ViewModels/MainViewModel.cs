@@ -408,7 +408,7 @@ public class MainViewModel : ViewModelBase
         {
             _registeredProjectRoots.Add(Path.GetFullPath(settings.WorkingDirectory));
             RefreshGitStatus();
-            _ = Task.Run(() => _fileIndexService.BuildIndex(settings.WorkingDirectory));
+            _ = Task.Run(() => RefreshAutocompleteIndex());
             _ = Task.Run(() => _projectRegistry.RegisterProject(settings.WorkingDirectory, _gitService));
 
             // Generate context snapshots for recent projects from registry (not just current dir)
@@ -471,7 +471,7 @@ public class MainViewModel : ViewModelBase
         _ = Task.Run(() => _projectRegistry.RegisterProject(folder, _gitService));
 
         // Rebuild file index in background
-        _ = Task.Run(() => _fileIndexService.BuildIndex(folder));
+        _ = Task.Run(() => RefreshAutocompleteIndex());
 
         // Generate context snapshot in background
         if (_settings.ContextSnapshotEnabled)
@@ -1150,6 +1150,12 @@ public class MainViewModel : ViewModelBase
         GitStatusText = string.Join(" | ", parts);
     }
 
+    private void RefreshAutocompleteIndex()
+    {
+        var names = _projectRegistry.Projects.Select(p => p.Name).ToList();
+        _fileIndexService.SetProjectNames(names);
+    }
+
     private void SaveChatHistory()
     {
         // Only save if there are user/assistant messages
@@ -1227,7 +1233,7 @@ public class MainViewModel : ViewModelBase
             _settingsService.Save(_settings);
             ProjectPath = entry.ProjectPath;
             RefreshGitStatus();
-            _ = Task.Run(() => _fileIndexService.BuildIndex(entry.ProjectPath));
+            _ = Task.Run(() => RefreshAutocompleteIndex());
         }
 
         ShowWelcome = false;
