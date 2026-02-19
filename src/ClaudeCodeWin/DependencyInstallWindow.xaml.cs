@@ -5,27 +5,46 @@ namespace ClaudeCodeWin;
 
 public partial class DependencyInstallWindow : Window
 {
-    private readonly ClaudeCodeDependencyService _dependencyService;
+    private readonly Func<Action<string>?, Task<bool>> _installFunc;
+    private readonly Func<Task>? _postInstall;
 
     public bool Success { get; private set; }
     public string? ResolvedExePath { get; private set; }
 
+    /// <summary>
+    /// Constructor for Claude Code CLI installation (legacy).
+    /// </summary>
     public DependencyInstallWindow(ClaudeCodeDependencyService dependencyService)
+        : this("Installing Claude Code CLI...", dependencyService.InstallAsync)
+    {
+        _postInstall = async () =>
+        {
+            var status = await dependencyService.CheckAsync();
+            ResolvedExePath = status.ExePath;
+        };
+    }
+
+    /// <summary>
+    /// Generic constructor for any dependency installation with progress.
+    /// </summary>
+    public DependencyInstallWindow(string title, Func<Action<string>?, Task<bool>> installFunc, Func<Task>? postInstall = null)
     {
         InitializeComponent();
-        _dependencyService = dependencyService;
+        _installFunc = installFunc;
+        _postInstall = postInstall;
+        TitleText.Text = title;
         Loaded += async (_, _) => await RunInstallAsync();
     }
 
     private async Task RunInstallAsync()
     {
-        var success = await _dependencyService.InstallAsync(OnProgress);
+        var success = await _installFunc(OnProgress);
         Success = success;
 
         if (success)
         {
-            var status = await _dependencyService.CheckAsync();
-            ResolvedExePath = status.ExePath;
+            if (_postInstall is not null)
+                await _postInstall();
 
             StatusText.Text = "Installation complete!";
             StatusDot.Foreground = (System.Windows.Media.Brush)FindResource("SuccessBrush");

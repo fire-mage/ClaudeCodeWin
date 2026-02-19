@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 
 namespace ClaudeCodeWin.Services;
 
@@ -34,9 +35,17 @@ public class GitService
 
         try
         {
+            // Resolve git path: prefer local MinGit if system git not available
+            var gitExe = "git";
+            var minGitExe = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "ClaudeCodeWin", "MinGit", "cmd", "git.exe");
+            if (File.Exists(minGitExe))
+                gitExe = minGitExe;
+
             var psi = new ProcessStartInfo
             {
-                FileName = "git",
+                FileName = gitExe,
                 Arguments = arguments,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,

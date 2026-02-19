@@ -14,11 +14,19 @@ public partial class App : Application
         // Step 1: Check Git for Windows (required by Claude Code CLI)
         if (!dependencyService.IsGitInstalled())
         {
-            MessageBox.Show(
-                "Git for Windows is required for Claude Code CLI.\n\nPlease install Git from https://git-scm.com/downloads/win and restart the application.",
-                "Git Required", MessageBoxButton.OK, MessageBoxImage.Warning);
-            Shutdown();
-            return;
+            var gitWindow = new DependencyInstallWindow(
+                "Installing Git for Windows...",
+                dependencyService.InstallGitAsync);
+            gitWindow.ShowDialog();
+
+            if (!gitWindow.Success)
+            {
+                MessageBox.Show(
+                    "Git for Windows is required but could not be installed.\nThe application will now exit.",
+                    "Git Required", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown();
+                return;
+            }
         }
 
         // Step 2: Check that Claude Code CLI is installed

@@ -77,6 +77,16 @@ public class ClaudeCliService
 
             startInfo.Environment["LANG"] = "en_US.UTF-8";
 
+            // Add local MinGit to PATH if it exists (for fresh installs without system Git)
+            var minGitCmd = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "ClaudeCodeWin", "MinGit", "cmd");
+            if (Directory.Exists(minGitCmd))
+            {
+                var currentPath = startInfo.Environment["PATH"] ?? Environment.GetEnvironmentVariable("PATH") ?? "";
+                startInfo.Environment["PATH"] = minGitCmd + ";" + currentPath;
+            }
+
             try
             {
                 _process = Process.Start(startInfo);

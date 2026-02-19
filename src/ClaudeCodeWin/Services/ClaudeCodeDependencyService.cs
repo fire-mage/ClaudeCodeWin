@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 
@@ -173,16 +175,146 @@ public class ClaudeCodeDependencyService
         }
     }
 
+    private static readonly string MinGitDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "ClaudeCodeWin", "MinGit");
+
+    private static readonly string MinGitExe = Path.Combine(MinGitDir, "cmd", "git.exe");
+
     /// <summary>
-    /// Check if Git for Windows is installed (required by Claude Code CLI on native Windows).
+    /// Check if Git for Windows is installed (system-wide or local MinGit).
     /// </summary>
     public bool IsGitInstalled()
+    {
+        // 1. Check local MinGit first
+        if (File.Exists(MinGitExe) && TryRunGit(MinGitExe))
+            return true;
+
+        // 2. Check system PATH
+        return TryRunGit("git");
+    }
+
+    /// <summary>
+    /// Get the path to git executable (local MinGit or system).
+    /// </summary>
+    public string? ResolveGitExePath()
+    {
+        if (File.Exists(MinGitExe))
+            return MinGitExe;
+        if (TryRunGit("git"))
+            return "git";
+        return null;
+    }
+
+    /// <summary>
+    /// Download and install MinGit (portable Git for Windows) to local AppData.
+    /// Uses GitHub API to get the latest release dynamically.
+    /// </summary>
+    public async Task<bool> InstallGitAsync(Action<string>? onProgress = null)
+    {
+        onProgress?.Invoke("Fetching latest MinGit release info...");
+
+        try
+        {
+            using var http = new HttpClient();
+            http.DefaultRequestHeaders.Add("User-Agent", "ClaudeCodeWin");
+            http.Timeout = TimeSpan.FromMinutes(5);
+
+            // Get latest release from GitHub API
+            var apiUrl = "https://api.github.com/repos/git-for-windows/git/releases/latest";
+            var releaseJson = await http.GetStringAsync(apiUrl);
+            using var doc = JsonDocument.Parse(releaseJson);
+
+            // Find MinGit-*-64-bit.zip asset
+            var suffix = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
+                == System.Runtime.InteropServices.Architecture.Arm64
+                ? "MinGit-" : "MinGit-";
+            var archSuffix = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
+                == System.Runtime.InteropServices.Architecture.Arm64
+                ? "-arm64.zip" : "-64-bit.zip";
+
+            string? downloadUrl = null;
+            string? assetName = null;
+            foreach (var asset in doc.RootElement.GetProperty("assets").EnumerateArray())
+            {
+                var name = asset.GetProperty("name").GetString() ?? "";
+                if (name.StartsWith("MinGit-") && name.EndsWith(archSuffix) && !name.Contains("busybox"))
+                {
+                    downloadUrl = asset.GetProperty("browser_download_url").GetString();
+                    assetName = name;
+                    break;
+                }
+            }
+
+            if (downloadUrl is null)
+            {
+                onProgress?.Invoke("Could not find MinGit download URL from GitHub releases.");
+                return false;
+            }
+
+            var tagName = doc.RootElement.GetProperty("tag_name").GetString() ?? "unknown";
+            onProgress?.Invoke($"Found {assetName} ({tagName})");
+
+            // Download
+            var tempZip = Path.Combine(Path.GetTempPath(), assetName!);
+            onProgress?.Invoke($"Downloading {assetName}...");
+
+            using (var response = await http.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
+            {
+                response.EnsureSuccessStatusCode();
+                var totalBytes = response.Content.Headers.ContentLength ?? 0;
+
+                await using var contentStream = await response.Content.ReadAsStreamAsync();
+                await using var fileStream = new FileStream(tempZip, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
+
+                var buffer = new byte[81920];
+                long downloaded = 0;
+                int read;
+                while ((read = await contentStream.ReadAsync(buffer)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer.AsMemory(0, read));
+                    downloaded += read;
+                    if (totalBytes > 0)
+                        onProgress?.Invoke($"Downloading... {downloaded / (1024 * 1024)}MB / {totalBytes / (1024 * 1024)}MB");
+                }
+            }
+
+            onProgress?.Invoke("Extracting MinGit...");
+
+            // Clean old MinGit if exists
+            if (Directory.Exists(MinGitDir))
+                Directory.Delete(MinGitDir, true);
+
+            Directory.CreateDirectory(MinGitDir);
+            ZipFile.ExtractToDirectory(tempZip, MinGitDir);
+
+            // Cleanup temp zip
+            try { File.Delete(tempZip); } catch { }
+
+            // Verify
+            if (File.Exists(MinGitExe) && TryRunGit(MinGitExe))
+            {
+                onProgress?.Invoke("Git installed successfully!");
+                return true;
+            }
+
+            onProgress?.Invoke("Extraction completed but git.exe was not found.");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            onProgress?.Invoke($"Git installation failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool TryRunGit(string gitPath)
     {
         try
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "git",
+                FileName = gitPath,
                 Arguments = "--version",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
