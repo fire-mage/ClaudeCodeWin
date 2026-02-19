@@ -1523,11 +1523,27 @@ public class MainViewModel : ViewModelBase
     /// </summary>
     public void ShowProjectPickerIfNeeded()
     {
-        var projects = _projectRegistry.GetMostRecentProjects(10);
+        var projects = _projectRegistry.GetMostRecentProjects(20);
         if (projects.Count < 2) return;
 
+        // Filter out nested projects — if a project's path is inside another project's path, skip it
+        var sorted = projects.OrderBy(p => p.Path.Length).ToList();
+        var roots = new List<ProjectInfo>();
+        foreach (var p in sorted)
+        {
+            var normalizedPath = p.Path.TrimEnd('\\', '/') + "\\";
+            var isNested = roots.Any(r =>
+                normalizedPath.StartsWith(r.Path.TrimEnd('\\', '/') + "\\", StringComparison.OrdinalIgnoreCase));
+            if (!isNested)
+                roots.Add(p);
+        }
+
+        // Re-sort by LastOpened descending and take top 10
+        var filtered = roots.OrderByDescending(p => p.LastOpened).Take(10).ToList();
+        if (filtered.Count < 2) return;
+
         PickerProjects.Clear();
-        foreach (var p in projects)
+        foreach (var p in filtered)
             PickerProjects.Add(p);
 
         ShowProjectPicker = true;

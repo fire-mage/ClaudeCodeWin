@@ -737,7 +737,9 @@
                            TextAlignment="Center"
                            Margin="0,0,0,20"/>
 
-                <ItemsControl ItemsSource="{Binding PickerProjects}" MaxHeight="350">
+                <ScrollViewer MaxHeight="350" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding PickerProjects}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Border Background="{StaticResource SurfaceBrush}"
@@ -793,6 +795,7 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                </ScrollViewer>
 
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
                             Margin="0,16,0,0">
