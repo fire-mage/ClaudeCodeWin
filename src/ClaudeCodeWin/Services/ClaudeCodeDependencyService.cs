@@ -157,6 +157,23 @@ public class ClaudeCodeDependencyService
                 StandardErrorEncoding = Encoding.UTF8,
             };
 
+            // Claude Code requires git-bash — point it to our MinGit's bash.exe
+            var localBash = Path.Combine(MinGitDir, "usr", "bin", "bash.exe");
+            if (File.Exists(localBash))
+            {
+                psi.Environment["CLAUDE_CODE_GIT_BASH_PATH"] = localBash;
+                Log($"Set CLAUDE_CODE_GIT_BASH_PATH={localBash}");
+            }
+
+            // Add MinGit to PATH for the install process
+            var minGitCmd = Path.Combine(MinGitDir, "cmd");
+            var minGitUsrBin = Path.Combine(MinGitDir, "usr", "bin");
+            if (Directory.Exists(minGitCmd))
+            {
+                var currentPath = psi.Environment["PATH"] ?? Environment.GetEnvironmentVariable("PATH") ?? "";
+                psi.Environment["PATH"] = minGitCmd + ";" + minGitUsrBin + ";" + currentPath;
+            }
+
             using var process = new Process { StartInfo = psi };
             process.Start();
             Log($"Installer process started (PID: {process.Id})");
@@ -408,6 +425,16 @@ public class ClaudeCodeDependencyService
 
             // Cleanup temp zip
             try { File.Delete(tempZip); } catch { }
+
+            // Create bash.exe from sh.exe (MinGit ships sh.exe which IS bash, just named differently)
+            // Claude Code CLI requires bash.exe / git-bash for its install and runtime
+            var shExe = Path.Combine(MinGitDir, "usr", "bin", "sh.exe");
+            var bashExe = Path.Combine(MinGitDir, "usr", "bin", "bash.exe");
+            if (File.Exists(shExe) && !File.Exists(bashExe))
+            {
+                File.Copy(shExe, bashExe);
+                onProgress?.Invoke("Created bash.exe from sh.exe");
+            }
 
             // Verify
             if (File.Exists(MinGitExe) && TryRunGit(MinGitExe))
