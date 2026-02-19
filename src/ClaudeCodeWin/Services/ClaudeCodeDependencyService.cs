@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
-using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text.Json;
 
@@ -92,10 +91,9 @@ public class ClaudeCodeDependencyService
         return new DependencyStatus(false, null);
     }
 
-    private const string GcsBucket = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases";
-
     /// <summary>
-    /// Install Claude Code CLI by downloading the native binary directly (no PowerShell).
+    /// Install Claude Code CLI using the official installer script from claude.ai.
+    /// Runs: irm https://claude.ai/install.ps1 | iex
     /// </summary>
     public async Task<bool> InstallAsync(Action<string>? onProgress = null)
     {
@@ -105,117 +103,49 @@ public class ClaudeCodeDependencyService
             WriteInstallLog(msg);
         }
 
-        Log("Starting Claude Code CLI installation...");
+        Log("Starting Claude Code CLI installation (official installer)...");
 
         try
         {
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.Add("User-Agent", "ClaudeCodeWin");
-            http.Timeout = TimeSpan.FromMinutes(5);
-
-            var platform = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
-                == System.Runtime.InteropServices.Architecture.Arm64
-                ? "win32-arm64" : "win32-x64";
-
-            // Step 1: Get latest version
-            Log("Fetching latest version...");
-            var version = (await http.GetStringAsync($"{GcsBucket}/latest")).Trim();
-            Log($"Latest version: {version}");
-
-            // Step 2: Get manifest and checksum
-            Log("Fetching manifest...");
-            var manifestJson = await http.GetStringAsync($"{GcsBucket}/{version}/manifest.json");
-            using var manifest = JsonDocument.Parse(manifestJson);
-            var checksum = manifest.RootElement
-                .GetProperty("platforms")
-                .GetProperty(platform)
-                .GetProperty("checksum")
-                .GetString();
-
-            if (string.IsNullOrEmpty(checksum))
+            var psi = new ProcessStartInfo
             {
-                Log($"Platform {platform} not found in manifest.");
-                return false;
+                FileName = "powershell.exe",
+                Arguments = "-NoProfile -ExecutionPolicy Bypass -Command \"irm https://claude.ai/install.ps1 | iex\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+
+            using var process = new Process { StartInfo = psi };
+            process.Start();
+            Log($"Installer started (PID: {process.Id})");
+
+            var outputTask = ReadStreamAsync(process.StandardOutput, msg => Log(msg));
+            var errorTask = ReadStreamAsync(process.StandardError, msg => Log("[ERR] " + msg));
+
+            // The official installer downloads ~222MB + runs 'claude install'.
+            // On slow connections this can take 10+ minutes.
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+            try
+            {
+                await process.WaitForExitAsync(cts.Token);
             }
-            Log($"Expected checksum: {checksum[..16]}...");
-
-            // Step 3: Download binary
-            var downloadDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".claude", "downloads");
-            Directory.CreateDirectory(downloadDir);
-
-            var binaryPath = Path.Combine(downloadDir, $"claude-{version}-{platform}.exe");
-            var binaryUrl = $"{GcsBucket}/{version}/{platform}/claude.exe";
-            Log($"Downloading claude.exe ({platform})...");
-
-            using (var response = await http.GetAsync(binaryUrl, HttpCompletionOption.ResponseHeadersRead))
+            catch (OperationCanceledException)
             {
-                response.EnsureSuccessStatusCode();
-                var totalBytes = response.Content.Headers.ContentLength ?? 0;
-                Log($"Download started, size: {totalBytes / (1024 * 1024)}MB");
-
-                await using var contentStream = await response.Content.ReadAsStreamAsync();
-                await using var fileStream = new FileStream(binaryPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
-
-                var buffer = new byte[81920];
-                long downloaded = 0;
-                int read;
-                while ((read = await contentStream.ReadAsync(buffer)) > 0)
-                {
-                    await fileStream.WriteAsync(buffer.AsMemory(0, read));
-                    downloaded += read;
-                    if (totalBytes > 0)
-                        onProgress?.Invoke($"Downloading... {downloaded / (1024 * 1024)}MB / {totalBytes / (1024 * 1024)}MB");
-                }
+                try { process.Kill(true); } catch { }
+                Log("Installer timed out after 15 minutes.");
             }
 
-            Log($"Download complete. Size: {new FileInfo(binaryPath).Length}");
+            await Task.WhenAll(outputTask, errorTask);
 
-            // Step 4: Verify checksum
-            Log("Verifying checksum...");
-            var actualChecksum = await ComputeSha256Async(binaryPath);
-            if (!string.Equals(actualChecksum, checksum, StringComparison.OrdinalIgnoreCase))
-            {
-                Log($"Checksum mismatch! Expected: {checksum}, Got: {actualChecksum}");
-                try { File.Delete(binaryPath); } catch { }
-                return false;
-            }
-            Log("Checksum verified OK.");
+            if (process.HasExited)
+                Log($"Installer exited with code {process.ExitCode}");
 
-            // Step 5: Install the binary.
-            // 'claude install latest' uses React Ink TUI and re-downloads the 222MB binary,
-            // which is wasteful and hangs in non-terminal environments.
-            // Instead, we replicate what the official installer does on Windows:
-            //   1. Copy binary to versions dir: ~/.local/share/claude/versions/{version}/claude.exe
-            //   2. Copy binary to bin dir: ~/.local/bin/claude.exe
-            // This is exactly what the install command does (see gpY function in cli.js).
-            var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var versionsDir = Path.Combine(userHome, ".local", "share", "claude", "versions", version);
-            var binDir = Path.GetDirectoryName(NativePath)!;
-
-            Directory.CreateDirectory(versionsDir);
-            Directory.CreateDirectory(binDir);
-
-            var versionedPath = Path.Combine(versionsDir, "claude.exe");
-            Log($"Copying to versions dir: {versionedPath}");
-            File.Copy(binaryPath, versionedPath, overwrite: true);
-
-            Log($"Copying to bin dir: {NativePath}");
-            File.Copy(binaryPath, NativePath, overwrite: true);
-
-            // Cleanup downloaded binary
-            try { File.Delete(binaryPath); } catch { }
-
-            // Step 6: Verify installation
+            // Verify installation
             Log("Verifying installation...");
-            if (!File.Exists(NativePath))
-            {
-                Log($"Copy failed — file not found at {NativePath}");
-                return false;
-            }
-
-            Log($"File size: {new FileInfo(NativePath).Length} bytes");
+            var nativeExists = File.Exists(NativePath);
+            Log(nativeExists ? $"Found: {NativePath}" : $"NOT found: {NativePath}");
 
             var status = await CheckAsync();
             if (status.IsInstalled)
@@ -224,9 +154,8 @@ public class ClaudeCodeDependencyService
                 return true;
             }
 
-            // Even if --version check fails, the binary is there
-            Log($"Binary exists at {NativePath}, proceeding.");
-            return true;
+            Log("Installation completed but claude CLI was not found.");
+            return false;
         }
         catch (Exception ex)
         {
@@ -238,11 +167,19 @@ public class ClaudeCodeDependencyService
         }
     }
 
-    private static async Task<string> ComputeSha256Async(string filePath)
+    private static async Task ReadStreamAsync(StreamReader reader, Action<string>? onProgress)
     {
-        await using var stream = File.OpenRead(filePath);
-        var hash = await SHA256.HashDataAsync(stream);
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        while (await reader.ReadLineAsync() is { } line)
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                // Strip ANSI escape codes from TUI output
+                var clean = System.Text.RegularExpressions.Regex.Replace(
+                    line, @"\x1B\[[^@-~]*[@-~]|\x1B\].*?\x07|\x1B\[[\?]?\d*[a-zA-Z]", "").Trim();
+                if (!string.IsNullOrWhiteSpace(clean))
+                    onProgress?.Invoke(clean);
+            }
+        }
     }
 
     /// <summary>
