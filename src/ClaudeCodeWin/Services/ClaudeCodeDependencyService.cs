@@ -60,9 +60,11 @@ public class ClaudeCodeDependencyService
             using var process = new Process { StartInfo = psi };
             process.Start();
 
-            // Stream output
+            onProgress?.Invoke("PowerShell process started (PID: " + process.Id + ")");
+
+            // Stream output — stderr prefixed with [ERR] for visibility
             var outputTask = ReadStreamAsync(process.StandardOutput, onProgress);
-            var errorTask = ReadStreamAsync(process.StandardError, onProgress);
+            var errorTask = ReadStreamAsync(process.StandardError, msg => onProgress?.Invoke("[ERR] " + msg));
 
             // Wait up to 5 minutes
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
@@ -73,33 +75,54 @@ public class ClaudeCodeDependencyService
             catch (OperationCanceledException)
             {
                 try { process.Kill(true); } catch { }
-                onProgress?.Invoke("Installation timed out.");
+                onProgress?.Invoke("Installation timed out after 5 minutes.");
                 return false;
             }
 
             await Task.WhenAll(outputTask, errorTask);
 
+            onProgress?.Invoke($"PowerShell exited with code {process.ExitCode}");
+
             if (process.ExitCode != 0)
             {
-                onProgress?.Invoke($"Installer exited with code {process.ExitCode}.");
+                onProgress?.Invoke($"Installer FAILED (exit code {process.ExitCode}).");
                 return false;
             }
 
             // Verify installation
             onProgress?.Invoke("Verifying installation...");
+            onProgress?.Invoke($"Checking PATH for 'claude'...");
+            var pathExe = await TryGetVersionAsync("claude");
+            onProgress?.Invoke(pathExe is not null ? $"Found in PATH: {pathExe}" : "Not found in PATH");
+
+            onProgress?.Invoke($"Checking native location: {NativePath}");
+            var nativeExists = File.Exists(NativePath);
+            onProgress?.Invoke(nativeExists ? "Native binary exists" : "Native binary NOT found");
+
+            if (nativeExists)
+            {
+                var nativeOk = await TryGetVersionAsync(NativePath);
+                onProgress?.Invoke(nativeOk is not null ? "Native binary works!" : "Native binary exists but failed to run");
+            }
+
             var status = await CheckAsync();
             if (status.IsInstalled)
             {
-                onProgress?.Invoke("Claude Code CLI installed successfully!");
+                onProgress?.Invoke($"Claude Code CLI installed successfully at: {status.ExePath}");
                 return true;
             }
 
-            onProgress?.Invoke("Installation completed but claude CLI was not found. You may need to restart the application.");
+            onProgress?.Invoke("Installation completed but claude CLI was not found anywhere.");
+            onProgress?.Invoke("Expected locations:");
+            onProgress?.Invoke($"  PATH: claude");
+            onProgress?.Invoke($"  Native: {NativePath}");
             return false;
         }
         catch (Exception ex)
         {
-            onProgress?.Invoke($"Installation failed: {ex.Message}");
+            onProgress?.Invoke($"Installation failed: {ex.GetType().Name}: {ex.Message}");
+            if (ex.InnerException is not null)
+                onProgress?.Invoke($"  Inner: {ex.InnerException.Message}");
             return false;
         }
     }
