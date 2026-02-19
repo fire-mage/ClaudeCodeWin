@@ -38,7 +38,8 @@ public partial class App : Application
         // Run dependency checks in the overlay
         var dependencyService = new ClaudeCodeDependencyService();
         var needsSetup = !dependencyService.IsGitInstalled()
-                         || !(await dependencyService.CheckAsync()).IsInstalled;
+                         || !(await dependencyService.CheckAsync()).IsInstalled
+                         || !dependencyService.IsGhInstalled();
 
         if (needsSetup)
         {
@@ -119,34 +120,65 @@ public partial class App : Application
             });
         }
 
-        // Step 1: Git
-        if (!depService.IsGitInstalled())
+        // Count how many steps are needed
+        var needGit = !depService.IsGitInstalled();
+        var needCli = !(await depService.CheckAsync()).IsInstalled;
+        var needGh = !depService.IsGhInstalled();
+        var totalSteps = (needGit ? 1 : 0) + (needCli ? 1 : 0) + (needGh ? 1 : 0);
+        var currentStep = 0;
+
+        // Step: Git
+        if (needGit)
         {
-            vm.DependencyTitle = "Installing Git for Windows...";
-            vm.DependencyStatus = "Preparing...";
+            currentStep++;
+            vm.DependencyStep = $"Step {currentStep} of {totalSteps} — First-time setup";
+            vm.DependencyTitle = "Installing Git for Windows";
+            vm.DependencySubtitle = "Git is required for version control. Downloading a portable version (~45 MB) — this only happens once.";
+            vm.DependencyStatus = "Connecting to GitHub...";
             vm.DependencyLog = "";
 
             var gitOk = await depService.InstallGitAsync(UpdateProgress);
             if (!gitOk)
             {
-                vm.DependencyStatus = "Git installation failed.";
+                vm.DependencyStatus = "Git installation failed. Check your internet connection and try again.";
                 vm.DependencyFailed = true;
                 return false;
             }
         }
 
-        // Step 2: Claude Code CLI
-        var status = await depService.CheckAsync();
-        if (!status.IsInstalled)
+        // Step: Claude Code CLI
+        if (needCli)
         {
-            vm.DependencyTitle = "Installing Claude Code CLI...";
-            vm.DependencyStatus = "Preparing...";
+            currentStep++;
+            vm.DependencyStep = $"Step {currentStep} of {totalSteps} — First-time setup";
+            vm.DependencyTitle = "Installing Claude Code CLI";
+            vm.DependencySubtitle = "Claude Code CLI is the core engine that powers this application. Download may take a minute depending on your connection.";
+            vm.DependencyStatus = "Launching installer...";
             vm.DependencyLog = "";
 
             var cliOk = await depService.InstallAsync(UpdateProgress);
             if (!cliOk)
             {
-                vm.DependencyStatus = "Claude Code CLI installation failed.";
+                vm.DependencyStatus = "Claude Code CLI installation failed. Check your internet connection and try again.";
+                vm.DependencyFailed = true;
+                return false;
+            }
+        }
+
+        // Step: GitHub CLI
+        if (needGh)
+        {
+            currentStep++;
+            vm.DependencyStep = $"Step {currentStep} of {totalSteps} — First-time setup";
+            vm.DependencyTitle = "Installing GitHub CLI";
+            vm.DependencySubtitle = "GitHub CLI enables pull requests, issue management, and repository operations directly from the app.";
+            vm.DependencyStatus = "Connecting to GitHub...";
+            vm.DependencyLog = "";
+
+            var ghOk = await depService.InstallGhAsync(UpdateProgress);
+            if (!ghOk)
+            {
+                vm.DependencyStatus = "GitHub CLI installation failed. Check your internet connection and try again.";
                 vm.DependencyFailed = true;
                 return false;
             }

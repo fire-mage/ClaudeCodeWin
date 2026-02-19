@@ -75,6 +75,8 @@ public class MainViewModel : ViewModelBase
     private bool _isUpdating;
     private bool _showDependencyOverlay;
     private string _dependencyTitle = "";
+    private string _dependencySubtitle = "";
+    private string _dependencyStep = "";
     private string _dependencyStatus = "Preparing...";
     private string _dependencyLog = "";
     private bool _dependencyFailed;
@@ -130,6 +132,18 @@ public class MainViewModel : ViewModelBase
     {
         get => _dependencyTitle;
         set => SetProperty(ref _dependencyTitle, value);
+    }
+
+    public string DependencySubtitle
+    {
+        get => _dependencySubtitle;
+        set => SetProperty(ref _dependencySubtitle, value);
+    }
+
+    public string DependencyStep
+    {
+        get => _dependencyStep;
+        set => SetProperty(ref _dependencyStep, value);
     }
 
     public string DependencyStatus

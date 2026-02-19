@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -36,8 +37,11 @@ public class ClaudeCodeDependencyService
         return new DependencyStatus(false, null);
     }
 
+    private const string GcsBucket = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases";
+
     /// <summary>
-    /// Install Claude Code CLI via the official Windows installer script.
+    /// Install Claude Code CLI by downloading the native binary directly (no PowerShell).
+    /// Mirrors the logic of the official install.ps1 but with full control and progress reporting.
     /// </summary>
     public async Task<bool> InstallAsync(Action<string>? onProgress = null)
     {
@@ -45,10 +49,83 @@ public class ClaudeCodeDependencyService
 
         try
         {
+            using var http = new HttpClient();
+            http.DefaultRequestHeaders.Add("User-Agent", "ClaudeCodeWin");
+            http.Timeout = TimeSpan.FromMinutes(5);
+
+            var platform = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
+                == System.Runtime.InteropServices.Architecture.Arm64
+                ? "win32-arm64" : "win32-x64";
+
+            // Step 1: Get latest version
+            onProgress?.Invoke("Fetching latest version...");
+            var version = (await http.GetStringAsync($"{GcsBucket}/latest")).Trim();
+            onProgress?.Invoke($"Latest version: {version}");
+
+            // Step 2: Get manifest and checksum
+            onProgress?.Invoke("Fetching manifest...");
+            var manifestJson = await http.GetStringAsync($"{GcsBucket}/{version}/manifest.json");
+            using var manifest = JsonDocument.Parse(manifestJson);
+            var checksum = manifest.RootElement
+                .GetProperty("platforms")
+                .GetProperty(platform)
+                .GetProperty("checksum")
+                .GetString();
+
+            if (string.IsNullOrEmpty(checksum))
+            {
+                onProgress?.Invoke($"Platform {platform} not found in manifest.");
+                return false;
+            }
+            onProgress?.Invoke($"Expected checksum: {checksum[..16]}...");
+
+            // Step 3: Download binary
+            var downloadDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".claude", "downloads");
+            Directory.CreateDirectory(downloadDir);
+
+            var binaryPath = Path.Combine(downloadDir, $"claude-{version}-{platform}.exe");
+            var binaryUrl = $"{GcsBucket}/{version}/{platform}/claude.exe";
+            onProgress?.Invoke($"Downloading claude.exe ({platform})...");
+
+            using (var response = await http.GetAsync(binaryUrl, HttpCompletionOption.ResponseHeadersRead))
+            {
+                response.EnsureSuccessStatusCode();
+                var totalBytes = response.Content.Headers.ContentLength ?? 0;
+
+                await using var contentStream = await response.Content.ReadAsStreamAsync();
+                await using var fileStream = new FileStream(binaryPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
+
+                var buffer = new byte[81920];
+                long downloaded = 0;
+                int read;
+                while ((read = await contentStream.ReadAsync(buffer)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer.AsMemory(0, read));
+                    downloaded += read;
+                    if (totalBytes > 0)
+                        onProgress?.Invoke($"Downloading... {downloaded / (1024 * 1024)}MB / {totalBytes / (1024 * 1024)}MB");
+                }
+            }
+
+            // Step 4: Verify checksum
+            onProgress?.Invoke("Verifying checksum...");
+            var actualChecksum = await ComputeSha256Async(binaryPath);
+            if (!string.Equals(actualChecksum, checksum, StringComparison.OrdinalIgnoreCase))
+            {
+                onProgress?.Invoke($"Checksum mismatch! Expected: {checksum}, Got: {actualChecksum}");
+                try { File.Delete(binaryPath); } catch { }
+                return false;
+            }
+            onProgress?.Invoke("Checksum verified.");
+
+            // Step 5: Run 'claude install' to set up launcher and shell integration
+            onProgress?.Invoke("Running installer (claude install)...");
             var psi = new ProcessStartInfo
             {
-                FileName = "powershell.exe",
-                Arguments = "-NoProfile -ExecutionPolicy Bypass -Command \"[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm https://claude.ai/install.ps1 | iex\"",
+                FileName = binaryPath,
+                Arguments = "install latest",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -59,15 +136,12 @@ public class ClaudeCodeDependencyService
 
             using var process = new Process { StartInfo = psi };
             process.Start();
+            onProgress?.Invoke($"Installer process started (PID: {process.Id})");
 
-            onProgress?.Invoke("PowerShell process started (PID: " + process.Id + ")");
-
-            // Stream output — stderr prefixed with [ERR] for visibility
             var outputTask = ReadStreamAsync(process.StandardOutput, onProgress);
             var errorTask = ReadStreamAsync(process.StandardError, msg => onProgress?.Invoke("[ERR] " + msg));
 
-            // Wait up to 5 minutes
-            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
             try
             {
                 await process.WaitForExitAsync(cts.Token);
@@ -75,47 +149,39 @@ public class ClaudeCodeDependencyService
             catch (OperationCanceledException)
             {
                 try { process.Kill(true); } catch { }
-                onProgress?.Invoke("Installation timed out after 5 minutes.");
-                return false;
+                onProgress?.Invoke("Installer timed out after 2 minutes.");
+
+                // Even if install timed out, the binary may have been placed successfully
+                onProgress?.Invoke("Checking if binary was installed despite timeout...");
             }
 
             await Task.WhenAll(outputTask, errorTask);
 
-            onProgress?.Invoke($"PowerShell exited with code {process.ExitCode}");
+            if (process.HasExited)
+                onProgress?.Invoke($"Installer exited with code {process.ExitCode}");
 
-            if (process.ExitCode != 0)
-            {
-                onProgress?.Invoke($"Installer FAILED (exit code {process.ExitCode}).");
-                return false;
-            }
+            // Cleanup downloaded binary
+            try { File.Delete(binaryPath); } catch { }
 
-            // Verify installation
+            // Step 6: Verify installation
             onProgress?.Invoke("Verifying installation...");
-            onProgress?.Invoke($"Checking PATH for 'claude'...");
-            var pathExe = await TryGetVersionAsync("claude");
-            onProgress?.Invoke(pathExe is not null ? $"Found in PATH: {pathExe}" : "Not found in PATH");
-
-            onProgress?.Invoke($"Checking native location: {NativePath}");
             var nativeExists = File.Exists(NativePath);
-            onProgress?.Invoke(nativeExists ? "Native binary exists" : "Native binary NOT found");
+            onProgress?.Invoke(nativeExists ? $"Found: {NativePath}" : $"NOT found: {NativePath}");
 
             if (nativeExists)
             {
-                var nativeOk = await TryGetVersionAsync(NativePath);
-                onProgress?.Invoke(nativeOk is not null ? "Native binary works!" : "Native binary exists but failed to run");
+                var ok = await TryGetVersionAsync(NativePath);
+                onProgress?.Invoke(ok is not null ? "Binary works!" : "Binary exists but failed to run");
             }
 
             var status = await CheckAsync();
             if (status.IsInstalled)
             {
-                onProgress?.Invoke($"Claude Code CLI installed successfully at: {status.ExePath}");
+                onProgress?.Invoke($"Claude Code CLI installed successfully!");
                 return true;
             }
 
-            onProgress?.Invoke("Installation completed but claude CLI was not found anywhere.");
-            onProgress?.Invoke("Expected locations:");
-            onProgress?.Invoke($"  PATH: claude");
-            onProgress?.Invoke($"  Native: {NativePath}");
+            onProgress?.Invoke("Installation completed but claude CLI was not found.");
             return false;
         }
         catch (Exception ex)
@@ -125,6 +191,13 @@ public class ClaudeCodeDependencyService
                 onProgress?.Invoke($"  Inner: {ex.InnerException.Message}");
             return false;
         }
+    }
+
+    private static async Task<string> ComputeSha256Async(string filePath)
+    {
+        await using var stream = File.OpenRead(filePath);
+        var hash = await SHA256.HashDataAsync(stream);
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     /// <summary>
@@ -327,6 +400,183 @@ public class ClaudeCodeDependencyService
         catch (Exception ex)
         {
             onProgress?.Invoke($"Git installation failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    // ── GitHub CLI (gh) ──────────────────────────────────────────────
+
+    private static readonly string GhCliDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "ClaudeCodeWin", "GhCli");
+
+    private static readonly string GhCliExe = Path.Combine(GhCliDir, "bin", "gh.exe");
+
+    /// <summary>
+    /// Check if GitHub CLI is installed (local portable or system-wide).
+    /// </summary>
+    public bool IsGhInstalled()
+    {
+        if (File.Exists(GhCliExe) && TryRunExe(GhCliExe, "--version"))
+            return true;
+        return TryRunExe("gh", "--version");
+    }
+
+    /// <summary>
+    /// Get the path to gh executable (local portable or system).
+    /// </summary>
+    public string? ResolveGhExePath()
+    {
+        if (File.Exists(GhCliExe))
+            return GhCliExe;
+        if (TryRunExe("gh", "--version"))
+            return "gh";
+        return null;
+    }
+
+    /// <summary>
+    /// Download and install portable GitHub CLI to local AppData.
+    /// Uses GitHub API to get the latest release dynamically.
+    /// </summary>
+    public async Task<bool> InstallGhAsync(Action<string>? onProgress = null)
+    {
+        onProgress?.Invoke("Fetching latest GitHub CLI release info...");
+
+        try
+        {
+            using var http = new HttpClient();
+            http.DefaultRequestHeaders.Add("User-Agent", "ClaudeCodeWin");
+            http.Timeout = TimeSpan.FromMinutes(5);
+
+            var apiUrl = "https://api.github.com/repos/cli/cli/releases/latest";
+            var releaseJson = await http.GetStringAsync(apiUrl);
+            using var doc = JsonDocument.Parse(releaseJson);
+
+            // Find gh_*_windows_amd64.zip (or arm64)
+            var archSuffix = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
+                == System.Runtime.InteropServices.Architecture.Arm64
+                ? "_windows_arm64.zip" : "_windows_amd64.zip";
+
+            string? downloadUrl = null;
+            string? assetName = null;
+            foreach (var asset in doc.RootElement.GetProperty("assets").EnumerateArray())
+            {
+                var name = asset.GetProperty("name").GetString() ?? "";
+                if (name.StartsWith("gh_") && name.EndsWith(archSuffix))
+                {
+                    downloadUrl = asset.GetProperty("browser_download_url").GetString();
+                    assetName = name;
+                    break;
+                }
+            }
+
+            if (downloadUrl is null)
+            {
+                onProgress?.Invoke("Could not find GitHub CLI download URL from GitHub releases.");
+                return false;
+            }
+
+            var tagName = doc.RootElement.GetProperty("tag_name").GetString() ?? "unknown";
+            onProgress?.Invoke($"Found {assetName} ({tagName})");
+
+            // Download
+            var tempZip = Path.Combine(Path.GetTempPath(), assetName!);
+            onProgress?.Invoke($"Downloading {assetName}...");
+
+            using (var response = await http.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
+            {
+                response.EnsureSuccessStatusCode();
+                var totalBytes = response.Content.Headers.ContentLength ?? 0;
+
+                await using var contentStream = await response.Content.ReadAsStreamAsync();
+                await using var fileStream = new FileStream(tempZip, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
+
+                var buffer = new byte[81920];
+                long downloaded = 0;
+                int read;
+                while ((read = await contentStream.ReadAsync(buffer)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer.AsMemory(0, read));
+                    downloaded += read;
+                    if (totalBytes > 0)
+                        onProgress?.Invoke($"Downloading... {downloaded / (1024 * 1024)}MB / {totalBytes / (1024 * 1024)}MB");
+                }
+            }
+
+            onProgress?.Invoke("Extracting GitHub CLI...");
+
+            // Clean old GhCli if exists
+            if (Directory.Exists(GhCliDir))
+                Directory.Delete(GhCliDir, true);
+
+            // gh zip has a subfolder like "gh_2.87.0_windows_amd64/" — extract to temp, then move contents
+            var tempExtract = Path.Combine(Path.GetTempPath(), "gh_extract_" + Guid.NewGuid().ToString("N")[..8]);
+            Directory.CreateDirectory(tempExtract);
+            ZipFile.ExtractToDirectory(tempZip, tempExtract);
+
+            // Find the single subfolder (e.g. gh_2.87.0_windows_amd64)
+            var subDirs = Directory.GetDirectories(tempExtract);
+            if (subDirs.Length == 1)
+            {
+                Directory.Move(subDirs[0], GhCliDir);
+            }
+            else
+            {
+                // Fallback: move everything
+                Directory.Move(tempExtract, GhCliDir);
+            }
+
+            // Cleanup
+            try { File.Delete(tempZip); } catch { }
+            try { if (Directory.Exists(tempExtract)) Directory.Delete(tempExtract, true); } catch { }
+
+            // Verify
+            if (File.Exists(GhCliExe) && TryRunExe(GhCliExe, "--version"))
+            {
+                onProgress?.Invoke("GitHub CLI installed successfully!");
+                return true;
+            }
+
+            onProgress?.Invoke("Extraction completed but gh.exe was not found.");
+            onProgress?.Invoke($"Expected at: {GhCliExe}");
+
+            // Debug: list what's in the directory
+            if (Directory.Exists(GhCliDir))
+            {
+                onProgress?.Invoke($"Contents of {GhCliDir}:");
+                foreach (var f in Directory.GetFiles(GhCliDir, "*", SearchOption.AllDirectories))
+                    onProgress?.Invoke($"  {f}");
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            onProgress?.Invoke($"GitHub CLI installation failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool TryRunExe(string exePath, string arguments)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = arguments,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            using var process = Process.Start(psi);
+            if (process is null) return false;
+            process.WaitForExit(5000);
+            return process.ExitCode == 0;
+        }
+        catch
+        {
             return false;
         }
     }
