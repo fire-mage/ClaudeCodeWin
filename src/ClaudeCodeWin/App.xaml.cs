@@ -58,7 +58,7 @@ public partial class App : Application
         var usageService = new UsageService();
         var contextSnapshotService = new ContextSnapshotService();
 
-        var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService, projectRegistry, contextSnapshotService);
+        var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService, projectRegistry, contextSnapshotService, usageService);
         var mainWindow = new MainWindow(mainViewModel, notificationService, settingsService, settings, fileIndexService, chatHistoryService, projectRegistry);
 
         // Show MainWindow immediately so the user sees the app
@@ -124,6 +124,23 @@ public partial class App : Application
                     "Login Required", MessageBoxButton.OK, MessageBoxImage.Warning);
                 Shutdown();
                 return;
+            }
+        }
+
+        // Startup dialog: offer to resume a previous session or start new
+        var history = chatHistoryService.ListAll();
+        if (history.Count > 0)
+        {
+            var startupDialog = new StartupDialog(chatHistoryService) { Owner = mainWindow };
+            if (startupDialog.ShowDialog() == true && startupDialog.SelectedEntry is not null)
+            {
+                // User chose to resume a session
+                mainViewModel.LoadChatFromHistory(startupDialog.SelectedEntry);
+            }
+            else
+            {
+                // User chose "New session" — show project picker if multiple projects
+                mainViewModel.ShowProjectPickerIfNeeded();
             }
         }
 

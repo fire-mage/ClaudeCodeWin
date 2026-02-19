@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
@@ -54,6 +55,7 @@ public class MainViewModel : ViewModelBase
     private readonly ChatHistoryService _chatHistoryService;
     private readonly ProjectRegistryService _projectRegistry;
     private readonly ContextSnapshotService _contextSnapshotService;
+    private readonly UsageService _usageService;
     private VersionInfo? _pendingUpdate;
     private string? _downloadedUpdatePath;
 
@@ -83,6 +85,9 @@ public class MainViewModel : ViewModelBase
     private int _contextWindowSize;
     private bool _contextWarningShown;
     private string _todoProgressText = "";
+    private bool _showRateLimitBanner;
+    private string _rateLimitCountdown = "";
+    private bool _showProjectPicker;
 
     // Track project roots already registered this session (avoid re-registering)
     private readonly HashSet<string> _registeredProjectRoots =
@@ -244,6 +249,26 @@ public class MainViewModel : ViewModelBase
         }
     }
 
+    public bool ShowRateLimitBanner
+    {
+        get => _showRateLimitBanner;
+        set => SetProperty(ref _showRateLimitBanner, value);
+    }
+
+    public string RateLimitCountdown
+    {
+        get => _rateLimitCountdown;
+        set => SetProperty(ref _rateLimitCountdown, value);
+    }
+
+    public bool ShowProjectPicker
+    {
+        get => _showProjectPicker;
+        set => SetProperty(ref _showProjectPicker, value);
+    }
+
+    public ObservableCollection<ProjectInfo> PickerProjects { get; } = [];
+
     public bool HasDialogHistory => Messages.Any(m => m.Role == MessageRole.Assistant);
 
     public RelayCommand SendCommand { get; }
@@ -262,6 +287,10 @@ public class MainViewModel : ViewModelBase
     public RelayCommand QuickPromptCommand { get; }
     public RelayCommand SwitchToOpusCommand { get; }
     public RelayCommand ExpandContextCommand { get; }
+    public RelayCommand DismissRateLimitCommand { get; }
+    public RelayCommand UpgradeAccountCommand { get; }
+    public RelayCommand SelectProjectCommand { get; }
+    public RelayCommand ContinueWithCurrentProjectCommand { get; }
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
     public void SetUpdateChannel(string channel)
@@ -273,7 +302,7 @@ public class MainViewModel : ViewModelBase
         SettingsService settingsService, AppSettings settings, GitService gitService,
         UpdateService updateService, FileIndexService fileIndexService,
         ChatHistoryService chatHistoryService, ProjectRegistryService projectRegistry,
-        ContextSnapshotService contextSnapshotService)
+        ContextSnapshotService contextSnapshotService, UsageService usageService)
     {
         _cliService = cliService;
         _notificationService = notificationService;
@@ -285,6 +314,7 @@ public class MainViewModel : ViewModelBase
         _chatHistoryService = chatHistoryService;
         _projectRegistry = projectRegistry;
         _contextSnapshotService = contextSnapshotService;
+        _usageService = usageService;
 
         SendCommand = new RelayCommand(() => _ = SendMessageAsync());
         CancelCommand = new RelayCommand(CancelProcessing, () => IsProcessing);
@@ -374,6 +404,21 @@ public class MainViewModel : ViewModelBase
         });
         SwitchToOpusCommand = new RelayCommand(SwitchToOpus);
         ExpandContextCommand = new RelayCommand(ExpandContext);
+        DismissRateLimitCommand = new RelayCommand(() => ShowRateLimitBanner = false);
+        UpgradeAccountCommand = new RelayCommand(() =>
+        {
+            try { Process.Start(new ProcessStartInfo("https://console.anthropic.com/settings/billing") { UseShellExecute = true }); }
+            catch { }
+        });
+        SelectProjectCommand = new RelayCommand(p =>
+        {
+            if (p is string path)
+            {
+                ShowProjectPicker = false;
+                SetWorkingDirectory(path);
+            }
+        });
+        ContinueWithCurrentProjectCommand = new RelayCommand(() => ShowProjectPicker = false);
 
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
         Messages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasDialogHistory));
@@ -443,6 +488,37 @@ public class MainViewModel : ViewModelBase
         _cliService.OnError += HandleError;
         _cliService.OnControlRequest += HandleControlRequest;
         _cliService.OnFileChanged += HandleFileChanged;
+        _cliService.OnRateLimitDetected += () =>
+            Application.Current.Dispatcher.InvokeAsync(() => _usageService.SetRateLimitedExternally());
+
+        // Subscribe to rate limit changes from UsageService
+        _usageService.OnRateLimitChanged += isLimited =>
+        {
+            Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                if (isLimited)
+                {
+                    ShowRateLimitBanner = true;
+                    RateLimitCountdown = _usageService.GetSessionCountdown();
+                    Messages.Add(new MessageViewModel(MessageRole.System,
+                        $"Rate limit reached. Resets in {RateLimitCountdown}."));
+                }
+                else
+                {
+                    ShowRateLimitBanner = false;
+                    RateLimitCountdown = "";
+                    Messages.Add(new MessageViewModel(MessageRole.System,
+                        "Rate limit cleared. You can continue working."));
+                }
+            });
+        };
+
+        // Update rate limit countdown text every second (piggybacking on UsageService OnUsageUpdated)
+        _usageService.OnUsageUpdated += () =>
+        {
+            if (_showRateLimitBanner)
+                RateLimitCountdown = _usageService.GetSessionCountdown();
+        };
 
         // Initialize recent folders from settings
         foreach (var folder in settings.RecentFolders)
@@ -1439,6 +1515,22 @@ public class MainViewModel : ViewModelBase
         }
 
         return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// Show project picker overlay if there are multiple known projects.
+    /// Called from App.xaml.cs after startup dialog when starting a new session.
+    /// </summary>
+    public void ShowProjectPickerIfNeeded()
+    {
+        var projects = _projectRegistry.GetMostRecentProjects(10);
+        if (projects.Count < 2) return;
+
+        PickerProjects.Clear();
+        foreach (var p in projects)
+            PickerProjects.Add(p);
+
+        ShowProjectPicker = true;
     }
 
     private void UpdateCta(CtaState state)

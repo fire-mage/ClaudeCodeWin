@@ -40,6 +40,7 @@ public class ClaudeCliService
     public event Action<string>? OnFileChanged; // filePath from Write/Edit/NotebookEdit tools
     public event Action<string, string, string, JsonElement>? OnControlRequest; // requestId, toolName, toolUseId, input
     public event Action<string, string, List<string>>? OnSessionStarted; // sessionId, model, tools
+    public event Action? OnRateLimitDetected; // fired when CLI stderr indicates rate limiting
 
     public string ClaudeExePath { get; set; } = "claude";
     public string? WorkingDirectory { get; set; }
@@ -349,7 +350,18 @@ public class ClaudeCliService
         // Unexpected process death — include stderr if available
         var errorMsg = "Claude process exited unexpectedly";
         if (!string.IsNullOrWhiteSpace(_lastStderr))
+        {
             errorMsg += $"\n{_lastStderr.Trim()}";
+
+            // Detect rate limit from stderr keywords
+            var stderrLower = _lastStderr.ToLowerInvariant();
+            if (stderrLower.Contains("rate limit") || stderrLower.Contains("rate_limit")
+                || stderrLower.Contains("overloaded") || stderrLower.Contains("too many requests")
+                || stderrLower.Contains("429"))
+            {
+                OnRateLimitDetected?.Invoke();
+            }
+        }
 
         OnError?.Invoke(errorMsg);
         lock (_processLock)

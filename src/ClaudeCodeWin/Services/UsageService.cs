@@ -27,9 +27,11 @@ public class UsageService
     public DateTime? WeeklyResetsAt { get; private set; }
     public bool IsLoaded { get; private set; }
     public bool IsOnline { get; private set; } = true;
+    public bool IsRateLimited { get; private set; }
 
     // Events
     public event Action? OnUsageUpdated;
+    public event Action<bool>? OnRateLimitChanged; // true = rate limited, false = cleared
 
     public UsageService()
     {
@@ -104,6 +106,20 @@ public class UsageService
             }
 
             IsLoaded = true;
+
+            // Rate limit detection
+            var wasRateLimited = IsRateLimited;
+            IsRateLimited = SessionUtilization >= 100;
+
+            if (IsRateLimited != wasRateLimited)
+            {
+                // Switch poll interval: 15s during rate limit, 1min normally
+                _pollTimer.Interval = IsRateLimited
+                    ? TimeSpan.FromSeconds(15)
+                    : TimeSpan.FromMinutes(1);
+                OnRateLimitChanged?.Invoke(IsRateLimited);
+            }
+
             if (!IsOnline)
             {
                 IsOnline = true;
@@ -157,6 +173,19 @@ public class UsageService
         return remaining.TotalHours >= 1
             ? $"{(int)remaining.TotalHours}h {remaining.Minutes:D2}m"
             : $"{remaining.Minutes}m {remaining.Seconds:D2}s";
+    }
+
+    /// <summary>
+    /// Force rate-limited state from external signal (e.g., CLI stderr).
+    /// Triggers faster polling to detect when limit clears.
+    /// </summary>
+    public void SetRateLimitedExternally()
+    {
+        if (IsRateLimited) return;
+        IsRateLimited = true;
+        _pollTimer.Interval = TimeSpan.FromSeconds(15);
+        OnRateLimitChanged?.Invoke(true);
+        _ = FetchUsageAsync(); // immediate refresh
     }
 
     private static string? ReadAccessToken()

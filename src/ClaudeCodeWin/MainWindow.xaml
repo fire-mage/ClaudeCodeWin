@@ -471,6 +471,102 @@
             </ItemsControl>
         </ScrollViewer>
 
+        <!-- Rate limit banner -->
+        <Border Grid.Row="1"
+                VerticalAlignment="Top"
+                HorizontalAlignment="Stretch"
+                Panel.ZIndex="15"
+                Visibility="{Binding ShowRateLimitBanner, Converter={StaticResource BoolToVis}}">
+            <Border Background="#CC45475a"
+                    BorderBrush="{StaticResource WarningBrush}"
+                    BorderThickness="0,0,0,2"
+                    Padding="16,10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="&#x23F3; " FontSize="16"
+                               Foreground="{StaticResource WarningBrush}"
+                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}">
+                            <Run Text="Rate limit reached. Resets in "/>
+                            <Run Text="{Binding RateLimitCountdown, Mode=OneWay}"
+                                 Foreground="{StaticResource WarningBrush}"/>
+                        </TextBlock>
+                        <TextBlock Text="Your session will auto-resume when ready."
+                                   FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                                   Margin="0,2,0,0"/>
+                    </StackPanel>
+                    <Button Grid.Column="2" Content="Upgrade Account"
+                            Margin="12,0,0,0" Padding="12,4"
+                            Cursor="Hand"
+                            Command="{Binding UpgradeAccountCommand}"
+                            ToolTip="Open Anthropic billing page in browser">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                                <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                                <Setter Property="FontSize" Value="11"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                    CornerRadius="4"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center"
+                                                                  VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background"
+                                                            Value="{StaticResource PrimaryBrush}"/>
+                                                    <Setter Property="Foreground"
+                                                            Value="{StaticResource BackgroundBrush}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Grid.Column="3" Content="&#x2715;"
+                            Margin="8,0,0,0" Padding="6,2"
+                            Cursor="Hand"
+                            Command="{Binding DismissRateLimitCommand}"
+                            ToolTip="Dismiss">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="FontSize" Value="14"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center"
+                                                                  VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
+            </Border>
+        </Border>
+
         <!-- Bookmarks button -->
         <Border x:Name="BookmarksButton"
                 Grid.Row="1"
@@ -619,6 +715,104 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+            </StackPanel>
+        </Border>
+
+        <!-- Project picker overlay -->
+        <Border Grid.Row="1"
+                Background="{StaticResource BackgroundBrush}"
+                Visibility="{Binding ShowProjectPicker, Converter={StaticResource BoolToVis}}"
+                Panel.ZIndex="11">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                        MaxWidth="550" Margin="40">
+                <TextBlock Text="Select a project"
+                           FontSize="22" FontWeight="Bold"
+                           Foreground="{StaticResource PrimaryBrush}"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,6"/>
+                <TextBlock Text="Choose a project folder to work with, or continue with the current one."
+                           FontSize="13"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           HorizontalAlignment="Center"
+                           TextAlignment="Center"
+                           Margin="0,0,0,20"/>
+
+                <ItemsControl ItemsSource="{Binding PickerProjects}" MaxHeight="350">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{StaticResource SurfaceBrush}"
+                                    CornerRadius="6" Padding="12,8" Margin="0,0,0,4"
+                                    Cursor="Hand">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0"
+                                               Text="{Binding Name}"
+                                               FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextBrush}"/>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="1"
+                                               Text="{Binding TechStack}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource PrimaryBrush}"
+                                               VerticalAlignment="Center"
+                                               Margin="8,0,0,0"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                               Text="{Binding Path}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               TextTrimming="CharacterEllipsis"
+                                               Margin="0,2,0,0"/>
+                                </Grid>
+
+                                <Border.InputBindings>
+                                    <MouseBinding Gesture="LeftClick"
+                                                  Command="{Binding DataContext.SelectProjectCommand,
+                                                      RelativeSource={RelativeSource AncestorType=Window}}"
+                                                  CommandParameter="{Binding Path}"/>
+                                </Border.InputBindings>
+
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                            Margin="0,16,0,0">
+                    <Button Content="Continue with current"
+                            Style="{StaticResource PrimaryButton}"
+                            Command="{Binding ContinueWithCurrentProjectCommand}"
+                            Padding="20,8" Margin="0,0,8,0"/>
+                    <Button Content="Browse..."
+                            Command="{Binding SelectFolderCommand}"
+                            Padding="20,8"
+                            Background="{StaticResource SurfaceBrush}"
+                            Foreground="{StaticResource TextBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"/>
+                </StackPanel>
+
+                <TextBlock Text="Press Escape to continue with current project"
+                           FontSize="11" FontStyle="Italic"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           HorizontalAlignment="Center"
+                           Margin="0,12,0,0"/>
             </StackPanel>
         </Border>
 

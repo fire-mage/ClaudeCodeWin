@@ -235,9 +235,15 @@ public partial class MainWindow : Window
             }
         }
 
-        // Escape = LIFO: pop queue → input, then cancel Claude
+        // Escape = dismiss project picker, or LIFO: pop queue → input, then cancel Claude
         if (e.Key == Key.Escape)
         {
+            if (ViewModel.ShowProjectPicker)
+            {
+                ViewModel.ShowProjectPicker = false;
+                e.Handled = true;
+                return;
+            }
             if (ViewModel.HandleEscape())
             {
                 e.Handled = true;
