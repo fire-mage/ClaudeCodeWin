@@ -66,17 +66,39 @@ public partial class App : Application
 
         // Run dependency checks in the overlay
         var dependencyService = new ClaudeCodeDependencyService();
-        var needsSetup = !dependencyService.IsGitInstalled()
-                         || !(await dependencyService.CheckAsync()).IsInstalled
-                         || !dependencyService.IsGhInstalled();
+        var needsGit = !dependencyService.IsGitInstalled();
+        var needsCli = !(await dependencyService.CheckAsync()).IsInstalled;
+        var needsGh = !dependencyService.IsGhInstalled();
 
-        if (needsSetup)
+        // Git installer requires admin. If Git is missing and we're not admin, request elevation.
+        if (needsGit && !ClaudeCodeDependencyService.IsAdministrator())
         {
-            var success = await RunDependencySetup(mainViewModel, mainWindow, dependencyService);
+            var result = MessageBox.Show(
+                "Git for Windows needs to be installed, which requires administrator privileges.\n\n" +
+                "The application will restart with elevated permissions.\nClick OK to continue.",
+                "Administrator Required", MessageBoxButton.OKCancel, MessageBoxImage.Information);
+
+            if (result == MessageBoxResult.OK && ClaudeCodeDependencyService.RequestElevation())
+            {
+                Shutdown();
+                return;
+            }
+            else
+            {
+                MessageBox.Show(
+                    "Git for Windows is required. Please install it manually from:\nhttps://git-scm.com/downloads/win\n\nThen restart the application.",
+                    "Git Required", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Shutdown();
+                return;
+            }
+        }
+
+        if (needsGit || needsCli || needsGh)
+        {
+            var success = await RunDependencySetup(mainViewModel, mainWindow, dependencyService, needsGit, needsCli, needsGh);
             if (!success)
             {
                 // Don't Shutdown() — let the overlay stay visible with the error and Close button.
-                // The DepCloseButton_Click handler calls Shutdown() when user clicks Close.
                 return;
             }
         }
@@ -144,7 +166,8 @@ public partial class App : Application
     }
 
     private static async Task<bool> RunDependencySetup(
-        MainViewModel vm, MainWindow window, ClaudeCodeDependencyService depService)
+        MainViewModel vm, MainWindow window, ClaudeCodeDependencyService depService,
+        bool needGit, bool needCli, bool needGh)
     {
         vm.ShowDependencyOverlay = true;
 
@@ -160,20 +183,16 @@ public partial class App : Application
             });
         }
 
-        // Count how many steps are needed
-        var needGit = !depService.IsGitInstalled();
-        var needCli = !(await depService.CheckAsync()).IsInstalled;
-        var needGh = !depService.IsGhInstalled();
         var totalSteps = (needGit ? 1 : 0) + (needCli ? 1 : 0) + (needGh ? 1 : 0);
         var currentStep = 0;
 
-        // Step: Git
+        // Step: Git for Windows (full installer, requires admin)
         if (needGit)
         {
             currentStep++;
             vm.DependencyStep = $"Step {currentStep} of {totalSteps} — First-time setup";
             vm.DependencyTitle = "Installing Git for Windows";
-            vm.DependencySubtitle = "Git is required for version control. Downloading a portable version (~45 MB) — this only happens once.";
+            vm.DependencySubtitle = "Git is required for version control and is used by Claude Code internally. The installer will run silently in the background.";
             vm.DependencyStatus = "Connecting to GitHub...";
             vm.DependencyLog = "";
 
@@ -193,7 +212,7 @@ public partial class App : Application
             vm.DependencyStep = $"Step {currentStep} of {totalSteps} — First-time setup";
             vm.DependencyTitle = "Installing Claude Code CLI";
             vm.DependencySubtitle = "Claude Code CLI is the core engine that powers this application. Download may take a minute depending on your connection.";
-            vm.DependencyStatus = "Launching installer...";
+            vm.DependencyStatus = "Fetching latest version...";
             vm.DependencyLog = "";
 
             var cliOk = await depService.InstallAsync(UpdateProgress);

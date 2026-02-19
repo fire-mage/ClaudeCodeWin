@@ -35,13 +35,8 @@ public class GitService
 
         try
         {
-            // Resolve git path: prefer local MinGit if system git not available
+            // Use git from PATH (full Git for Windows is installed system-wide)
             var gitExe = "git";
-            var minGitExe = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "ClaudeCodeWin", "MinGit", "cmd", "git.exe");
-            if (File.Exists(minGitExe))
-                gitExe = minGitExe;
 
             var psi = new ProcessStartInfo
             {

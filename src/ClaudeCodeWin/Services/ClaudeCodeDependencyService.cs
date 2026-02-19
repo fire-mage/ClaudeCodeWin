@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 
@@ -25,6 +26,47 @@ public class ClaudeCodeDependencyService
         }
         catch { }
     }
+
+    // ── Admin / UAC ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Check if the current process is running with administrator privileges.
+    /// </summary>
+    public static bool IsAdministrator()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        var principal = new WindowsPrincipal(identity);
+        return principal.IsInRole(WindowsBuiltInRole.Administrator);
+    }
+
+    /// <summary>
+    /// Relaunch the current application with administrator privileges (UAC prompt).
+    /// Returns true if the elevated process was started, false if user declined UAC.
+    /// </summary>
+    public static bool RequestElevation()
+    {
+        try
+        {
+            var exe = Environment.ProcessPath;
+            if (exe is null) return false;
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = exe,
+                UseShellExecute = true,
+                Verb = "runas",
+            };
+            Process.Start(psi);
+            return true;
+        }
+        catch
+        {
+            // User declined UAC or other error
+            return false;
+        }
+    }
+
+    // ── Claude Code CLI ─────────────────────────────────────────────
 
     private static readonly string NativePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -55,7 +97,6 @@ public class ClaudeCodeDependencyService
 
     /// <summary>
     /// Install Claude Code CLI by downloading the native binary directly (no PowerShell).
-    /// Mirrors the logic of the official install.ps1 but with full control and progress reporting.
     /// </summary>
     public async Task<bool> InstallAsync(Action<string>? onProgress = null)
     {
@@ -107,7 +148,7 @@ public class ClaudeCodeDependencyService
 
             var binaryPath = Path.Combine(downloadDir, $"claude-{version}-{platform}.exe");
             var binaryUrl = $"{GcsBucket}/{version}/{platform}/claude.exe";
-            Log($"Downloading claude.exe ({platform}) from {binaryUrl}");
+            Log($"Downloading claude.exe ({platform})...");
 
             using (var response = await http.GetAsync(binaryUrl, HttpCompletionOption.ResponseHeadersRead))
             {
@@ -130,7 +171,7 @@ public class ClaudeCodeDependencyService
                 }
             }
 
-            Log($"Download complete. File exists: {File.Exists(binaryPath)}, Size: {new FileInfo(binaryPath).Length}");
+            Log($"Download complete. Size: {new FileInfo(binaryPath).Length}");
 
             // Step 4: Verify checksum
             Log("Verifying checksum...");
@@ -143,8 +184,8 @@ public class ClaudeCodeDependencyService
             }
             Log("Checksum verified OK.");
 
-            // Step 5: Run 'claude install' to set up launcher and shell integration
-            Log($"Running: {binaryPath} install latest");
+            // Step 5: Run 'claude install'
+            Log($"Running: claude install latest");
             var psi = new ProcessStartInfo
             {
                 FileName = binaryPath,
@@ -156,23 +197,6 @@ public class ClaudeCodeDependencyService
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8,
             };
-
-            // Claude Code requires git-bash — point it to our MinGit's bash.exe
-            var localBash = Path.Combine(MinGitDir, "usr", "bin", "bash.exe");
-            if (File.Exists(localBash))
-            {
-                psi.Environment["CLAUDE_CODE_GIT_BASH_PATH"] = localBash;
-                Log($"Set CLAUDE_CODE_GIT_BASH_PATH={localBash}");
-            }
-
-            // Add MinGit to PATH for the install process
-            var minGitCmd = Path.Combine(MinGitDir, "cmd");
-            var minGitUsrBin = Path.Combine(MinGitDir, "usr", "bin");
-            if (Directory.Exists(minGitCmd))
-            {
-                var currentPath = psi.Environment["PATH"] ?? Environment.GetEnvironmentVariable("PATH") ?? "";
-                psi.Environment["PATH"] = minGitCmd + ";" + minGitUsrBin + ";" + currentPath;
-            }
 
             using var process = new Process { StartInfo = psi };
             process.Start();
@@ -190,7 +214,6 @@ public class ClaudeCodeDependencyService
             {
                 try { process.Kill(true); } catch { }
                 Log("Installer timed out after 2 minutes.");
-                Log("Checking if binary was installed despite timeout...");
             }
 
             await Task.WhenAll(outputTask, errorTask);
@@ -205,12 +228,6 @@ public class ClaudeCodeDependencyService
             Log("Verifying installation...");
             var nativeExists = File.Exists(NativePath);
             Log(nativeExists ? $"Found: {NativePath}" : $"NOT found: {NativePath}");
-
-            if (nativeExists)
-            {
-                var ok = await TryGetVersionAsync(NativePath);
-                Log(ok is not null ? "Binary works!" : "Binary exists but failed to run");
-            }
 
             var status = await CheckAsync();
             if (status.IsInstalled)
@@ -279,8 +296,6 @@ public class ClaudeCodeDependencyService
 
     /// <summary>
     /// Launch claude CLI in a visible terminal for interactive login.
-    /// The CLI will open a browser for OAuth authentication.
-    /// Returns when the terminal process exits.
     /// </summary>
     public async Task<bool> LaunchLoginAsync(string? claudeExePath = null)
     {
@@ -288,7 +303,6 @@ public class ClaudeCodeDependencyService
 
         try
         {
-            // Launch claude in a visible cmd window — it will show TUI and open browser for OAuth
             var psi = new ProcessStartInfo
             {
                 FileName = "cmd.exe",
@@ -310,70 +324,46 @@ public class ClaudeCodeDependencyService
         }
     }
 
-    private static readonly string MinGitDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "ClaudeCodeWin", "MinGit");
-
-    private static readonly string MinGitExe = Path.Combine(MinGitDir, "cmd", "git.exe");
+    // ── Git for Windows (full installer, silent) ────────────────────
 
     /// <summary>
-    /// Check if Git for Windows is installed (system-wide or local MinGit).
+    /// Check if Git for Windows is installed (system PATH).
     /// </summary>
     public bool IsGitInstalled()
     {
-        // 1. Check local MinGit first
-        if (File.Exists(MinGitExe) && TryRunGit(MinGitExe))
-            return true;
-
-        // 2. Check system PATH
-        return TryRunGit("git");
+        return TryRunExe("git", "--version");
     }
 
     /// <summary>
-    /// Get the path to git executable (local MinGit or system).
-    /// </summary>
-    public string? ResolveGitExePath()
-    {
-        if (File.Exists(MinGitExe))
-            return MinGitExe;
-        if (TryRunGit("git"))
-            return "git";
-        return null;
-    }
-
-    /// <summary>
-    /// Download and install MinGit (portable Git for Windows) to local AppData.
-    /// Uses GitHub API to get the latest release dynamically.
+    /// Download and install Git for Windows via silent installer.
+    /// Requires administrator privileges.
     /// </summary>
     public async Task<bool> InstallGitAsync(Action<string>? onProgress = null)
     {
-        onProgress?.Invoke("Fetching latest MinGit release info...");
+        onProgress?.Invoke("Fetching latest Git for Windows release...");
 
         try
         {
             using var http = new HttpClient();
             http.DefaultRequestHeaders.Add("User-Agent", "ClaudeCodeWin");
-            http.Timeout = TimeSpan.FromMinutes(5);
+            http.Timeout = TimeSpan.FromMinutes(10);
 
             // Get latest release from GitHub API
             var apiUrl = "https://api.github.com/repos/git-for-windows/git/releases/latest";
             var releaseJson = await http.GetStringAsync(apiUrl);
             using var doc = JsonDocument.Parse(releaseJson);
 
-            // Find MinGit-*-64-bit.zip asset
-            var suffix = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
-                == System.Runtime.InteropServices.Architecture.Arm64
-                ? "MinGit-" : "MinGit-";
+            // Find Git-*-64-bit.exe or Git-*-arm64.exe installer
             var archSuffix = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
                 == System.Runtime.InteropServices.Architecture.Arm64
-                ? "-arm64.zip" : "-64-bit.zip";
+                ? "-arm64.exe" : "-64-bit.exe";
 
             string? downloadUrl = null;
             string? assetName = null;
             foreach (var asset in doc.RootElement.GetProperty("assets").EnumerateArray())
             {
                 var name = asset.GetProperty("name").GetString() ?? "";
-                if (name.StartsWith("MinGit-") && name.EndsWith(archSuffix) && !name.Contains("busybox"))
+                if (name.StartsWith("Git-") && name.EndsWith(archSuffix))
                 {
                     downloadUrl = asset.GetProperty("browser_download_url").GetString();
                     assetName = name;
@@ -383,7 +373,7 @@ public class ClaudeCodeDependencyService
 
             if (downloadUrl is null)
             {
-                onProgress?.Invoke("Could not find MinGit download URL from GitHub releases.");
+                onProgress?.Invoke("Could not find Git installer from GitHub releases.");
                 return false;
             }
 
@@ -391,7 +381,7 @@ public class ClaudeCodeDependencyService
             onProgress?.Invoke($"Found {assetName} ({tagName})");
 
             // Download
-            var tempZip = Path.Combine(Path.GetTempPath(), assetName!);
+            var tempExe = Path.Combine(Path.GetTempPath(), assetName!);
             onProgress?.Invoke($"Downloading {assetName}...");
 
             using (var response = await http.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
@@ -400,7 +390,7 @@ public class ClaudeCodeDependencyService
                 var totalBytes = response.Content.Headers.ContentLength ?? 0;
 
                 await using var contentStream = await response.Content.ReadAsStreamAsync();
-                await using var fileStream = new FileStream(tempZip, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
+                await using var fileStream = new FileStream(tempExe, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
 
                 var buffer = new byte[81920];
                 long downloaded = 0;
@@ -414,36 +404,52 @@ public class ClaudeCodeDependencyService
                 }
             }
 
-            onProgress?.Invoke("Extracting MinGit...");
-
-            // Clean old MinGit if exists
-            if (Directory.Exists(MinGitDir))
-                Directory.Delete(MinGitDir, true);
-
-            Directory.CreateDirectory(MinGitDir);
-            ZipFile.ExtractToDirectory(tempZip, MinGitDir);
-
-            // Cleanup temp zip
-            try { File.Delete(tempZip); } catch { }
-
-            // Create bash.exe from sh.exe (MinGit ships sh.exe which IS bash, just named differently)
-            // Claude Code CLI requires bash.exe / git-bash for its install and runtime
-            var shExe = Path.Combine(MinGitDir, "usr", "bin", "sh.exe");
-            var bashExe = Path.Combine(MinGitDir, "usr", "bin", "bash.exe");
-            if (File.Exists(shExe) && !File.Exists(bashExe))
+            // Run silent installer
+            onProgress?.Invoke("Running Git installer (silent)...");
+            var psi = new ProcessStartInfo
             {
-                File.Copy(shExe, bashExe);
-                onProgress?.Invoke("Created bash.exe from sh.exe");
+                FileName = tempExe,
+                Arguments = "/VERYSILENT /NORESTART /NOCANCEL /SP- /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /COMPONENTS=\"icons,ext\\reg\\shellhere,assoc,assoc_sh\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                onProgress?.Invoke("Failed to start Git installer.");
+                return false;
             }
 
-            // Verify
-            if (File.Exists(MinGitExe) && TryRunGit(MinGitExe))
+            onProgress?.Invoke($"Installer running (PID: {process.Id})...");
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            try
             {
-                onProgress?.Invoke("Git installed successfully!");
+                await process.WaitForExitAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                try { process.Kill(true); } catch { }
+                onProgress?.Invoke("Git installer timed out after 5 minutes.");
+                return false;
+            }
+
+            onProgress?.Invoke($"Installer exited with code {process.ExitCode}");
+
+            // Cleanup
+            try { File.Delete(tempExe); } catch { }
+
+            // Verify — Git installer adds to system PATH, but our process may not see it yet.
+            // Check known install locations directly.
+            var gitExe = FindGitExe();
+            if (gitExe is not null)
+            {
+                onProgress?.Invoke($"Git installed successfully at: {gitExe}");
                 return true;
             }
 
-            onProgress?.Invoke("Extraction completed but git.exe was not found.");
+            onProgress?.Invoke("Installer completed but git.exe was not found.");
             return false;
         }
         catch (Exception ex)
@@ -453,7 +459,28 @@ public class ClaudeCodeDependencyService
         }
     }
 
-    // ── GitHub CLI (gh) ──────────────────────────────────────────────
+    /// <summary>
+    /// Find git.exe in known installation locations (for when PATH hasn't been refreshed yet).
+    /// </summary>
+    public static string? FindGitExe()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Git", "cmd", "git.exe"),
+            @"C:\Program Files\Git\cmd\git.exe",
+            @"C:\Program Files (x86)\Git\cmd\git.exe",
+        };
+
+        foreach (var path in candidates)
+        {
+            if (File.Exists(path))
+                return path;
+        }
+
+        return null;
+    }
+
+    // ── GitHub CLI (gh) ─────────────────────────────────────────────
 
     private static readonly string GhCliDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -485,7 +512,6 @@ public class ClaudeCodeDependencyService
 
     /// <summary>
     /// Download and install portable GitHub CLI to local AppData.
-    /// Uses GitHub API to get the latest release dynamically.
     /// </summary>
     public async Task<bool> InstallGhAsync(Action<string>? onProgress = null)
     {
@@ -501,7 +527,6 @@ public class ClaudeCodeDependencyService
             var releaseJson = await http.GetStringAsync(apiUrl);
             using var doc = JsonDocument.Parse(releaseJson);
 
-            // Find gh_*_windows_amd64.zip (or arm64)
             var archSuffix = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
                 == System.Runtime.InteropServices.Architecture.Arm64
                 ? "_windows_arm64.zip" : "_windows_amd64.zip";
@@ -554,32 +579,22 @@ public class ClaudeCodeDependencyService
 
             onProgress?.Invoke("Extracting GitHub CLI...");
 
-            // Clean old GhCli if exists
             if (Directory.Exists(GhCliDir))
                 Directory.Delete(GhCliDir, true);
 
-            // gh zip has a subfolder like "gh_2.87.0_windows_amd64/" — extract to temp, then move contents
             var tempExtract = Path.Combine(Path.GetTempPath(), "gh_extract_" + Guid.NewGuid().ToString("N")[..8]);
             Directory.CreateDirectory(tempExtract);
             ZipFile.ExtractToDirectory(tempZip, tempExtract);
 
-            // Find the single subfolder (e.g. gh_2.87.0_windows_amd64)
             var subDirs = Directory.GetDirectories(tempExtract);
             if (subDirs.Length == 1)
-            {
                 Directory.Move(subDirs[0], GhCliDir);
-            }
             else
-            {
-                // Fallback: move everything
                 Directory.Move(tempExtract, GhCliDir);
-            }
 
-            // Cleanup
             try { File.Delete(tempZip); } catch { }
             try { if (Directory.Exists(tempExtract)) Directory.Delete(tempExtract, true); } catch { }
 
-            // Verify
             if (File.Exists(GhCliExe) && TryRunExe(GhCliExe, "--version"))
             {
                 onProgress?.Invoke("GitHub CLI installed successfully!");
@@ -588,15 +603,6 @@ public class ClaudeCodeDependencyService
 
             onProgress?.Invoke("Extraction completed but gh.exe was not found.");
             onProgress?.Invoke($"Expected at: {GhCliExe}");
-
-            // Debug: list what's in the directory
-            if (Directory.Exists(GhCliDir))
-            {
-                onProgress?.Invoke($"Contents of {GhCliDir}:");
-                foreach (var f in Directory.GetFiles(GhCliDir, "*", SearchOption.AllDirectories))
-                    onProgress?.Invoke($"  {f}");
-            }
-
             return false;
         }
         catch (Exception ex)
@@ -606,6 +612,8 @@ public class ClaudeCodeDependencyService
         }
     }
 
+    // ── Helpers ──────────────────────────────────────────────────────
+
     private static bool TryRunExe(string exePath, string arguments)
     {
         try
@@ -614,30 +622,6 @@ public class ClaudeCodeDependencyService
             {
                 FileName = exePath,
                 Arguments = arguments,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-            };
-            using var process = Process.Start(psi);
-            if (process is null) return false;
-            process.WaitForExit(5000);
-            return process.ExitCode == 0;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool TryRunGit(string gitPath)
-    {
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = gitPath,
-                Arguments = "--version",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
