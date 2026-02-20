@@ -23,10 +23,10 @@ public List<ServerInfo> Servers { get; set; } = [];
 public class ServerInfo
 {
     public string Name { get; set; } = "";           // e.g. "test-admin", "prod-admin"
-    public string Host { get; set; } = "";            // e.g. "192.241.144.62"
+    public string Host { get; set; } = "";            // e.g. "192.0.2.1"
     public int Port { get; set; } = 22;
     public string User { get; set; } = "root";        // SSH user
-    public string? Description { get; set; }           // e.g. "Test server for admin.main.fish"
+    public string? Description { get; set; }           // e.g. "Test server for app.example.com"
     public List<string> Projects { get; set; } = [];   // Project names deployed here
 }
 ```
@@ -44,8 +44,8 @@ In `MainViewModel.SystemInstruction`, add a new section describing SSH capabilit
 - Claude's SSH private key: `{path}`
 - When deploying or connecting via SSH, use this key with `-i "{path}"` flag
 - Known servers:
-  - **test-admin** — root@192.241.144.62:22 (Test server: apps9)
-  - **prod-admin** — root@165.22.73.100:22 (Production: apps9, ploom-ua-bot)
+  - **test-server** — root@192.0.2.1:22 (Test server: my-project)
+  - **prod-server** — root@203.0.113.42:22 (Production: my-project)
 ```
 
 BUT: SystemInstruction is a `const string`. To make it dynamic, change it to a method or build it at runtime in the preamble construction code (line ~527).

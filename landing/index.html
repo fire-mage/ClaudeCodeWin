@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClaudeCodeWin — Free Cursor Alternative | Native Windows GUI for Claude Code</title>
+    <meta name="description" content="Free open-source Cursor alternative for Windows. Native GUI for Claude Code CLI with token-saving optimizations. Stop paying for IDE subscriptions.">
+    <meta name="keywords" content="cursor alternative, claude code, windows gui, claude code windows, free cursor replacement, ai coding, claude desktop">
+    <meta property="og:title" content="ClaudeCodeWin — Native Windows GUI for Claude Code">
+    <meta property="og:description" content="Free open-source Cursor alternative for Windows. Native GUI for Claude Code CLI with built-in optimizations.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://claudecodewin.main.fish">
+    <meta property="og:image" content="https://claudecodewin.main.fish/logo.png">
+    <link rel="canonical" href="https://claudecodewin.main.fish">
+    <link rel="icon" type="image/png" href="logo.png">
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --mf-green: #4CAF50;
+            --mf-green-dark: #388E3C;
+            --mf-green-light: #66BB6A;
+            --mf-orange: #FFAB1A;
+            --mf-yellow: #F9A825;
+            --mf-navy: #1a237e;
+            --surface-700: #161b22;
+            --surface-800: #0d1117;
+            --surface-900: #010409;
+            --text-primary: rgba(255, 255, 255, 0.87);
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --border-color: #30363d;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Nunito', system-ui, -apple-system, sans-serif;
+            background-color: var(--surface-800);
+            color: var(--text-primary);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        a {
+            color: var(--mf-green-light);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        a:hover {
+            color: var(--mf-orange);
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* ===== HEADER ===== */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(13, 17, 23, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .header-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 60px;
+        }
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 700;
+            font-size: 1.15rem;
+            color: var(--text-primary);
+        }
+        .header-brand img {
+            width: 36px;
+            height: 36px;
+        }
+        .header-nav {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+        .header-nav a {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        .header-nav a:hover {
+            color: var(--text-primary);
+        }
+        .gh-link {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .gh-link svg {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
+
+        /* ===== HERO ===== */
+        .hero {
+            padding: 80px 0 60px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(76, 175, 80, 0.08) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        .hero-logo {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 24px;
+            filter: drop-shadow(0 0 30px rgba(76, 175, 80, 0.2));
+        }
+        .hero h1 {
+            font-size: 2.8rem;
+            font-weight: 800;
+            line-height: 1.15;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, var(--mf-green), var(--mf-orange));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .hero-tagline {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+        }
+        .hero-sub {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            max-width: 640px;
+            margin: 0 auto 36px;
+        }
+        .hero-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        .btn-primary {
+            background: var(--mf-green);
+            color: #fff;
+            box-shadow: 0 0 20px rgba(76, 175, 80, 0.25);
+        }
+        .btn-primary:hover {
+            background: var(--mf-green-dark);
+            color: #fff;
+            transform: translateY(-2px);
+            box-shadow: 0 0 30px rgba(76, 175, 80, 0.35);
+        }
+        .btn-secondary {
+            background: var(--surface-700);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+        .btn-secondary:hover {
+            border-color: var(--mf-orange);
+            color: var(--text-primary);
+            transform: translateY(-2px);
+        }
+        .btn svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+        }
+        .hero-version {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        /* ===== SECTION COMMON ===== */
+        section {
+            padding: 60px 0;
+        }
+        .section-title {
+            font-size: 1.8rem;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 12px;
+        }
+        .section-subtitle {
+            text-align: center;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto 48px;
+            font-size: 1.05rem;
+        }
+
+        /* gradient divider */
+        .divider {
+            height: 1px;
+            background: linear-gradient(to right, transparent, var(--mf-green), var(--mf-orange), var(--mf-yellow), transparent);
+            border: none;
+            margin: 0;
+        }
+
+        /* ===== VALUE PROPOSITION ===== */
+        .value-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+        .value-card {
+            background: var(--surface-700);
+            border-radius: 10px;
+            padding: 28px;
+            border-left: 3px solid var(--mf-green);
+            transition: border-color 0.3s, transform 0.2s, box-shadow 0.3s;
+        }
+        .value-card:hover {
+            border-left-color: var(--mf-orange);
+            transform: translateY(-2px);
+            box-shadow: 0 0 20px rgba(76, 175, 80, 0.1);
+        }
+        .value-card h3 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+        .value-card p {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        /* ===== FEATURES ===== */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+        .feature-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            background: var(--surface-700);
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            transition: border-color 0.2s;
+        }
+        .feature-item:hover {
+            border-color: var(--mf-green);
+        }
+        .feature-icon {
+            flex-shrink: 0;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: rgba(76, 175, 80, 0.1);
+            color: var(--mf-green);
+            font-size: 1.1rem;
+        }
+        .feature-item h4 {
+            font-size: 0.95rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .feature-item p {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        /* ===== DOWNLOAD ===== */
+        .download-section {
+            background: var(--surface-700);
+            border-radius: 12px;
+            padding: 48px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 0 30px rgba(76, 175, 80, 0.06);
+        }
+        .download-section .section-title {
+            margin-bottom: 8px;
+        }
+        .download-section .section-subtitle {
+            margin-bottom: 32px;
+        }
+        .download-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 24px;
+        }
+        .sys-req {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            max-width: 520px;
+            margin: 0 auto;
+        }
+        .sys-req strong {
+            color: var(--text-secondary);
+        }
+
+        /* ===== FOOTER ===== */
+        footer {
+            padding: 32px 0;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+        }
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .footer-links a {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+        .footer-copy {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        /* ===== SCROLLBAR ===== */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--surface-700); }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--mf-green); }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 768px) {
+            .hero { padding: 48px 0 40px; }
+            .hero h1 { font-size: 2rem; }
+            .hero-tagline { font-size: 1.2rem; }
+            .hero-sub { font-size: 1rem; }
+            .value-grid { grid-template-columns: 1fr; }
+            .features-grid { grid-template-columns: 1fr; }
+            .download-section { padding: 32px 20px; }
+            .header-nav .nav-text { display: none; }
+        }
+        @media (min-width: 769px) and (max-width: 1024px) {
+            .features-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+    <div class="container header-inner">
+        <a href="/" class="header-brand">
+            <img src="logo.png" alt="Main Fish">
+            <span>ClaudeCodeWin</span>
+        </a>
+        <nav class="header-nav">
+            <a href="#features" class="nav-text">Features</a>
+            <a href="#download" class="nav-text">Download</a>
+            <a href="https://github.com/fire-mage/ClaudeCodeWin" target="_blank" rel="noopener" class="gh-link">
+                <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                <span class="nav-text">GitHub</span>
+            </a>
+        </nav>
+    </div>
+</header>
+
+<!-- Hero -->
+<section class="hero">
+    <div class="container">
+        <img src="logo.png" alt="ClaudeCodeWin" class="hero-logo">
+        <h1>ClaudeCodeWin</h1>
+        <p class="hero-tagline">This is NOT an IDE. With Claude, you don't need one.</p>
+        <p class="hero-sub">Native Windows GUI for Claude Code CLI. Save money on tokens with built-in optimizations.</p>
+        <div class="hero-buttons">
+            <a id="dl-x64" href="#" class="btn btn-primary">
+                <svg viewBox="0 0 24 24"><path d="M13 5v6h1.17L12 13.17 9.83 11H11V5h2m2-2H9v6H5l7 7 7-7h-4V3zm4 15H5v2h14v-2z"/></svg>
+                Download x64
+            </a>
+            <a id="dl-arm64" href="#" class="btn btn-secondary">
+                <svg viewBox="0 0 24 24"><path d="M13 5v6h1.17L12 13.17 9.83 11H11V5h2m2-2H9v6H5l7 7 7-7h-4V3zm4 15H5v2h14v-2z"/></svg>
+                Download ARM64
+            </a>
+        </div>
+        <p class="hero-version">Version <span id="version">...</span> &middot; Windows 10/11 &middot; Free &amp; Open Source</p>
+    </div>
+</section>
+
+<hr class="divider">
+
+<!-- Value Proposition -->
+<section>
+    <div class="container">
+        <h2 class="section-title">Why ClaudeCodeWin?</h2>
+        <p class="section-subtitle">Claude Code is your IDE. ClaudeCodeWin gives it a proper Windows interface.</p>
+        <div class="value-grid">
+            <div class="value-card">
+                <h3>Stop paying for bloated IDEs</h3>
+                <p>Claude Code replaces your IDE for AI-driven development. ClaudeCodeWin wraps it in a native Windows desktop app &mdash; no Electron, no overhead.</p>
+            </div>
+            <div class="value-card">
+                <h3>Save tokens, save money</h3>
+                <p>Optimized system prompts and context management mean fewer wasted tokens per request. Do more with the same subscription.</p>
+            </div>
+            <div class="value-card">
+                <h3>Built-in Claude optimizations</h3>
+                <p>Tuned settings that help Claude think more efficiently and deliver better results out of the box.</p>
+            </div>
+            <div class="value-card">
+                <h3>Works with your Claude subscription</h3>
+                <p>Use your Pro or Max subscription through the CLI, getting more value for the same price you already pay.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<hr class="divider">
+
+<!-- Features -->
+<section id="features">
+    <div class="container">
+        <h2 class="section-title">Features</h2>
+        <p class="section-subtitle">Everything you need for productive AI-driven development on Windows.</p>
+        <div class="features-grid">
+            <div class="feature-item">
+                <div class="feature-icon">&#9000;</div>
+                <div>
+                    <h4>Multi-line Input</h4>
+                    <p>Compose complex prompts with Ctrl+Enter to send. No more single-line limitations.</p>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">&#128206;</div>
+                <div>
+                    <h4>Drag &amp; Drop Files</h4>
+                    <p>Attach files by dragging them in. Paste screenshots directly from clipboard with Ctrl+V.</p>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">&#127769;</div>
+                <div>
+                    <h4>Dark Theme</h4>
+                    <p>Catppuccin-inspired dark theme that's easy on the eyes during long coding sessions.</p>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">&#128276;</div>
+                <div>
+                    <h4>Desktop Notifications</h4>
+                    <p>Get notified when Claude finishes while you're in another window. Never miss a response.</p>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">&#9889;</div>
+                <div>
+                    <h4>Custom Scripts</h4>
+                    <p>Define reusable prompt scripts with hotkey bindings. Automate your common workflows.</p>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">&#128260;</div>
+                <div>
+                    <h4>Auto-Updates</h4>
+                    <p>Built-in update system keeps you on the latest version without manual downloads.</p>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">&#128421;</div>
+                <div>
+                    <h4>SSH Remote Support</h4>
+                    <p>Connect to remote servers and work with Claude Code on any machine over SSH.</p>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">&#128274;</div>
+                <div>
+                    <h4>Encrypted History</h4>
+                    <p>Chat history stored locally with Windows DPAPI encryption. Your conversations stay private.</p>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">&#128151;</div>
+                <div>
+                    <h4>Free &amp; Open Source</h4>
+                    <p>MIT licensed. No subscriptions, no ads, no tracking. Fully transparent source code on GitHub.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<hr class="divider">
+
+<!-- Download -->
+<section id="download">
+    <div class="container">
+        <div class="download-section">
+            <h2 class="section-title">Download ClaudeCodeWin</h2>
+            <p class="section-subtitle">Get started in seconds. Dependencies are installed automatically on first launch.</p>
+            <div class="download-buttons">
+                <a id="dl-x64-2" href="#" class="btn btn-primary">
+                    <svg viewBox="0 0 24 24"><path d="M13 5v6h1.17L12 13.17 9.83 11H11V5h2m2-2H9v6H5l7 7 7-7h-4V3zm4 15H5v2h14v-2z"/></svg>
+                    Download x64 Setup
+                </a>
+                <a id="dl-arm64-2" href="#" class="btn btn-secondary">
+                    <svg viewBox="0 0 24 24"><path d="M13 5v6h1.17L12 13.17 9.83 11H11V5h2m2-2H9v6H5l7 7 7-7h-4V3zm4 15H5v2h14v-2z"/></svg>
+                    Download ARM64 Setup
+                </a>
+            </div>
+            <div class="sys-req">
+                <strong>System Requirements:</strong> Windows 10 version 1809+ or Windows 11<br>
+                Dependencies (Claude Code CLI, Node.js, Git) are installed automatically on first launch.
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer>
+    <div class="container">
+        <div class="footer-links">
+            <a href="https://github.com/fire-mage/ClaudeCodeWin" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fire-mage/ClaudeCodeWin/issues" target="_blank" rel="noopener">Support</a>
+            <a href="privacy.html">Privacy Policy</a>
+        </div>
+        <p class="footer-copy">&copy; 2026 main.fish &middot; ClaudeCodeWin is free and open-source software.</p>
+    </div>
+</footer>
+
+<script>
+    fetch('https://mainfish.s3.eu-central-1.amazonaws.com/admin/claudecodewin/version.json')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('version').textContent = data.version;
+            const x64Url = data.setupAssets['win-x64'].url;
+            const arm64Url = data.setupAssets['win-arm64'].url;
+            document.getElementById('dl-x64').href = x64Url;
+            document.getElementById('dl-arm64').href = arm64Url;
+            document.getElementById('dl-x64-2').href = x64Url;
+            document.getElementById('dl-arm64-2').href = arm64Url;
+        })
+        .catch(() => {
+            document.getElementById('version').textContent = 'latest';
+        });
+</script>
+
+</body>
+</html>

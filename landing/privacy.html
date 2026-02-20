@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy — ClaudeCodeWin</title>
+    <meta name="description" content="ClaudeCodeWin Privacy Policy. No data collection, no telemetry, no analytics.">
+    <link rel="canonical" href="https://claudecodewin.main.fish/privacy">
+    <link rel="icon" type="image/png" href="logo.png">
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --mf-green: #4CAF50;
+            --mf-green-dark: #388E3C;
+            --mf-green-light: #66BB6A;
+            --mf-orange: #FFAB1A;
+            --mf-yellow: #F9A825;
+            --surface-700: #161b22;
+            --surface-800: #0d1117;
+            --text-primary: rgba(255, 255, 255, 0.87);
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --border-color: #30363d;
+        }
+
+        body {
+            font-family: 'Nunito', system-ui, -apple-system, sans-serif;
+            background-color: var(--surface-800);
+            color: var(--text-primary);
+            line-height: 1.7;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        a {
+            color: var(--mf-green-light);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        a:hover {
+            color: var(--mf-orange);
+        }
+
+        .container {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Header */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(13, 17, 23, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .header-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 60px;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 700;
+            font-size: 1.15rem;
+            color: var(--text-primary);
+        }
+        .header-brand img {
+            width: 36px;
+            height: 36px;
+        }
+        .header-nav a {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        /* Content */
+        .policy {
+            padding: 60px 0 80px;
+        }
+        .policy h1 {
+            font-size: 2rem;
+            font-weight: 800;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, var(--mf-green), var(--mf-orange));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .policy .updated {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 40px;
+        }
+        .policy h2 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-top: 36px;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .policy p {
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+        }
+        .policy ul {
+            list-style: none;
+            margin-bottom: 16px;
+            padding-left: 0;
+        }
+        .policy ul li {
+            position: relative;
+            padding-left: 20px;
+            margin-bottom: 8px;
+            color: var(--text-secondary);
+        }
+        .policy ul li::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 10px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--mf-green);
+        }
+        .policy code {
+            background: var(--surface-700);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            color: var(--mf-green-light);
+        }
+        .policy strong {
+            color: var(--text-primary);
+        }
+
+        /* Footer */
+        footer {
+            padding: 32px 0;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+        }
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .footer-links a {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+        .footer-copy {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--surface-700); }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--mf-green); }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-inner">
+        <a href="index.html" class="header-brand">
+            <img src="logo.png" alt="Main Fish">
+            <span>ClaudeCodeWin</span>
+        </a>
+        <nav class="header-nav">
+            <a href="index.html">Back to Home</a>
+        </nav>
+    </div>
+</header>
+
+<main class="policy">
+    <div class="container">
+        <h1>Privacy Policy</h1>
+        <p class="updated">Last updated: February 20, 2026</p>
+
+        <h2>Overview</h2>
+        <p>ClaudeCodeWin is a free, open-source desktop application. We are committed to protecting your privacy. <strong>We do not collect, store, or transmit any personal data.</strong></p>
+
+        <h2>Data Collection</h2>
+        <p>ClaudeCodeWin does <strong>not</strong> collect any data. Specifically:</p>
+        <ul>
+            <li>No telemetry or usage analytics</li>
+            <li>No personal information gathering</li>
+            <li>No cookies or tracking mechanisms</li>
+            <li>No advertising or marketing data collection</li>
+        </ul>
+
+        <h2>Local Data Storage</h2>
+        <p>All application data is stored exclusively on your local machine:</p>
+        <ul>
+            <li><strong>Chat history</strong> is stored locally with Windows DPAPI encryption in <code>%AppData%/ClaudeCodeWin/</code></li>
+            <li><strong>Application settings</strong> are stored in <code>%AppData%/ClaudeCodeWin/settings.json</code></li>
+            <li><strong>Custom scripts</strong> are stored in <code>%AppData%/ClaudeCodeWin/scripts.json</code></li>
+            <li><strong>Task definitions</strong> are stored in <code>%AppData%/ClaudeCodeWin/tasks.json</code></li>
+        </ul>
+        <p>You can delete all local data at any time by removing the <code>%AppData%/ClaudeCodeWin/</code> folder.</p>
+
+        <h2>Update Checks</h2>
+        <p>ClaudeCodeWin periodically checks for updates by making an HTTPS GET request to a version manifest file hosted on Amazon S3. This request contains:</p>
+        <ul>
+            <li>No personal data</li>
+            <li>No device identifiers</li>
+            <li>No usage information</li>
+        </ul>
+        <p>Only standard HTTP headers (such as User-Agent) are included, as with any web request.</p>
+
+        <h2>Claude API Communication</h2>
+        <p>All communication with the Claude AI service goes directly from your machine to Anthropic's servers through the <strong>Claude Code CLI</strong>. ClaudeCodeWin acts as a graphical wrapper and does not intercept, modify, store, or relay your conversations through any third-party servers.</p>
+        <p>Your interactions with Claude are governed by <a href="https://www.anthropic.com/privacy" target="_blank" rel="noopener">Anthropic's Privacy Policy</a>.</p>
+
+        <h2>Third-Party Services</h2>
+        <p>ClaudeCodeWin does not integrate with any third-party analytics, advertising, or tracking services. The only external communication is:</p>
+        <ul>
+            <li>Update checks (as described above)</li>
+            <li>Claude API calls through the official CLI (handled by Anthropic)</li>
+        </ul>
+
+        <h2>Open Source</h2>
+        <p>ClaudeCodeWin is open-source software licensed under the MIT License. You can inspect the complete source code to verify our privacy practices:</p>
+        <p><a href="https://github.com/fire-mage/ClaudeCodeWin" target="_blank" rel="noopener">github.com/fire-mage/ClaudeCodeWin</a></p>
+
+        <h2>Contact</h2>
+        <p>If you have any questions about this Privacy Policy, please open an issue on our <a href="https://github.com/fire-mage/ClaudeCodeWin/issues" target="_blank" rel="noopener">GitHub repository</a>.</p>
+    </div>
+</main>
+
+<footer>
+    <div class="container">
+        <div class="footer-links">
+            <a href="index.html">Home</a>
+            <a href="https://github.com/fire-mage/ClaudeCodeWin" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fire-mage/ClaudeCodeWin/issues" target="_blank" rel="noopener">Support</a>
+        </div>
+        <p class="footer-copy">&copy; 2026 main.fish &middot; ClaudeCodeWin is free and open-source software.</p>
+    </div>
+</footer>
+
+</body>
+</html>
