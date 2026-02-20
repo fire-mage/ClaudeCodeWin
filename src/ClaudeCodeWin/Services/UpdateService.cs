@@ -196,6 +196,16 @@ public class UpdateService
                 pause >nul
                 exit /b 1
             )
+            REM Flush Windows icon cache so the new embedded icon appears immediately
+            ie4uinit.exe -show >nul 2>nul
+            REM Touch shortcut files to force Explorer to refresh cached icons
+            for %%s in (
+                "%USERPROFILE%\Desktop\ClaudeCodeWin.lnk"
+                "%APPDATA%\Microsoft\Windows\Start Menu\Programs\ClaudeCodeWin\ClaudeCodeWin.lnk"
+                "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ClaudeCodeWin.lnk"
+            ) do (
+                if exist %%s copy /b %%s+,, %%s >nul 2>nul
+            )
             start "" "{currentExe}"
             del "{downloadedExePath}" >nul 2>nul
             del "%~f0" >nul 2>nul
