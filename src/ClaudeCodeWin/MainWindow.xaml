@@ -1224,6 +1224,243 @@
                 </Border>
             </Grid>
         </Border>
+        <!-- Update overlay (covers entire window during update) -->
+        <Border Grid.Row="0" Grid.RowSpan="8"
+                Background="#DD1e1e2e"
+                Panel.ZIndex="101"
+                Visibility="{Binding ShowUpdateOverlay, Converter={StaticResource BoolToVis}}">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="{StaticResource SurfaceBrush}"
+                    CornerRadius="12" Padding="32"
+                    Width="480"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1">
+                <StackPanel>
+                    <!-- Title -->
+                    <TextBlock Text="Update Available"
+                               FontSize="18" FontWeight="Bold"
+                               Foreground="{StaticResource PrimaryBrush}"
+                               Margin="0,0,0,6">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding UpdateDownloading}" Value="True">
+                                        <Setter Property="Text" Value="Updating..."/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding UpdateFailed}" Value="True">
+                                        <Setter Property="Text" Value="Update Failed"/>
+                                        <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <!-- Version transition -->
+                    <TextBlock Text="{Binding UpdateTitle}"
+                               FontSize="14"
+                               Foreground="{StaticResource TextBrush}"
+                               Margin="0,0,0,10"/>
+
+                    <!-- Release notes (if any) -->
+                    <Border Background="{StaticResource BackgroundBrush}"
+                            CornerRadius="6" BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1" Padding="10"
+                            MaxHeight="160"
+                            Margin="0,0,0,14"
+                            Visibility="{Binding UpdateReleaseNotes, Converter={StaticResource BoolToVis}}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <TextBlock Text="{Binding UpdateReleaseNotes}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       TextWrapping="Wrap"/>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- Progress bar (visible during download) -->
+                    <ProgressBar Minimum="0" Maximum="100"
+                                 Value="{Binding UpdateProgressPercent, Mode=OneWay}"
+                                 Height="8"
+                                 Margin="0,0,0,12"
+                                 Foreground="{StaticResource PrimaryBrush}"
+                                 Background="{StaticResource BackgroundBrush}"
+                                 BorderThickness="0"
+                                 Visibility="{Binding UpdateDownloading, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- Status indicator -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <TextBlock x:Name="UpdateStatusDot" Text="&#x25CF; " FontSize="16"
+                                   Foreground="{StaticResource PrimaryBrush}"
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding UpdateDownloading}" Value="True">
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard x:Name="UpdatePulse">
+                                                    <Storyboard RepeatBehavior="Forever">
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                         From="1.0" To="0.3"
+                                                                         Duration="0:0:0.8"
+                                                                         AutoReverse="True"/>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                            <DataTrigger.ExitActions>
+                                                <StopStoryboard BeginStoryboardName="UpdatePulse"/>
+                                            </DataTrigger.ExitActions>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding UpdateFailed}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                            <Setter Property="Opacity" Value="1.0"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding UpdateStatusText}"
+                                   FontSize="13"
+                                   Foreground="{StaticResource TextBrush}"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <!-- Warning: don't close (visible during download) -->
+                    <TextBlock Text="&#x26A0; Please do not close the application during the update."
+                               FontSize="11" FontStyle="Italic"
+                               Foreground="#FFE0A0"
+                               HorizontalAlignment="Center"
+                               Margin="0,0,0,12"
+                               Visibility="{Binding UpdateDownloading, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- Buttons: Install / Later (before download starts) -->
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Center"
+                                Margin="0,4,0,0"
+                                Visibility="{Binding UpdateDownloading, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
+                        <!-- Hide buttons when failed too -->
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding UpdateFailed}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <Button Content="Install Now"
+                                Padding="24,8" Margin="0,0,12,0"
+                                Click="UpdateInstall_Click">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                                    <Setter Property="Foreground" Value="{StaticResource BackgroundBrush}"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="FontSize" Value="13"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                    <Setter Property="Cursor" Value="Hand"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="6"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#5CBF64"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Content="Later"
+                                Padding="24,8"
+                                Click="UpdateLater_Click">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
+                                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                    <Setter Property="FontSize" Value="13"/>
+                                    <Setter Property="Cursor" Value="Hand"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                        CornerRadius="6"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background"
+                                                                Value="{StaticResource PrimaryBrush}"/>
+                                                        <Setter Property="Foreground"
+                                                                Value="{StaticResource BackgroundBrush}"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Close button (only visible on failure) -->
+                    <Button Content="Close"
+                            Padding="24,8"
+                            HorizontalAlignment="Center"
+                            Margin="0,4,0,0"
+                            Click="UpdateClose_Click"
+                            Visibility="{Binding UpdateFailed, Converter={StaticResource BoolToVis}}">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                                <Setter Property="FontSize" Value="13"/>
+                                <Setter Property="Cursor" Value="Hand"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                    CornerRadius="6"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center"
+                                                                  VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background"
+                                                            Value="{StaticResource PrimaryBrush}"/>
+                                                    <Setter Property="Foreground"
+                                                            Value="{StaticResource BackgroundBrush}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Border>
+
         <!-- Dependency install overlay (covers entire window during setup) -->
         <Border Grid.Row="0" Grid.RowSpan="8"
                 Background="#DD1e1e2e"

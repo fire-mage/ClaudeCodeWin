@@ -72,6 +72,13 @@ public partial class MainViewModel : ViewModelBase
     private string _ctaText = "";
     private CtaState _ctaState = CtaState.Welcome;
     private bool _isUpdating;
+    private bool _showUpdateOverlay;
+    private string _updateTitle = "";
+    private string _updateStatusText = "";
+    private int _updateProgressPercent;
+    private bool _updateFailed;
+    private bool _updateDownloading;
+    private string _updateReleaseNotes = "";
     private bool _showDependencyOverlay;
     private string _dependencyTitle = "";
     private string _dependencySubtitle = "";
@@ -122,6 +129,48 @@ public partial class MainViewModel : ViewModelBase
     {
         get => _isUpdating;
         set => SetProperty(ref _isUpdating, value);
+    }
+
+    public bool ShowUpdateOverlay
+    {
+        get => _showUpdateOverlay;
+        set => SetProperty(ref _showUpdateOverlay, value);
+    }
+
+    public string UpdateTitle
+    {
+        get => _updateTitle;
+        set => SetProperty(ref _updateTitle, value);
+    }
+
+    public string UpdateStatusText
+    {
+        get => _updateStatusText;
+        set => SetProperty(ref _updateStatusText, value);
+    }
+
+    public int UpdateProgressPercent
+    {
+        get => _updateProgressPercent;
+        set => SetProperty(ref _updateProgressPercent, value);
+    }
+
+    public bool UpdateFailed
+    {
+        get => _updateFailed;
+        set => SetProperty(ref _updateFailed, value);
+    }
+
+    public bool UpdateDownloading
+    {
+        get => _updateDownloading;
+        set => SetProperty(ref _updateDownloading, value);
+    }
+
+    public string UpdateReleaseNotes
+    {
+        get => _updateReleaseNotes;
+        set => SetProperty(ref _updateReleaseNotes, value);
     }
 
     public bool ShowDependencyOverlay
@@ -297,6 +346,23 @@ public partial class MainViewModel : ViewModelBase
         _updateService.UpdateChannel = channel;
     }
 
+    public void StartUpdate()
+    {
+        if (_pendingUpdate is null) return;
+        IsUpdating = true;
+        UpdateDownloading = true;
+        UpdateStatusText = "Starting download...";
+        _ = _updateService.DownloadAndApplyAsync(_pendingUpdate);
+    }
+
+    public void DismissUpdate()
+    {
+        ShowUpdateOverlay = false;
+        UpdateFailed = false;
+        UpdateDownloading = false;
+        IsUpdating = false;
+    }
+
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
         SettingsService settingsService, AppSettings settings, GitService gitService,
         UpdateService updateService, FileIndexService fileIndexService,
@@ -354,6 +420,7 @@ public partial class MainViewModel : ViewModelBase
                 MessageBox.Show($"You are on the latest version ({_updateService.CurrentVersion}).",
                     "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Information);
             }
+            // If update found, OnUpdateAvailable handler will show overlay
         });
 
         RemoveQueuedMessageCommand = new RelayCommand(p =>
@@ -434,25 +501,23 @@ public partial class MainViewModel : ViewModelBase
             Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 _pendingUpdate = info;
-                var notes = string.IsNullOrEmpty(info.ReleaseNotes) ? "" : $"\n\n{info.ReleaseNotes}";
-                var result = MessageBox.Show(
-                    $"Version {info.Version} is available (current: {_updateService.CurrentVersion}).{notes}\n\nDownload and install update?",
-                    "Update Available",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Information);
-
-                if (result == MessageBoxResult.Yes)
-                {
-                    IsUpdating = true;
-                    _ = _updateService.DownloadAndApplyAsync(info);
-                }
+                UpdateTitle = $"v{_updateService.CurrentVersion}  →  v{info.Version}";
+                UpdateReleaseNotes = info.ReleaseNotes ?? "";
+                UpdateStatusText = "A new version is available.";
+                UpdateProgressPercent = 0;
+                UpdateFailed = false;
+                UpdateDownloading = false;
+                ShowUpdateOverlay = true;
             });
         };
 
         _updateService.OnDownloadProgress += percent =>
         {
             Application.Current.Dispatcher.InvokeAsync(() =>
-                StatusText = $"Downloading update... {percent}%");
+            {
+                UpdateProgressPercent = percent;
+                UpdateStatusText = $"Downloading update... {percent}%";
+            });
         };
 
         _updateService.OnUpdateReady += path =>
@@ -460,7 +525,8 @@ public partial class MainViewModel : ViewModelBase
             Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 _downloadedUpdatePath = path;
-                StatusText = "Update ready — restarting...";
+                UpdateStatusText = "Update ready — restarting...";
+                UpdateProgressPercent = 100;
                 UpdateService.ApplyUpdate(path);
             });
         };
@@ -470,8 +536,9 @@ public partial class MainViewModel : ViewModelBase
             Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 IsUpdating = false;
-                StatusText = "Ready";
-                MessageBox.Show(error, "Update Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                UpdateFailed = true;
+                UpdateDownloading = false;
+                UpdateStatusText = error;
             });
         };
 

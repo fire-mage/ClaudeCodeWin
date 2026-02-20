@@ -173,6 +173,21 @@ public partial class MainWindow : Window
         Application.Current.Shutdown();
     }
 
+    private void UpdateInstall_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.StartUpdate();
+    }
+
+    private void UpdateLater_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.DismissUpdate();
+    }
+
+    private void UpdateClose_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.DismissUpdate();
+    }
+
     public void ScrollDependencyLog()
     {
         DepLogScroller?.ScrollToEnd();
