@@ -59,9 +59,9 @@ Copy-Item (Join-Path $appxDir "Assets\*") $assetsDir
 
 # Copy and patch manifest
 $manifestTemplate = Get-Content (Join-Path $appxDir "AppxManifest.xml") -Raw
-$manifestTemplate = $manifestTemplate -replace 'Version="[^"]*"', "Version=`"$Version`""
-$manifestTemplate = $manifestTemplate -replace 'ProcessorArchitecture="[^"]*"', "ProcessorArchitecture=`"$arch`""
-Set-Content (Join-Path $layoutDir "AppxManifest.xml") $manifestTemplate -Encoding UTF8
+$manifestTemplate = $manifestTemplate -replace '__VERSION__', $Version
+$manifestTemplate = $manifestTemplate -replace '__ARCH__', $arch
+[System.IO.File]::WriteAllText((Join-Path $layoutDir "AppxManifest.xml"), $manifestTemplate, [System.Text.UTF8Encoding]::new($false))
 
 # Step 3: Find makeappx.exe
 Write-Host "[3/4] Finding makeappx.exe..." -ForegroundColor Yellow

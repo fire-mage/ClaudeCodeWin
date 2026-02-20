@@ -120,9 +120,9 @@ jobs:
 
             # Patch manifest with version and architecture
             $manifest = Get-Content "build\appx\AppxManifest.xml" -Raw
-            $manifest = $manifest -replace 'Version="[^"]*"', "Version=`"$msixVersion`""
-            $manifest = $manifest -replace 'ProcessorArchitecture="[^"]*"', "ProcessorArchitecture=`"$arch`""
-            Set-Content "$layout\AppxManifest.xml" $manifest -Encoding UTF8
+            $manifest = $manifest -replace '__VERSION__', $msixVersion
+            $manifest = $manifest -replace '__ARCH__', $arch
+            [System.IO.File]::WriteAllText("$layout\AppxManifest.xml", $manifest, [System.Text.UTF8Encoding]::new($false))
 
             # Pack MSIX
             & $makeappx.FullName pack /d $layout /p "publish\ClaudeCodeWin-${version}-${arch}.msix" /o

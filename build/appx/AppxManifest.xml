@@ -6,8 +6,8 @@
 
   <Identity Name="ClaudeCodeWin"
             Publisher="CN=F17AD68F-9073-4654-A0A0-86377E85A593"
-            Version="1.0.0.0"
-            ProcessorArchitecture="x64" />
+            Version="__VERSION__"
+            ProcessorArchitecture="__ARCH__" />
 
   <Properties>
     <DisplayName>ClaudeCodeWin</DisplayName>
