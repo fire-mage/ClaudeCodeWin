@@ -85,6 +85,56 @@ jobs:
           $hash = (Get-FileHash "publish\ClaudeCodeWin-${version}-arm64.exe" -Algorithm SHA256).Hash.ToLower()
           echo "$hash  ClaudeCodeWin-${version}-arm64.exe" > "publish\ClaudeCodeWin-${version}-arm64.exe.sha256"
 
+      - name: Build MSIX packages
+        run: |
+          $version = "${{ needs.version.outputs.version }}"
+          $msixVersion = "$version.0"
+
+          # Find makeappx.exe from Windows SDK
+          $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "makeappx.exe" |
+            Where-Object { $_.DirectoryName -match "\\x64$" } |
+            Sort-Object { [version]($_.DirectoryName -replace '.*\\(\d+\.\d+\.\d+\.\d+)\\.*', '$1') } -Descending |
+            Select-Object -First 1
+          Write-Host "Using makeappx: $($makeappx.FullName)"
+
+          foreach ($arch in @("x64", "arm64")) {
+            Write-Host "--- Building MSIX for $arch ---" -ForegroundColor Cyan
+
+            # Publish without single-file (MSIX needs all files)
+            $msixPublish = "msix-publish-$arch"
+            dotnet publish src/ClaudeCodeWin/ClaudeCodeWin.csproj `
+              -c Release -r "win-$arch" --self-contained `
+              -p:PublishSingleFile=false `
+              -p:DebugType=None -p:DebugSymbols=false `
+              -p:Version=$version `
+              -o $msixPublish
+
+            # Create layout directory
+            $layout = "msix-layout-$arch"
+            if (Test-Path $layout) { Remove-Item $layout -Recurse -Force }
+            Copy-Item $msixPublish $layout -Recurse
+
+            # Copy assets
+            New-Item -ItemType Directory -Path "$layout\Assets" -Force | Out-Null
+            Copy-Item "build\appx\Assets\*" "$layout\Assets\"
+
+            # Patch manifest with version and architecture
+            $manifest = Get-Content "build\appx\AppxManifest.xml" -Raw
+            $manifest = $manifest -replace 'Version="[^"]*"', "Version=`"$msixVersion`""
+            $manifest = $manifest -replace 'ProcessorArchitecture="[^"]*"', "ProcessorArchitecture=`"$arch`""
+            Set-Content "$layout\AppxManifest.xml" $manifest -Encoding UTF8
+
+            # Pack MSIX
+            & $makeappx.FullName pack /d $layout /p "publish\ClaudeCodeWin-${version}-${arch}.msix" /o
+            if ($LASTEXITCODE -ne 0) { Write-Host "MSIX $arch FAILED" -ForegroundColor Red; exit 1 }
+
+            # Cleanup
+            Remove-Item $msixPublish -Recurse -Force
+            Remove-Item $layout -Recurse -Force
+
+            Write-Host "MSIX $arch OK" -ForegroundColor Green
+          }
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -94,3 +144,4 @@ jobs:
           files: |
             publish/ClaudeCodeWin-*.exe
             publish/ClaudeCodeWin-*.sha256
+            publish/ClaudeCodeWin-*.msix
