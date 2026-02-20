@@ -263,7 +263,7 @@ public class ClaudeCodeDependencyService
         }
     }
 
-    private static string StripAnsi(string line)
+    internal static string StripAnsi(string line)
     {
         // 1. Replace cursor-forward (\x1B[{N}C) with N spaces — React Ink uses these for layout
         line = System.Text.RegularExpressions.Regex.Replace(

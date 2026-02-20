@@ -32,7 +32,7 @@ public partial class ServerRegistryWindow : Window
         }).ToList();
 
         SshKeyPathBox.Text = settings.SshKeyPath ?? "";
-        SshMasterPasswordBox.Password = settings.SshMasterPassword ?? "";
+        SshMasterPasswordBox.Password = SettingsService.Unprotect(settings.SshMasterPasswordProtected ?? "");
         RefreshServerList();
     }
 
@@ -184,7 +184,10 @@ public partial class ServerRegistryWindow : Window
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
         _settings.SshKeyPath = string.IsNullOrWhiteSpace(SshKeyPathBox.Text) ? null : SshKeyPathBox.Text;
-        _settings.SshMasterPassword = string.IsNullOrEmpty(SshMasterPasswordBox.Password) ? null : SshMasterPasswordBox.Password;
+        _settings.SshMasterPassword = null; // Always null on disk (legacy field)
+        _settings.SshMasterPasswordProtected = string.IsNullOrEmpty(SshMasterPasswordBox.Password)
+            ? null
+            : SettingsService.Protect(SshMasterPasswordBox.Password);
         _settings.Servers = _servers;
         _settingsService.Save(_settings);
         DialogResult = true;

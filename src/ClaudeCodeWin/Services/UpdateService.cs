@@ -222,7 +222,7 @@ public class UpdateService
         return Convert.ToHexStringLower(hashBytes);
     }
 
-    private static bool IsNewerVersion(string remote, string local)
+    internal static bool IsNewerVersion(string remote, string local)
     {
         if (Version.TryParse(remote, out var remoteVer) && Version.TryParse(local, out var localVer))
             return remoteVer > localVer;

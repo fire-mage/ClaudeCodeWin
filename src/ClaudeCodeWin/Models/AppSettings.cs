@@ -26,7 +26,11 @@ public class AppSettings
     public string? SshKeyPath { get; set; }
 
     // Master password for SSH servers that don't accept SSH key auth
+    // Legacy plaintext field — auto-migrated to SshMasterPasswordProtected on load
     public string? SshMasterPassword { get; set; }
+
+    // DPAPI-encrypted SSH master password (base64 blob)
+    public string? SshMasterPasswordProtected { get; set; }
 
     // Known servers where Claude's SSH key is authorized
     public List<ServerInfo> Servers { get; set; } = [];

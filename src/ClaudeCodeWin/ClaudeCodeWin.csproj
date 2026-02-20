@@ -16,6 +16,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="ClaudeCodeWin.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Resource Include="app.ico" />
   </ItemGroup>
 
