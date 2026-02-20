@@ -1,0 +1,157 @@
+<Window x:Class="ClaudeCodeWin.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings"
+        Width="480" Height="500"
+        MinWidth="400" MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BackgroundBrush}">
+    <Window.Resources>
+        <Style TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <StackPanel Orientation="Horizontal">
+                            <Grid Width="18" Height="18" VerticalAlignment="Top" Margin="0,2,8,0">
+                                <Ellipse Stroke="{StaticResource TextSecondaryBrush}" StrokeThickness="1.5"
+                                         Fill="Transparent"/>
+                                <Ellipse x:Name="Dot" Width="10" Height="10"
+                                         Fill="{StaticResource PrimaryBrush}" Visibility="Collapsed"/>
+                            </Grid>
+                            <ContentPresenter VerticalAlignment="Top"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingsCheckBox" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="18" Height="18" CornerRadius="3"
+                                    BorderBrush="{StaticResource TextSecondaryBrush}"
+                                    BorderThickness="1.5"
+                                    Background="Transparent"
+                                    VerticalAlignment="Top" Margin="0,2,8,0">
+                                <TextBlock x:Name="Check" Text="&#x2713;" FontSize="13"
+                                           FontWeight="Bold"
+                                           Foreground="{StaticResource PrimaryBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Visibility="Collapsed"/>
+                            </Border>
+                            <ContentPresenter VerticalAlignment="Top"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24">
+
+            <!-- Update Channel -->
+            <TextBlock Text="Update Channel" FontSize="16" FontWeight="Bold"
+                       Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,12"/>
+
+            <RadioButton x:Name="StableRadio" GroupName="UpdateChannel"
+                         Margin="0,0,0,6"
+                         Checked="UpdateChannel_Changed">
+                <StackPanel>
+                    <TextBlock Text="Stable" FontWeight="SemiBold"/>
+                    <TextBlock Text="Recommended. Receive only tested and verified updates."
+                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                </StackPanel>
+            </RadioButton>
+
+            <RadioButton x:Name="BetaRadio" GroupName="UpdateChannel"
+                         Margin="0,10,0,0"
+                         Checked="UpdateChannel_Changed">
+                <StackPanel>
+                    <TextBlock Text="Beta" FontWeight="SemiBold"/>
+                    <TextBlock Text="Get new features early. May contain bugs. For testers only."
+                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                </StackPanel>
+            </RadioButton>
+
+            <!-- Session section -->
+            <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,20,0,16"/>
+
+            <TextBlock Text="Session" FontSize="16" FontWeight="Bold"
+                       Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,12"/>
+
+            <CheckBox x:Name="AutoConfirmCheck" Style="{StaticResource SettingsCheckBox}"
+                      Margin="0,0,0,10"
+                      Checked="AutoConfirm_Changed" Unchecked="AutoConfirm_Changed">
+                <StackPanel>
+                    <TextBlock Text="Auto-confirm Plan Mode" FontWeight="SemiBold"/>
+                    <TextBlock Text="Automatically approve Claude's plan and start implementation. Auto-disables if a loop is detected."
+                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                </StackPanel>
+            </CheckBox>
+
+            <CheckBox x:Name="ContextSnapshotCheck" Style="{StaticResource SettingsCheckBox}"
+                      Margin="0,0,0,10"
+                      Checked="ContextSnapshot_Changed" Unchecked="ContextSnapshot_Changed">
+                <StackPanel>
+                    <TextBlock Text="Context Snapshot" FontWeight="SemiBold"/>
+                    <TextBlock Text="Auto-generate project context snapshot on session start. Helps Claude understand the codebase immediately."
+                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                </StackPanel>
+            </CheckBox>
+
+            <Button Content="Expand Context (1M tokens)"
+                    Click="ExpandContext_Click"
+                    Padding="16,6" Margin="0,4,0,0"
+                    HorizontalAlignment="Left"
+                    Background="{StaticResource SurfaceLightBrush}"
+                    Foreground="{StaticResource PrimaryBrush}"
+                    BorderBrush="{StaticResource PrimaryBrush}"
+                    BorderThickness="1"
+                    Cursor="Hand"
+                    ToolTip="Toggle between standard (200K) and extended (1M) context window. Starts a new session."/>
+
+            <!-- Servers section -->
+            <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,20,0,16"/>
+
+            <TextBlock Text="SSH &amp; Servers" FontSize="16" FontWeight="Bold"
+                       Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
+
+            <TextBlock x:Name="ServersSummary" FontSize="12"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       Margin="0,0,0,8" TextWrapping="Wrap"/>
+
+            <Button Content="Manage Servers..."
+                    Click="ManageServers_Click"
+                    Padding="16,6"
+                    HorizontalAlignment="Left"
+                    Background="{StaticResource SurfaceLightBrush}"
+                    Foreground="{StaticResource PrimaryBrush}"
+                    BorderBrush="{StaticResource PrimaryBrush}"
+                    BorderThickness="1"
+                    Cursor="Hand"
+                    ToolTip="Configure SSH key and known servers for deployment."/>
+
+            <!-- Close button -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,28,0,0">
+                <Button Content="Close" Style="{StaticResource PrimaryButton}" Click="Close_Click"/>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Window>
