@@ -13,6 +13,7 @@ build/publish/
 Thumbs.db
 Desktop.ini
 .DS_Store
+nul
 
 # Claude Code
 .claude/
