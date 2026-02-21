@@ -39,6 +39,16 @@ public partial class MainViewModel
         if (projectRoot is null || !_registeredProjectRoots.Add(projectRoot))
             return;
 
+        // Don't auto-register parent directories of the current working directory
+        if (!string.IsNullOrEmpty(WorkingDirectory))
+        {
+            var currentDir = Path.GetFullPath(WorkingDirectory).TrimEnd('\\', '/') + "\\";
+            var detectedDir = Path.GetFullPath(projectRoot).TrimEnd('\\', '/') + "\\";
+            if (currentDir.StartsWith(detectedDir, StringComparison.OrdinalIgnoreCase)
+                && !currentDir.Equals(detectedDir, StringComparison.OrdinalIgnoreCase))
+                return;
+        }
+
         _ = Task.Run(() => _projectRegistry.RegisterProject(projectRoot, _gitService));
     }
 

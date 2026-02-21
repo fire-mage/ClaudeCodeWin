@@ -7,6 +7,38 @@ using ClaudeCodeWin.Models;
 
 namespace ClaudeCodeWin.Services;
 
+/// <summary>
+/// Optional diagnostic logger that writes raw stream-json lines to a daily log file.
+/// </summary>
+public static class DiagnosticLogger
+{
+    private static readonly string LogDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "ClaudeCodeWin", "logs");
+
+    private static string LogPath => Path.Combine(LogDir,
+        $"stream-{DateTime.Now:yyyy-MM-dd}.log");
+
+    private static bool _enabled;
+
+    public static bool Enabled
+    {
+        get => _enabled;
+        set
+        {
+            _enabled = value;
+            if (value) try { Directory.CreateDirectory(LogDir); } catch { }
+        }
+    }
+
+    public static void Log(string category, string message)
+    {
+        if (!_enabled) return;
+        try { File.AppendAllText(LogPath, $"[{DateTime.Now:HH:mm:ss.fff}] [{category}] {message}\n"); }
+        catch { }
+    }
+}
+
 public class ClaudeCliService
 {
     private Process? _process;
@@ -39,6 +71,8 @@ public class ClaudeCliService
     public event Action<string, string, string, JsonElement>? OnControlRequest; // requestId, toolName, toolUseId, input
     public event Action<string, string, List<string>>? OnSessionStarted; // sessionId, model, tools
     public event Action? OnRateLimitDetected; // fired when CLI stderr indicates rate limiting
+    public event Action<string>? OnCompactionDetected; // message about context compaction
+    public event Action<string>? OnSystemNotification; // human-readable system message from CLI
 
     public string ClaudeExePath { get; set; } = "claude";
     public string? WorkingDirectory { get; set; }
@@ -75,6 +109,19 @@ public class ClaudeCliService
             catch (IOException) { }
             OnFileChanged?.Invoke(filePath);
         };
+
+        _parser.OnSystemNotification += msg =>
+        {
+            OnSystemNotification?.Invoke(msg);
+            if (msg.Contains("compact", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("summariz", StringComparison.OrdinalIgnoreCase))
+            {
+                OnCompactionDetected?.Invoke(msg);
+            }
+        };
+
+        _parser.OnUnknownEvent += (type, raw) =>
+            DiagnosticLogger.Log("UNKNOWN_EVENT", $"type={type} json={raw}");
     }
 
     /// <summary>
@@ -336,6 +383,7 @@ public class ClaudeCliService
                 if (string.IsNullOrWhiteSpace(line))
                     continue;
 
+                DiagnosticLogger.Log("STDOUT", line);
                 _parser.ProcessLine(line);
             }
         }
@@ -364,7 +412,10 @@ public class ClaudeCliService
                 var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
                 if (line is null) break;
                 if (!string.IsNullOrWhiteSpace(line))
+                {
+                    DiagnosticLogger.Log("STDERR", line);
                     sb.AppendLine(line);
+                }
             }
             _lastStderr = sb.ToString();
         }

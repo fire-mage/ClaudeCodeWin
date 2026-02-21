@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -473,10 +474,24 @@ public class ToolUseViewModel : ViewModelBase
 /// <summary>
 /// Model for displaying AskUserQuestion in the UI.
 /// </summary>
-public class QuestionDisplayModel
+public class QuestionDisplayModel : INotifyPropertyChanged
 {
+    public event PropertyChangedEventHandler? PropertyChanged;
+
     public string QuestionText { get; set; } = "";
     public List<QuestionOption> Options { get; set; } = [];
+
+    private bool _isAnswered;
+    public bool IsAnswered
+    {
+        get => _isAnswered;
+        set
+        {
+            if (_isAnswered == value) return;
+            _isAnswered = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsAnswered)));
+        }
+    }
 }
 
 public class QuestionOption

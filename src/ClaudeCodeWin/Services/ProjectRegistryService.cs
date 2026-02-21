@@ -140,7 +140,14 @@ public class ProjectRegistryService
     }
 
     private static readonly string[] ProjectMarkerFiles =
-        ["*.sln", "*.csproj", "package.json", "go.mod", "Cargo.toml", "pyproject.toml"];
+    [
+        "*.csproj", "package.json", "go.mod", "Cargo.toml",        // .NET, Node.js, Go, Rust
+        "pyproject.toml", "requirements.txt", "setup.py",           // Python
+        "pom.xml", "build.gradle", "build.gradle.kts",              // Java/Kotlin
+        "Gemfile", "composer.json", "Package.swift", "pubspec.yaml", // Ruby, PHP, Swift, Dart/Flutter
+        "mix.exs", "Makefile.PL", "cpanfile",                       // Elixir, Perl
+        "CMakeLists.txt", "Makefile", "*.xcodeproj"                  // C/C++, general, Xcode
+    ];
 
     /// <summary>
     /// Walk up from a file path to find the project root directory.
@@ -191,13 +198,16 @@ public class ProjectRegistryService
     {
         var markers = new List<string>();
 
+        bool Has(string file) => File.Exists(Path.Combine(folderPath, file));
+        bool HasPattern(string pattern) =>
+            Directory.EnumerateFiles(folderPath, pattern, SearchOption.AllDirectories).Any();
+
         // .NET
-        if (Directory.EnumerateFiles(folderPath, "*.csproj", SearchOption.AllDirectories).Any()
-            || Directory.EnumerateFiles(folderPath, "*.sln", SearchOption.AllDirectories).Any())
+        if (HasPattern("*.csproj") || HasPattern("*.sln"))
             markers.Add(".NET");
 
         // Node/React/TS
-        if (File.Exists(Path.Combine(folderPath, "package.json")))
+        if (Has("package.json"))
         {
             markers.Add("Node.js");
             try
@@ -212,18 +222,51 @@ public class ProjectRegistryService
         }
 
         // Python
-        if (File.Exists(Path.Combine(folderPath, "requirements.txt"))
-            || File.Exists(Path.Combine(folderPath, "pyproject.toml"))
-            || File.Exists(Path.Combine(folderPath, "setup.py")))
+        if (Has("requirements.txt") || Has("pyproject.toml") || Has("setup.py"))
             markers.Add("Python");
 
         // Go
-        if (File.Exists(Path.Combine(folderPath, "go.mod")))
+        if (Has("go.mod"))
             markers.Add("Go");
 
         // Rust
-        if (File.Exists(Path.Combine(folderPath, "Cargo.toml")))
+        if (Has("Cargo.toml"))
             markers.Add("Rust");
+
+        // Java/Kotlin
+        if (Has("pom.xml") || Has("build.gradle") || Has("build.gradle.kts"))
+            markers.Add("Java");
+
+        // Ruby
+        if (Has("Gemfile"))
+            markers.Add("Ruby");
+
+        // PHP
+        if (Has("composer.json"))
+            markers.Add("PHP");
+
+        // Swift
+        if (Has("Package.swift") || HasPattern("*.xcodeproj"))
+            markers.Add("Swift");
+
+        // Dart/Flutter
+        if (Has("pubspec.yaml"))
+        {
+            try
+            {
+                var pubspec = File.ReadAllText(Path.Combine(folderPath, "pubspec.yaml"));
+                markers.Add(pubspec.Contains("flutter") ? "Flutter" : "Dart");
+            }
+            catch { markers.Add("Dart"); }
+        }
+
+        // Elixir
+        if (Has("mix.exs"))
+            markers.Add("Elixir");
+
+        // C/C++
+        if (Has("CMakeLists.txt"))
+            markers.Add("C/C++");
 
         return markers.Count > 0 ? string.Join(", ", markers) : null;
     }

@@ -7,4 +7,5 @@ public class TaskDefinition
     public string? WorkingDirectory { get; set; }
     public string? HotKey { get; set; }
     public bool ConfirmBeforeRun { get; set; } = true;
+    public string? Project { get; set; }
 }

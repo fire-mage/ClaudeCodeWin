@@ -22,6 +22,8 @@ public class StreamJsonParser
     public event Action<string>? OnFileChanged; // filePath from Write/Edit/NotebookEdit tools
     public event Action<string, string, string, JsonElement>? OnControlRequest; // requestId, toolName, toolUseId, input
     public event Action<string, string, List<string>>? OnSessionStarted; // sessionId, model, tools
+    public event Action<string>? OnSystemNotification; // human-readable system notification from CLI
+    public event Action<string, string>? OnUnknownEvent; // type, rawJson
 
     public static string EscapeJson(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
@@ -68,6 +70,9 @@ public class StreamJsonParser
                 case "content_block_stop":
                     HandleContentBlockStop();
                     break;
+                default:
+                    OnUnknownEvent?.Invoke(type ?? "", jsonLine);
+                    break;
             }
         }
         catch (JsonException)
@@ -109,6 +114,9 @@ public class StreamJsonParser
             case "message_delta":
             case "message_stop":
                 break;
+            default:
+                DiagnosticLogger.Log("UNKNOWN_STREAM_EVENT", $"eventType={eventType}");
+                break;
         }
     }
 
@@ -116,6 +124,21 @@ public class StreamJsonParser
     {
         if (root.TryGetProperty("session_id", out var sid))
             _sessionId = sid.GetString();
+
+        // Check for human-readable notification text (compaction, warnings, etc.)
+        if (root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String)
+        {
+            var message = msgProp.GetString() ?? "";
+            if (!string.IsNullOrWhiteSpace(message))
+                OnSystemNotification?.Invoke(message);
+        }
+
+        if (root.TryGetProperty("subtype", out var subProp) && subProp.ValueKind == JsonValueKind.String)
+        {
+            var subtype = subProp.GetString() ?? "";
+            if (subtype.Contains("compact", StringComparison.OrdinalIgnoreCase))
+                OnSystemNotification?.Invoke($"[subtype: {subtype}]");
+        }
 
         string? model = null;
         var tools = new List<string>();

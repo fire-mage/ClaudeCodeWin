@@ -1,5 +1,8 @@
+using System.IO;
 using System.Windows;
+using System.Windows.Threading;
 using ClaudeCodeWin.Models;
+using ClaudeCodeWin.Services;
 
 namespace ClaudeCodeWin.ViewModels;
 
@@ -24,6 +27,15 @@ public partial class MainViewModel
 
         // User manually typed — reset ExitPlanMode loop counter
         _exitPlanModeAutoCount = 0;
+
+        // If there's a pending control request (AskUserQuestion / ExitPlanMode),
+        // treat the typed message as the user's custom answer
+        if (_pendingControlRequestId is not null)
+        {
+            InputText = string.Empty;
+            HandleControlAnswer(text);
+            return;
+        }
 
         await SendDirectAsync(text, Attachments.Count > 0 ? [.. Attachments] : null);
     }
@@ -212,6 +224,24 @@ public partial class MainViewModel
                 var pct = (int)(totalTokens * 100.0 / _contextWindowSize);
                 ContextUsageText = $"Ctx: {pct}%";
 
+                DiagnosticLogger.Log("CTX",
+                    $"input={result.InputTokens:N0} output={result.OutputTokens:N0} " +
+                    $"cache_read={result.CacheReadTokens:N0} cache_create={result.CacheCreationTokens:N0} " +
+                    $"window={_contextWindowSize:N0} pct={pct}%");
+
+                // Compaction detection: significant Ctx% drop (>20pp) between turns
+                if (_previousCtxPercent > 0 && _previousCtxPercent - pct > 20)
+                {
+                    var msg = $"Context compacted: {_previousCtxPercent}% \u2192 {pct}% " +
+                              $"({_previousInputTokens:N0} \u2192 {result.InputTokens:N0} input tokens)";
+                    Messages.Add(new MessageViewModel(MessageRole.System, msg));
+                    DiagnosticLogger.Log("COMPACTION_DETECTED", msg);
+                    _contextWarningShown = false;
+                }
+
+                _previousInputTokens = result.InputTokens;
+                _previousCtxPercent = pct;
+
                 if (pct >= 80 && !_contextWarningShown)
                 {
                     _contextWarningShown = true;
@@ -246,8 +276,96 @@ public partial class MainViewModel
             {
                 // Normal turn completion — reset ExitPlanMode loop counter
                 _exitPlanModeAutoCount = 0;
+
+                // Task suggestion popup: show when task appears completed
+                TryShowTaskSuggestion();
             }
         });
+    }
+
+    private static readonly string[] CompletionMarkers =
+    [
+        "готово", "done", "terminé", "fertig", "listo", "pronto",
+        "выводы", "результат", "completed", "finished", "完了", "完成"
+    ];
+
+    private bool DetectCompletionMarker()
+    {
+        // Find the last assistant message
+        for (var i = Messages.Count - 1; i >= 0; i--)
+        {
+            if (Messages[i].Role != MessageRole.Assistant) continue;
+
+            var text = Messages[i].Text;
+            if (string.IsNullOrEmpty(text)) continue;
+
+            // Check last 500 chars for completion markers
+            var tail = text.Length > 500 ? text[^500..] : text;
+            var lower = tail.ToLowerInvariant();
+
+            foreach (var marker in CompletionMarkers)
+            {
+                if (lower.Contains(marker))
+                    return true;
+            }
+
+            break; // Only check the last assistant message
+        }
+
+        return false;
+    }
+
+    private void TryShowTaskSuggestion()
+    {
+        if (_taskRunnerService is null || string.IsNullOrEmpty(WorkingDirectory))
+            return;
+
+        // Check if dismissed for this project
+        var normalized = WorkingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (_settings.TaskSuggestionDismissedProjects.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+            return;
+
+        // Check conditions: changed files + completion marker
+        if (ChangedFiles.Count == 0 || !DetectCompletionMarker())
+            return;
+
+        // Build suggestion list
+        var suggestions = new List<TaskSuggestionItem>();
+
+        // Get project-specific deploy tasks
+        var projectTasks = _taskRunnerService.GetTasksForProject(WorkingDirectory);
+        var deployTasks = projectTasks
+            .Where(t => t.Command.Contains("deploy", StringComparison.OrdinalIgnoreCase)
+                        || t.Command.Contains("publish", StringComparison.OrdinalIgnoreCase))
+            .Take(3)
+            .ToList();
+
+        foreach (var dt in deployTasks)
+            suggestions.Add(new TaskSuggestionItem { Label = dt.Name, Task = dt });
+
+        // Check if project has git
+        var gitDir = Path.Combine(WorkingDirectory, ".git");
+        if (Directory.Exists(gitDir))
+            suggestions.Add(new TaskSuggestionItem { Label = "Commit changes", IsCommit = true });
+
+        if (suggestions.Count == 0)
+            return;
+
+        SuggestedTasks.Clear();
+        foreach (var s in suggestions)
+            SuggestedTasks.Add(s);
+
+        ShowTaskSuggestion = true;
+
+        // Auto-hide after 30 seconds
+        StopTaskSuggestionTimer();
+        _taskSuggestionTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _taskSuggestionTimer.Tick += (_, _) =>
+        {
+            ShowTaskSuggestion = false;
+            StopTaskSuggestionTimer();
+        };
+        _taskSuggestionTimer.Start();
     }
 
     private void HandleFileChanged(string filePath)

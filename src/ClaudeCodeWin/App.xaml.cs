@@ -139,7 +139,9 @@ public partial class App : Application
             }
             else
             {
-                // User chose "New session" — show project picker if multiple projects
+                // User chose "New session" — reset pre-restored session from constructor,
+                // then show project picker if multiple projects
+                mainViewModel.NewSessionCommand.Execute(null);
                 mainViewModel.ShowProjectPickerIfNeeded();
             }
         }
@@ -170,6 +172,7 @@ public partial class App : Application
         // Setup menus
         scriptService.PopulateMenu(mainWindow, mainViewModel, gitService, settings, projectRegistry);
         taskRunnerService.PopulateMenu(mainWindow, mainViewModel);
+        mainViewModel.SetTaskRunner(taskRunnerService, mainWindow);
 
         }
         catch (Exception ex)

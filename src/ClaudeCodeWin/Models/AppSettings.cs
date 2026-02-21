@@ -37,4 +37,10 @@ public class AppSettings
 
     // Update channel: "stable" (default) or "beta"
     public string UpdateChannel { get; set; } = "stable";
+
+    // Diagnostic logging: log raw stream-json to %LocalAppData%/ClaudeCodeWin/logs/
+    public bool DiagnosticLoggingEnabled { get; set; }
+
+    // Projects where user dismissed task suggestion popup
+    public List<string> TaskSuggestionDismissedProjects { get; set; } = [];
 }

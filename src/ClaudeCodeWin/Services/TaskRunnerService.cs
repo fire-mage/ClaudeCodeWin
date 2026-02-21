@@ -49,13 +49,61 @@ public class TaskRunnerService
         File.WriteAllText(TasksPath, json);
     }
 
+    public List<TaskDefinition> GetTasksForProject(string? workingDirectory)
+    {
+        if (string.IsNullOrEmpty(workingDirectory))
+            return [];
+
+        var projectName = Path.GetFileName(workingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        var tasks = LoadTasks();
+
+        return tasks.Where(t =>
+            !string.IsNullOrEmpty(t.Project) &&
+            string.Equals(t.Project, projectName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
     public void PopulateMenu(MainWindow mainWindow, MainViewModel viewModel)
     {
         var tasks = LoadTasks();
         var tasksMenu = mainWindow.TasksMenu;
         tasksMenu.Items.Clear();
 
-        foreach (var task in tasks)
+        // Group tasks: those with Project go into submenus, others stay at top level
+        var ungrouped = tasks.Where(t => string.IsNullOrEmpty(t.Project)).ToList();
+        var grouped = tasks
+            .Where(t => !string.IsNullOrEmpty(t.Project))
+            .GroupBy(t => t.Project!)
+            .OrderBy(g => g.Key);
+
+        foreach (var group in grouped)
+        {
+            var projectMenu = new MenuItem
+            {
+                Header = group.Key,
+                ToolTip = $"Tasks for project: {group.Key}"
+            };
+
+            foreach (var task in group)
+            {
+                var taskDef = task;
+                var menuItem = new MenuItem
+                {
+                    Header = task.Name,
+                    InputGestureText = task.HotKey ?? "",
+                    ToolTip = $"Runs shell command:\n{taskDef.Command}"
+                };
+                menuItem.Click += (_, _) => RunTask(taskDef, viewModel, mainWindow);
+                projectMenu.Items.Add(menuItem);
+            }
+
+            tasksMenu.Items.Add(projectMenu);
+        }
+
+        if (grouped.Any() && ungrouped.Count > 0)
+            tasksMenu.Items.Add(new Separator());
+
+        foreach (var task in ungrouped)
         {
             var taskDef = task;
             var menuItem = new MenuItem
@@ -114,16 +162,19 @@ public class TaskRunnerService
                 "Each task has these fields:\n" +
                 "  \u2022 name \u2014 display name in the menu\n" +
                 "  \u2022 command \u2014 shell command to run\n" +
+                "  \u2022 project \u2014 (optional) project name for grouping in submenu\n" +
                 "  \u2022 hotKey \u2014 (optional) keyboard shortcut hint\n" +
                 "  \u2022 confirmBeforeRun \u2014 (optional) ask before running\n\n" +
                 "Example:\n" +
                 "[\n" +
                 "  {\n" +
-                "    \"name\": \"npm install\",\n" +
-                "    \"command\": \"npm install\",\n" +
-                "    \"confirmBeforeRun\": false\n" +
+                "    \"name\": \"Deploy API\",\n" +
+                "    \"command\": \"powershell ./deploy-api.ps1\",\n" +
+                "    \"project\": \"MyProject\"\n" +
                 "  }\n" +
                 "]\n\n" +
+                "Tasks with a 'project' field appear in a submenu:\n" +
+                "  Tasks > MyProject > Deploy API\n\n" +
                 "Use Edit Tasks... to modify, or open the folder manually.",
                 "How to Add a Task",
                 MessageBoxButton.OK,
@@ -244,6 +295,9 @@ public class TaskRunnerService
         editorWindow.Content = grid;
         editorWindow.ShowDialog();
     }
+
+    public static void RunTaskPublic(TaskDefinition task, MainViewModel viewModel, Window owner)
+        => RunTask(task, viewModel, owner);
 
     private static void RunTask(TaskDefinition task, MainViewModel viewModel, Window owner)
     {

@@ -275,7 +275,7 @@ public partial class MainViewModel
         var projects = _projectRegistry.GetMostRecentProjects(20);
         if (projects.Count < 2) return;
 
-        // Filter out nested projects
+        // Filter out nested sub-projects (keep the topmost project root)
         var sorted = projects.OrderBy(p => p.Path.Length).ToList();
         var roots = new List<ProjectInfo>();
         foreach (var p in sorted)

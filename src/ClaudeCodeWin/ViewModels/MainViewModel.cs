@@ -20,7 +20,7 @@ public partial class MainViewModel : ViewModelBase
         The user interacts with you through a chat interface, not a terminal. Keep this in mind when formatting output.
 
         ## GUI capabilities the user has access to
-        - **Tasks menu**: user-configurable shell commands (deploy scripts, git commands, build, test, etc.) defined in `tasks.json` at `%APPDATA%\ClaudeCodeWin\tasks.json`. Each task has a name, command, optional hotkey, and optional confirmation prompt. When the user asks to "add to tasks" or "add a task for deployment/publishing", they mean adding an entry to this tasks.json file so it appears in the Tasks menu and can be run with one click.
+        - **Tasks menu**: user-configurable shell commands (deploy scripts, git commands, build, test, etc.) defined in `tasks.json` at `%APPDATA%\ClaudeCodeWin\tasks.json`. Each task has a name, command, optional project (for grouping into submenus), optional hotkey, and optional confirmation prompt. When the user asks to "add to tasks" or "add a task for deployment/publishing", they mean adding an entry to this tasks.json file so it appears in the Tasks menu and can be run with one click. Tasks with a `project` field are grouped into submenus by project name (e.g. Tasks > MyProject > Deploy). When creating tasks, always set the `project` field to the relevant project name so the menu stays organized.
         - **Scripts menu**: predefined prompts with variable substitution ({clipboard}, {git-status}, {git-diff}, {snapshot}, {file:path}) defined in `scripts.json` at `%APPDATA%\ClaudeCodeWin\scripts.json`. Scripts auto-send a prompt to you when clicked.
         - **File attachments**: the user can drag-and-drop files or paste screenshots (Ctrl+V) into the chat.
         - **Session persistence**: sessions are saved per project folder and restored on next launch (within 24h).
@@ -39,6 +39,8 @@ public partial class MainViewModel : ViewModelBase
 
         ## Important rules
         - When editing tasks.json or scripts.json, the format is a JSON array with camelCase keys. After editing, remind the user to click "Reload Tasks" or "Reload Scripts" in the menu.
+        - When you finish a task, always write a clear completion marker in the user's communication language (e.g. "Готово", "Done", "Terminé") as a separate final line. This helps the app detect task completion and suggest relevant follow-up actions.
+        - If the first fix attempt does not resolve a problem, stop guessing and start investigating: read logs, add diagnostics, trace the actual execution flow — determine the root cause before making the next fix. This rule does not apply to trivial failures like typos preventing a build/test from running.
         </system-instruction>
         """;
 
@@ -53,6 +55,8 @@ public partial class MainViewModel : ViewModelBase
     private readonly ProjectRegistryService _projectRegistry;
     private readonly ContextSnapshotService _contextSnapshotService;
     private readonly UsageService _usageService;
+    private TaskRunnerService? _taskRunnerService;
+    private Window? _ownerWindow;
     private VersionInfo? _pendingUpdate;
     private string? _downloadedUpdatePath;
 
@@ -88,10 +92,14 @@ public partial class MainViewModel : ViewModelBase
     private bool _dependencyFailed;
     private int _contextWindowSize;
     private bool _contextWarningShown;
+    private int _previousInputTokens;
+    private int _previousCtxPercent;
     private string _todoProgressText = "";
     private bool _showRateLimitBanner;
     private string _rateLimitCountdown = "";
     private bool _showProjectPicker;
+    private bool _showTaskSuggestion;
+    private System.Windows.Threading.DispatcherTimer? _taskSuggestionTimer;
 
     // Track project roots already registered this session (avoid re-registering)
     private readonly HashSet<string> _registeredProjectRoots =
@@ -313,6 +321,14 @@ public partial class MainViewModel : ViewModelBase
         set => SetProperty(ref _showProjectPicker, value);
     }
 
+    public bool ShowTaskSuggestion
+    {
+        get => _showTaskSuggestion;
+        set => SetProperty(ref _showTaskSuggestion, value);
+    }
+
+    public ObservableCollection<TaskSuggestionItem> SuggestedTasks { get; } = [];
+
     public ObservableCollection<ProjectInfo> PickerProjects { get; } = [];
 
     public bool HasDialogHistory => Messages.Any(m => m.Role == MessageRole.Assistant);
@@ -339,6 +355,9 @@ public partial class MainViewModel : ViewModelBase
     public RelayCommand UpgradeAccountCommand { get; }
     public RelayCommand SelectProjectCommand { get; }
     public RelayCommand ContinueWithCurrentProjectCommand { get; }
+    public RelayCommand RunSuggestedTaskCommand { get; }
+    public RelayCommand DismissTaskSuggestionCommand { get; }
+    public RelayCommand DismissTaskSuggestionForProjectCommand { get; }
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
     public void SetUpdateChannel(string channel)
@@ -361,6 +380,18 @@ public partial class MainViewModel : ViewModelBase
         UpdateFailed = false;
         UpdateDownloading = false;
         IsUpdating = false;
+    }
+
+    public void SetTaskRunner(TaskRunnerService taskRunnerService, Window ownerWindow)
+    {
+        _taskRunnerService = taskRunnerService;
+        _ownerWindow = ownerWindow;
+    }
+
+    private void StopTaskSuggestionTimer()
+    {
+        _taskSuggestionTimer?.Stop();
+        _taskSuggestionTimer = null;
     }
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
@@ -485,6 +516,37 @@ public partial class MainViewModel : ViewModelBase
             }
         });
         ContinueWithCurrentProjectCommand = new RelayCommand(() => ShowProjectPicker = false);
+        RunSuggestedTaskCommand = new RelayCommand(p =>
+        {
+            if (p is TaskSuggestionItem item)
+            {
+                ShowTaskSuggestion = false;
+                StopTaskSuggestionTimer();
+                if (item.IsCommit)
+                    _ = SendDirectAsync("/commit", null);
+                else if (item.Task is not null && _ownerWindow is not null)
+                    TaskRunnerService.RunTaskPublic(item.Task, this, _ownerWindow);
+            }
+        });
+        DismissTaskSuggestionCommand = new RelayCommand(() =>
+        {
+            ShowTaskSuggestion = false;
+            StopTaskSuggestionTimer();
+        });
+        DismissTaskSuggestionForProjectCommand = new RelayCommand(() =>
+        {
+            ShowTaskSuggestion = false;
+            StopTaskSuggestionTimer();
+            if (!string.IsNullOrEmpty(WorkingDirectory))
+            {
+                var normalized = WorkingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (!_settings.TaskSuggestionDismissedProjects.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+                {
+                    _settings.TaskSuggestionDismissedProjects.Add(normalized);
+                    _settingsService.Save(_settings);
+                }
+            }
+        });
 
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
         Messages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasDialogHistory));
@@ -585,6 +647,26 @@ public partial class MainViewModel : ViewModelBase
             if (_showRateLimitBanner)
                 RateLimitCountdown = _usageService.GetSessionCountdown();
         };
+
+        _cliService.OnCompactionDetected += msg =>
+        {
+            Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                var ctx = ContextUsageText;
+                Messages.Add(new MessageViewModel(MessageRole.System,
+                    $"Context auto-compacted. {msg} [{ctx}]"));
+                DiagnosticLogger.Log("COMPACTION", $"{msg} ctx={ctx}");
+                _contextWarningShown = false; // reset so warning fires again if context fills up
+            });
+        };
+
+        _cliService.OnSystemNotification += msg =>
+        {
+            DiagnosticLogger.Log("SYSTEM_NOTIFICATION", msg);
+        };
+
+        // Enable diagnostic logging from settings
+        DiagnosticLogger.Enabled = settings.DiagnosticLoggingEnabled;
 
         // Initialize recent folders from settings
         foreach (var folder in settings.RecentFolders)

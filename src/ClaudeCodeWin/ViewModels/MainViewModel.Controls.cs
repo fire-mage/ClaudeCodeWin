@@ -1,6 +1,8 @@
+using System.Text;
 using System.Text.Json;
 using System.Windows;
 using ClaudeCodeWin.Models;
+using ClaudeCodeWin.Services;
 
 namespace ClaudeCodeWin.ViewModels;
 
@@ -12,7 +14,7 @@ public partial class MainViewModel
         {
             if (toolName == "ExitPlanMode")
             {
-                HandleExitPlanModeControl(requestId, toolUseId);
+                HandleExitPlanModeControl(requestId, toolUseId, input);
             }
             else if (toolName == "AskUserQuestion")
             {
@@ -26,14 +28,24 @@ public partial class MainViewModel
         });
     }
 
-    private void HandleExitPlanModeControl(string requestId, string toolUseId)
+    private void HandleExitPlanModeControl(string requestId, string toolUseId, JsonElement input)
     {
         _exitPlanModeAutoCount++;
+
+        var permissions = ExtractAllowedPrompts(input);
+        var ctx = ContextUsageText;
+
+        DiagnosticLogger.Log("EXIT_PLAN_MODE",
+            $"permissions=[{permissions}] ctx={ctx} input={input.GetRawText()}");
 
         if (AutoConfirmEnabled && _exitPlanModeAutoCount <= 2)
         {
             _cliService.SendControlResponse(requestId, "allow", toolUseId: toolUseId);
-            Messages.Add(new MessageViewModel(MessageRole.System, "Plan approved automatically."));
+
+            var msg = string.IsNullOrEmpty(permissions)
+                ? $"Plan approved automatically. [{ctx}]"
+                : $"Plan approved automatically.\nPermissions: {permissions}\n[{ctx}]";
+            Messages.Add(new MessageViewModel(MessageRole.System, msg));
         }
         else
         {
@@ -48,20 +60,53 @@ public partial class MainViewModel
             _pendingControlRequestId = requestId;
             _pendingControlToolUseId = toolUseId;
 
+            var questionText = "Claude wants to exit plan mode and start implementing.";
+            if (!string.IsNullOrEmpty(permissions))
+                questionText += $"\nPermissions: {permissions}";
+            questionText += $"\n[{ctx}]";
+
             var questionMsg = new MessageViewModel(MessageRole.System, "Exit plan mode?")
             {
                 QuestionDisplay = new QuestionDisplayModel
                 {
-                    QuestionText = "Claude wants to exit plan mode and start implementing. Approve?",
+                    QuestionText = questionText,
                     Options =
                     [
                         new QuestionOption { Label = "Yes, go ahead", Description = "Approve plan and start implementation" },
-                        new QuestionOption { Label = "No, keep planning", Description = "Stay in plan mode" }
+                        new QuestionOption { Label = "No, keep planning", Description = "Stay in plan mode" },
+                        new QuestionOption { Label = "New session + plan", Description = "Reset context and continue with plan only" }
                     ]
                 }
             };
             Messages.Add(questionMsg);
             UpdateCta(CtaState.AnswerQuestion);
+        }
+    }
+
+    private static string ExtractAllowedPrompts(JsonElement input)
+    {
+        if (input.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+            return "";
+
+        try
+        {
+            if (!input.TryGetProperty("allowedPrompts", out var prompts)
+                || prompts.ValueKind != JsonValueKind.Array)
+                return "";
+
+            var sb = new StringBuilder();
+            foreach (var p in prompts.EnumerateArray())
+            {
+                var tool = p.TryGetProperty("tool", out var t) ? t.GetString() ?? "" : "";
+                var prompt = p.TryGetProperty("prompt", out var pr) ? pr.GetString() ?? "" : "";
+                if (sb.Length > 0) sb.Append(", ");
+                sb.Append($"{tool}({prompt})");
+            }
+            return sb.ToString();
+        }
+        catch
+        {
+            return "";
         }
     }
 
@@ -128,16 +173,29 @@ public partial class MainViewModel
         // Clear question buttons from all messages (they've been answered)
         ClearQuestionDisplays();
 
-        // ExitPlanMode — simple allow/deny
+        // ExitPlanMode — simple allow/deny/reset
         if (_pendingQuestionInput is null)
         {
             _pendingControlRequestId = null;
             _pendingControlToolUseId = null;
 
             if (answer == "Yes, go ahead")
+            {
                 _cliService.SendControlResponse(requestId, "allow", toolUseId: toolUseId);
+            }
+            else if (answer == "New session + plan")
+            {
+                _cliService.SendControlResponse(requestId, "deny",
+                    errorMessage: "User chose to reset context and continue with plan only");
+                Messages.Add(new MessageViewModel(MessageRole.User, answer));
+                StartNewSession();
+                return;
+            }
             else
-                _cliService.SendControlResponse(requestId, "deny", errorMessage: "User chose to keep planning");
+            {
+                _cliService.SendControlResponse(requestId, "deny",
+                    errorMessage: "User chose to keep planning");
+            }
 
             Messages.Add(new MessageViewModel(MessageRole.User, answer));
             UpdateCta(CtaState.Processing);
@@ -145,20 +203,39 @@ public partial class MainViewModel
         }
 
         // AskUserQuestion — collect answers, then build updatedInput with questions+answers
-        // Find the question text for this answer index
         try
         {
             var input = _pendingQuestionInput.Value;
             if (input.TryGetProperty("questions", out var questionsArr)
                 && questionsArr.ValueKind == JsonValueKind.Array)
             {
-                var idx = _pendingQuestionAnswers.Count;
                 var questions = questionsArr.EnumerateArray().ToList();
-                if (idx < questions.Count)
+
+                // Check if this answer matches a known option (button click)
+                // vs free-text input that should answer all remaining questions
+                var idx = _pendingQuestionAnswers.Count;
+                var isButtonClick = idx < questions.Count
+                    && questions[idx].TryGetProperty("options", out var opts)
+                    && opts.ValueKind == JsonValueKind.Array
+                    && opts.EnumerateArray().Any(o =>
+                        o.TryGetProperty("label", out var l) && l.GetString() == answer);
+
+                if (isButtonClick)
                 {
+                    // Single button click — answer one question at a time
                     var questionText = questions[idx].TryGetProperty("question", out var qt)
                         ? qt.GetString() ?? "" : "";
                     _pendingQuestionAnswers.Add((questionText, answer));
+                }
+                else
+                {
+                    // Free-text input — answer all remaining questions at once
+                    for (var i = _pendingQuestionAnswers.Count; i < questions.Count; i++)
+                    {
+                        var questionText = questions[i].TryGetProperty("question", out var qt)
+                            ? qt.GetString() ?? "" : "";
+                        _pendingQuestionAnswers.Add((questionText, answer));
+                    }
                 }
             }
         }
@@ -186,9 +263,13 @@ public partial class MainViewModel
             _cliService.SendControlResponse(requestId, "allow",
                 updatedInputJson: updatedInputJson, toolUseId: toolUseId);
 
-            // Show user's answers
+            // Show user's answers (deduplicate identical answers from free-text input)
+            var shownAnswers = new HashSet<string>();
             foreach (var (q, a) in _pendingQuestionAnswers)
-                Messages.Add(new MessageViewModel(MessageRole.User, a));
+            {
+                if (shownAnswers.Add(a))
+                    Messages.Add(new MessageViewModel(MessageRole.User, a));
+            }
 
             _pendingControlRequestId = null;
             _pendingControlToolUseId = null;
@@ -203,8 +284,8 @@ public partial class MainViewModel
     {
         foreach (var msg in Messages)
         {
-            if (msg.QuestionDisplay is not null)
-                msg.QuestionDisplay = null;
+            if (msg.QuestionDisplay is { IsAnswered: false })
+                msg.QuestionDisplay.IsAnswered = true;
         }
     }
 }
