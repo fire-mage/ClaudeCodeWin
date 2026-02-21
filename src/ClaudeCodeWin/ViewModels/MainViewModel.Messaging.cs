@@ -50,6 +50,10 @@ public partial class MainViewModel
         if (attachments is not null)
             Attachments.Clear();
 
+        _lastSentText = text;
+        _lastSentAttachments = attachments;
+        _hasResponseStarted = false;
+
         ChangedFiles.Clear();
         _cliService.ClearFileSnapshots();
         InputText = string.Empty;
@@ -127,6 +131,7 @@ public partial class MainViewModel
                 if (_isFirstDelta)
                 {
                     _isFirstDelta = false;
+                    _hasResponseStarted = true;
                     _currentAssistantMessage.IsThinking = false;
                     _currentAssistantMessage.Text = text;
                 }
@@ -149,6 +154,7 @@ public partial class MainViewModel
                 if (_isFirstDelta)
                 {
                     _isFirstDelta = false;
+                    _hasResponseStarted = true;
                     _currentAssistantMessage.IsThinking = false;
                 }
 
@@ -209,37 +215,40 @@ public partial class MainViewModel
             _currentAssistantMessage = null;
             _hadToolsSinceLastText = false;
             IsProcessing = false;
-            StatusText = "Ready";
+            StatusText = "";
             UpdateCta(CtaState.WaitingForUser);
 
             if (!string.IsNullOrEmpty(result.Model))
                 ModelName = result.Model;
 
             // Track context usage
+            // Total input = uncached + cache_read + cache_creation (all count toward context window)
             if (result.ContextWindow > 0)
                 _contextWindowSize = result.ContextWindow;
-            if (_contextWindowSize > 0 && result.InputTokens > 0)
+
+            var totalInput = result.InputTokens + result.CacheReadTokens + result.CacheCreationTokens;
+            if (_contextWindowSize > 0 && totalInput > 0)
             {
-                var totalTokens = result.InputTokens + result.OutputTokens;
+                var totalTokens = totalInput + result.OutputTokens;
                 var pct = (int)(totalTokens * 100.0 / _contextWindowSize);
                 ContextUsageText = $"Ctx: {pct}%";
 
                 DiagnosticLogger.Log("CTX",
                     $"input={result.InputTokens:N0} output={result.OutputTokens:N0} " +
                     $"cache_read={result.CacheReadTokens:N0} cache_create={result.CacheCreationTokens:N0} " +
-                    $"window={_contextWindowSize:N0} pct={pct}%");
+                    $"total_input={totalInput:N0} window={_contextWindowSize:N0} pct={pct}%");
 
                 // Compaction detection: significant Ctx% drop (>20pp) between turns
                 if (_previousCtxPercent > 0 && _previousCtxPercent - pct > 20)
                 {
                     var msg = $"Context compacted: {_previousCtxPercent}% \u2192 {pct}% " +
-                              $"({_previousInputTokens:N0} \u2192 {result.InputTokens:N0} input tokens)";
+                              $"({_previousInputTokens:N0} \u2192 {totalInput:N0} input tokens)";
                     Messages.Add(new MessageViewModel(MessageRole.System, msg));
                     DiagnosticLogger.Log("COMPACTION_DETECTED", msg);
                     _contextWarningShown = false;
                 }
 
-                _previousInputTokens = result.InputTokens;
+                _previousInputTokens = totalInput;
                 _previousCtxPercent = pct;
 
                 if (pct >= 80 && !_contextWarningShown)
@@ -346,7 +355,7 @@ public partial class MainViewModel
         // Check if project has git
         var gitDir = Path.Combine(WorkingDirectory, ".git");
         if (Directory.Exists(gitDir))
-            suggestions.Add(new TaskSuggestionItem { Label = "Commit changes", IsCommit = true });
+            suggestions.Add(new TaskSuggestionItem { Label = "Commit & Push", IsCommit = true });
 
         if (suggestions.Count == 0)
             return;

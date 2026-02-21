@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly ChatHistoryService _chatHistoryService;
     private readonly ProjectRegistryService _projectRegistry;
     private CancellationTokenSource? _autocompleteCts;
+    private int _dragEnterCount;
 
     private MainViewModel ViewModel => (MainViewModel)DataContext;
 
@@ -266,6 +267,23 @@ public partial class MainWindow : Window
             }
         }
 
+        // Up arrow = recall last sent message (if Claude hasn't started responding yet)
+        if (e.Key == Key.Up && InputTextBox.IsFocused && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            // Only recall when input is empty or caret is on the first line
+            var caretLine = InputTextBox.GetLineIndexFromCharacterIndex(InputTextBox.CaretIndex);
+            if (caretLine <= 0 && string.IsNullOrEmpty(InputTextBox.Text))
+            {
+                if (ViewModel.RecallLastMessage())
+                {
+                    // Move caret to end of restored text
+                    InputTextBox.CaretIndex = InputTextBox.Text.Length;
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
+
         // Ctrl+N = New session
         if (e.Key == Key.N && Keyboard.Modifiers == ModifierKeys.Control)
         {
@@ -286,8 +304,30 @@ public partial class MainWindow : Window
         }
     }
 
+    private void Window_DragEnter(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            _dragEnterCount++;
+            DragDropOverlay.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void Window_DragLeave(object sender, DragEventArgs e)
+    {
+        _dragEnterCount--;
+        if (_dragEnterCount <= 0)
+        {
+            _dragEnterCount = 0;
+            DragDropOverlay.Visibility = Visibility.Collapsed;
+        }
+    }
+
     private void Window_Drop(object sender, DragEventArgs e)
     {
+        _dragEnterCount = 0;
+        DragDropOverlay.Visibility = Visibility.Collapsed;
+
         if (e.Data.GetDataPresent(DataFormats.FileDrop))
         {
             var files = (string[])e.Data.GetData(DataFormats.FileDrop);

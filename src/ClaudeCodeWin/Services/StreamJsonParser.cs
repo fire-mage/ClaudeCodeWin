@@ -357,6 +357,9 @@ public class StreamJsonParser
 
     private void HandleResult(JsonElement root)
     {
+        // Log full result JSON for Ctx% diagnostics
+        DiagnosticLogger.Log("RESULT_RAW", root.GetRawText());
+
         string? sessionId = null;
         string? model = null;
         int inputTokens = 0, outputTokens = 0, cacheRead = 0, cacheCreation = 0;
@@ -365,6 +368,7 @@ public class StreamJsonParser
         if (root.TryGetProperty("session_id", out var sid))
             sessionId = sid.GetString();
 
+        // Extract model and contextWindow from modelUsage
         if (root.TryGetProperty("modelUsage", out var mu) && mu.ValueKind == JsonValueKind.Object)
         {
             foreach (var prop in mu.EnumerateObject())
@@ -375,8 +379,14 @@ public class StreamJsonParser
                     contextWindow = cw.GetInt32();
                 break;
             }
+            DiagnosticLogger.Log("RESULT_MODEL_USAGE", mu.GetRawText());
+        }
+        else
+        {
+            DiagnosticLogger.Log("RESULT_MODEL_USAGE", "MISSING");
         }
 
+        // Extract token usage
         if (root.TryGetProperty("usage", out var usage))
         {
             if (usage.TryGetProperty("input_tokens", out var it))
@@ -387,10 +397,26 @@ public class StreamJsonParser
                 cacheRead = cr.GetInt32();
             if (usage.TryGetProperty("cache_creation_input_tokens", out var cc))
                 cacheCreation = cc.GetInt32();
+
+            DiagnosticLogger.Log("RESULT_USAGE",
+                $"input={inputTokens} output={outputTokens} cache_read={cacheRead} cache_create={cacheCreation}");
         }
+        else
+        {
+            DiagnosticLogger.Log("RESULT_USAGE", "MISSING");
+        }
+
+        // Try alternative token locations (in case CLI puts them elsewhere)
+        if (inputTokens == 0 && root.TryGetProperty("input_tokens", out var altIt))
+            inputTokens = altIt.GetInt32();
+        if (outputTokens == 0 && root.TryGetProperty("output_tokens", out var altOt))
+            outputTokens = altOt.GetInt32();
 
         if (sessionId is not null)
             _sessionId = sessionId;
+
+        DiagnosticLogger.Log("RESULT_FINAL",
+            $"model={model} input={inputTokens} output={outputTokens} window={contextWindow} session={sessionId}");
 
         OnCompleted?.Invoke(new ResultData(sessionId, model, inputTokens, outputTokens, cacheRead, cacheCreation, contextWindow));
     }

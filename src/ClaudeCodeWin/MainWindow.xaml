@@ -9,6 +9,8 @@
         AllowDrop="True"
         Drop="Window_Drop"
         DragOver="Window_DragOver"
+        DragEnter="Window_DragEnter"
+        DragLeave="Window_DragLeave"
         PreviewKeyDown="Window_PreviewKeyDown">
 
     <Window.Resources>
@@ -689,14 +691,22 @@
                         </Grid.ColumnDefinitions>
                         <Button Grid.Column="0" Content="Not now"
                                 Command="{Binding DismissTaskSuggestionCommand}"
-                                Style="{StaticResource CancelButton}"
                                 Padding="8,5" FontSize="11.5"
-                                Margin="0,0,3,0"/>
+                                Margin="0,0,3,0"
+                                Background="Transparent"
+                                Foreground="{StaticResource TextSecondaryBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1"
+                                Cursor="Hand"/>
                         <Button Grid.Column="1" Content="Don't suggest"
                                 Command="{Binding DismissTaskSuggestionForProjectCommand}"
-                                Style="{StaticResource CancelButton}"
                                 Padding="8,5" FontSize="11.5"
                                 Margin="3,0,0,0"
+                                Background="Transparent"
+                                Foreground="{StaticResource TextSecondaryBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1"
+                                Cursor="Hand"
                                 ToolTip="Stop suggesting tasks for this project"/>
                     </Grid>
                 </StackPanel>
@@ -1225,35 +1235,33 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <TextBlock Grid.Column="0" Text="{Binding StatusText}"
                            FontSize="12"
                            Foreground="{Binding StatusText, Converter={StaticResource StatusTextBrush}}"
                            VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="2" Text="{Binding ProjectPath}"
-                           FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
-                           VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis"
-                           Opacity="0.7"
-                           Margin="0,0,16,0"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="0,0,16,0">
+                    <TextBlock Text="{Binding ProjectParentPath}"
+                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                               Opacity="0.7"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding ProjectFolderName}"
+                               FontSize="11" FontWeight="SemiBold"
+                               Foreground="{StaticResource AccentBrush}"/>
+                </StackPanel>
                 <TextBlock Grid.Column="3" Text="{Binding GitStatusText}"
                            FontSize="12"
                            Foreground="{Binding GitStatusText, Converter={StaticResource GitStatusBrush}}"
                            VerticalAlignment="Center" Margin="0,0,16,0"
                            ToolTip="Git repository status. Commit your changes regularly for safe rollback."/>
-                <TextBlock Grid.Column="4" Text="{Binding TodoProgressText}"
-                           FontSize="11"
-                           Foreground="{StaticResource PrimaryBrush}"
-                           VerticalAlignment="Center" Margin="0,0,16,0"
-                           ToolTip="Current task progress from Claude's todo list."/>
-                <TextBlock Grid.Column="5" Text="{Binding ContextUsageText}"
+                <TextBlock Grid.Column="4" Text="{Binding ContextUsageText}"
                            FontSize="11"
                            Foreground="{StaticResource AccentBrush}"
                            VerticalAlignment="Center" Margin="0,0,16,0"
                            ToolTip="Context window usage. Shows what percentage of Claude's memory is used.&#x0a;At 80%+ consider starting a new session or expanding to 1M tokens."/>
-                <Border Grid.Column="6" VerticalAlignment="Center" Margin="0,0,16,0"
+                <Border Grid.Column="5" VerticalAlignment="Center" Margin="0,0,16,0"
                         Cursor="Hand" Background="Transparent"
                         MouseLeftButtonUp="MemoryIndicator_Click"
                         ToolTip="Usage limits from your Anthropic subscription.&#x0a;Session resets every 5 hours, weekly every 7 days.&#x0a;Click for session menu.">
@@ -1276,7 +1284,7 @@
                         </ContextMenu>
                     </Border.ContextMenu>
                 </Border>
-                <Border Grid.Column="7" VerticalAlignment="Center"
+                <Border Grid.Column="6" VerticalAlignment="Center"
                         Background="Transparent"
                         MouseLeftButtonUp="ModelIndicator_Click">
                     <TextBlock Text="{Binding ModelName}"
@@ -1668,6 +1676,36 @@
                             </Style>
                         </Button.Style>
                     </Button>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- Drag & drop overlay -->
+        <Border x:Name="DragDropOverlay"
+                Grid.Row="0" Grid.RowSpan="8"
+                Background="#CC1e1e2e"
+                Panel.ZIndex="200"
+                Visibility="Collapsed"
+                IsHitTestVisible="False">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="{StaticResource SurfaceBrush}"
+                    CornerRadius="16" Padding="48,36"
+                    BorderBrush="{StaticResource AccentBrush}"
+                    BorderThickness="2">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="&#x1F4CE;"
+                               FontSize="40"
+                               HorizontalAlignment="Center"
+                               Margin="0,0,0,12"/>
+                    <TextBlock Text="Drop files to attach"
+                               FontSize="18" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextBrush}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="Files will be sent with your next message"
+                               FontSize="13"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               HorizontalAlignment="Center"
+                               Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
         </Border>

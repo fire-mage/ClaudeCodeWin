@@ -63,7 +63,7 @@ public partial class MainViewModel
                 CancelProcessing();
             Messages.Clear();
             ModelName = "";
-            StatusText = "Ready";
+            StatusText = "";
 
             _cliService.RestoreSession(saved.SessionId);
 
@@ -99,7 +99,7 @@ public partial class MainViewModel
         _cliService.ClearFileSnapshots();
         _cliService.ResetSession();
         ModelName = "";
-        StatusText = "Ready";
+        StatusText = "";
         ContextUsageText = "";
         TodoProgressText = "";
         _contextWarningShown = false;
@@ -161,18 +161,21 @@ public partial class MainViewModel
             return;
         }
 
-        var parts = new List<string> { branch };
+        if (dirtyCount == 0 && unpushedCount == 0)
+        {
+            GitStatusText = $"git: {branch}, clean";
+            return;
+        }
+
+        var parts = new List<string> { $"git: {branch}" };
 
         if (dirtyCount > 0)
-            parts.Add($"{dirtyCount} uncommitted");
+            parts.Add($"{dirtyCount} file(s) unstaged");
 
         if (unpushedCount > 0)
             parts.Add($"{unpushedCount} unpushed");
 
-        if (dirtyCount == 0 && unpushedCount == 0)
-            parts.Add("clean");
-
-        GitStatusText = string.Join(" | ", parts);
+        GitStatusText = string.Join(", ", parts);
     }
 
     private void RefreshAutocompleteIndex()
@@ -263,7 +266,7 @@ public partial class MainViewModel
 
         ShowWelcome = false;
         ModelName = "";
-        StatusText = "Ready";
+        StatusText = "";
 
         Messages.Add(new MessageViewModel(MessageRole.System,
             $"Loaded chat from history. {(entry.SessionId is not null ? "Session restored — you can continue." : "No session to restore.")}"));

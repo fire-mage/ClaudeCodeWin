@@ -62,12 +62,15 @@ public partial class MainViewModel : ViewModelBase
 
     private string _inputText = string.Empty;
     private bool _isProcessing;
-    private string _statusText = "Ready";
+    private string _statusText = "";
     private string _modelName = "";
     private MessageViewModel? _currentAssistantMessage;
     private bool _showWelcome;
     private bool _isFirstDelta;
     private bool _hadToolsSinceLastText;
+    private bool _hasResponseStarted;
+    private string? _lastSentText;
+    private List<FileAttachment>? _lastSentAttachments;
     private string _projectPath = "";
     private string _gitStatusText = "";
     private string _usageText = "";
@@ -257,7 +260,36 @@ public partial class MainViewModel : ViewModelBase
     public string ProjectPath
     {
         get => _projectPath;
-        set => SetProperty(ref _projectPath, value);
+        set
+        {
+            if (SetProperty(ref _projectPath, value))
+            {
+                OnPropertyChanged(nameof(ProjectParentPath));
+                OnPropertyChanged(nameof(ProjectFolderName));
+            }
+        }
+    }
+
+    public string ProjectParentPath
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(_projectPath)) return "";
+            var trimmed = _projectPath.TrimEnd('\\', '/');
+            var lastSep = trimmed.LastIndexOfAny(['\\', '/']);
+            return lastSep >= 0 ? trimmed[..(lastSep + 1)] : "";
+        }
+    }
+
+    public string ProjectFolderName
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(_projectPath)) return "";
+            var trimmed = _projectPath.TrimEnd('\\', '/');
+            var lastSep = trimmed.LastIndexOfAny(['\\', '/']);
+            return lastSep >= 0 ? trimmed[(lastSep + 1)..] : trimmed;
+        }
     }
 
     public string GitStatusText
@@ -452,7 +484,7 @@ public partial class MainViewModel : ViewModelBase
             var update = await _updateService.CheckForUpdateAsync();
             if (update is null)
             {
-                StatusText = "Ready";
+                StatusText = "";
                 MessageBox.Show($"You are on the latest version ({_updateService.CurrentVersion}).",
                     "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -528,7 +560,7 @@ public partial class MainViewModel : ViewModelBase
                 ShowTaskSuggestion = false;
                 StopTaskSuggestionTimer();
                 if (item.IsCommit)
-                    _ = SendDirectAsync("Review the current git changes (staged and unstaged) and create a commit with an appropriate message.", null);
+                    _ = SendDirectAsync("Review the current git changes (staged and unstaged), create a commit with an appropriate message, and push to the remote repository.", null);
                 else if (item.Task is not null && _ownerWindow is not null)
                     TaskRunnerService.RunTaskPublic(item.Task, this, _ownerWindow);
             }

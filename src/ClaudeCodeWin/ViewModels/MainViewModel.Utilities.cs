@@ -52,6 +52,51 @@ public partial class MainViewModel
         _ = Task.Run(() => _projectRegistry.RegisterProject(projectRoot, _gitService));
     }
 
+    /// <summary>
+    /// Recalls the last sent message back to the input box if Claude hasn't started responding yet.
+    /// Returns true if the message was recalled.
+    /// </summary>
+    public bool RecallLastMessage()
+    {
+        if (!IsProcessing || _hasResponseStarted || _lastSentText is null)
+            return false;
+
+        // Cancel the pending request
+        _cliService.Cancel();
+        IsProcessing = false;
+        StatusText = "";
+        UpdateCta(CtaState.WaitingForUser);
+
+        // Remove the assistant "thinking" bubble
+        if (_currentAssistantMessage is not null)
+        {
+            Messages.Remove(_currentAssistantMessage);
+            _currentAssistantMessage = null;
+        }
+
+        // Remove the user message that was just sent
+        for (var i = Messages.Count - 1; i >= 0; i--)
+        {
+            if (Messages[i].Role == MessageRole.User)
+            {
+                Messages.RemoveAt(i);
+                break;
+            }
+        }
+
+        // Restore text and attachments to the input box
+        InputText = _lastSentText;
+        if (_lastSentAttachments is not null)
+        {
+            foreach (var att in _lastSentAttachments)
+                AddAttachment(att);
+        }
+
+        _lastSentText = null;
+        _lastSentAttachments = null;
+        return true;
+    }
+
     public bool HandleEscape()
     {
         if (MessageQueue.Count > 0)
@@ -210,7 +255,7 @@ public partial class MainViewModel
         {
             CtaState.Welcome => "",
             CtaState.Ready => "Start a conversation with Claude",
-            CtaState.Processing => "Claude is working. Send a message to queue it, or press Escape to cancel.",
+            CtaState.Processing => "Claude is working. Press \u2191 to recall, Escape to cancel, or send to queue.",
             CtaState.WaitingForUser => "Claude is waiting for your response",
             CtaState.AnswerQuestion => "Answer the question above",
             CtaState.ConfirmOperation => "Confirm the operation above",

@@ -78,7 +78,7 @@ public class GitStatusToBrushConverter : IValueConverter
         var text = value as string ?? "";
         var key = text switch
         {
-            _ when text.Contains("uncommitted") || text.Contains("unpushed") => "WarningBrush",
+            _ when text.Contains("unstaged") || text.Contains("unpushed") => "WarningBrush",
             _ when text.Contains("clean") => "SuccessBrush",
             _ => "TextSecondaryBrush" // "no git" or empty
         };
