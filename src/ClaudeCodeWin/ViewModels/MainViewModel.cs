@@ -360,6 +360,11 @@ public partial class MainViewModel : ViewModelBase
     public RelayCommand DismissTaskSuggestionForProjectCommand { get; }
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
+    /// <summary>
+    /// Returns the built-in CCW system instruction text for display in the Instructions editor.
+    /// </summary>
+    public static string GetSystemInstructionText() => SystemInstruction;
+
     public void SetUpdateChannel(string channel)
     {
         _updateService.UpdateChannel = channel;
@@ -523,7 +528,7 @@ public partial class MainViewModel : ViewModelBase
                 ShowTaskSuggestion = false;
                 StopTaskSuggestionTimer();
                 if (item.IsCommit)
-                    _ = SendDirectAsync("/commit", null);
+                    _ = SendDirectAsync("Review the current git changes (staged and unstaged) and create a commit with an appropriate message.", null);
                 else if (item.Task is not null && _ownerWindow is not null)
                     TaskRunnerService.RunTaskPublic(item.Task, this, _ownerWindow);
             }

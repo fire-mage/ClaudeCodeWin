@@ -10,14 +10,17 @@ public partial class SettingsWindow : Window
     private readonly AppSettings _settings;
     private readonly SettingsService _settingsService;
     private readonly MainViewModel _viewModel;
+    private readonly string? _workingDir;
+    private readonly InstructionsService _instructions = new();
     private bool _initialized;
 
-    public SettingsWindow(AppSettings settings, SettingsService settingsService, MainViewModel viewModel)
+    public SettingsWindow(AppSettings settings, SettingsService settingsService, MainViewModel viewModel, string? workingDir)
     {
         InitializeComponent();
         _settings = settings;
         _settingsService = settingsService;
         _viewModel = viewModel;
+        _workingDir = workingDir;
 
         // Set current state
         if (settings.UpdateChannel == "beta")
@@ -28,6 +31,7 @@ public partial class SettingsWindow : Window
         AutoConfirmCheck.IsChecked = settings.AutoConfirmPlanMode;
         ContextSnapshotCheck.IsChecked = settings.ContextSnapshotEnabled;
 
+        UpdateInstructionsSummary();
         UpdateServersSummary();
 
         _initialized = true;
@@ -62,6 +66,19 @@ public partial class SettingsWindow : Window
     {
         _viewModel.ExpandContextCommand.Execute(null);
         Close();
+    }
+
+    private void ManageInstructions_Click(object sender, RoutedEventArgs e)
+    {
+        var systemInstruction = MainViewModel.GetSystemInstructionText();
+        var dlg = new InstructionsWindow(_instructions, _workingDir, systemInstruction) { Owner = this };
+        dlg.ShowDialog();
+        UpdateInstructionsSummary();
+    }
+
+    private void UpdateInstructionsSummary()
+    {
+        InstructionsSummary.Text = InstructionsWindow.BuildSummary(_instructions, _workingDir);
     }
 
     private void ManageServers_Click(object sender, RoutedEventArgs e)

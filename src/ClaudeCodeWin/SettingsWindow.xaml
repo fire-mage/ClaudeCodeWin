@@ -127,6 +127,27 @@
                     Cursor="Hand"
                     ToolTip="Toggle between standard (200K) and extended (1M) context window. Starts a new session."/>
 
+            <!-- Instructions section -->
+            <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,20,0,16"/>
+
+            <TextBlock Text="Instructions" FontSize="16" FontWeight="Bold"
+                       Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
+
+            <TextBlock x:Name="InstructionsSummary" FontSize="12"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       Margin="0,0,0,8" TextWrapping="Wrap"/>
+
+            <Button Content="Manage Instructions..."
+                    Click="ManageInstructions_Click"
+                    Padding="16,6"
+                    HorizontalAlignment="Left"
+                    Background="{StaticResource SurfaceLightBrush}"
+                    Foreground="{StaticResource PrimaryBrush}"
+                    BorderBrush="{StaticResource PrimaryBrush}"
+                    BorderThickness="1"
+                    Cursor="Hand"
+                    ToolTip="View and edit Claude instruction files (global CLAUDE.md, project CLAUDE.md, CCW system instruction, memory)."/>
+
             <!-- Servers section -->
             <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,20,0,16"/>
 

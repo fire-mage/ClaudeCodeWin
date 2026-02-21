@@ -356,16 +356,6 @@ public partial class MainViewModel
             SuggestedTasks.Add(s);
 
         ShowTaskSuggestion = true;
-
-        // Auto-hide after 30 seconds
-        StopTaskSuggestionTimer();
-        _taskSuggestionTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
-        _taskSuggestionTimer.Tick += (_, _) =>
-        {
-            ShowTaskSuggestion = false;
-            StopTaskSuggestionTimer();
-        };
-        _taskSuggestionTimer.Start();
     }
 
     private void HandleFileChanged(string filePath)

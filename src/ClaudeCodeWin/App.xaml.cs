@@ -146,6 +146,9 @@ public partial class App : Application
             }
         }
 
+        // Deduplication check: compare project CLAUDE.md with global CLAUDE.md
+        CheckInstructionDeduplication(settings.WorkingDirectory);
+
         // Wire up usage service → status bar
         usageService.OnUsageUpdated += () =>
         {
@@ -264,5 +267,40 @@ public partial class App : Application
 
         vm.ShowDependencyOverlay = false;
         return true;
+    }
+
+    private static void CheckInstructionDeduplication(string? workingDir)
+    {
+        if (string.IsNullOrEmpty(workingDir)) return;
+
+        try
+        {
+            var svc = new InstructionsService();
+            var globalContent = svc.ReadFile(svc.GetGlobalClaudeMdPath());
+            var projectContent = svc.ReadFile(svc.GetProjectClaudeMdPath(workingDir));
+
+            if (globalContent is null || projectContent is null) return;
+
+            var duplicates = svc.FindDuplicateBlocks(globalContent, projectContent);
+            if (duplicates.Count == 0) return;
+
+            var headers = string.Join("\n", duplicates.Select(h => $"  - {h.TrimStart('#').Trim()}"));
+            var result = MessageBox.Show(
+                $"Your project CLAUDE.md contains {duplicates.Count} section(s) that duplicate your global instructions:\n\n{headers}\n\nRemove these duplicates from the project file?",
+                "Duplicate Instructions", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes) return;
+
+            var cleaned = svc.RemoveDuplicateBlocks(projectContent, duplicates);
+            var projectPath = svc.GetProjectClaudeMdPath(workingDir);
+            if (cleaned is null)
+                File.Delete(projectPath);
+            else
+                svc.WriteFile(projectPath, cleaned);
+        }
+        catch
+        {
+            // Non-critical — don't crash the app over dedup
+        }
     }
 }

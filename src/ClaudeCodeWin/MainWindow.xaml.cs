@@ -764,7 +764,7 @@ public partial class MainWindow : Window
 
     private void MenuItem_Settings_Click(object sender, RoutedEventArgs e)
     {
-        var dlg = new SettingsWindow(_settings, _settingsService, ViewModel) { Owner = this };
+        var dlg = new SettingsWindow(_settings, _settingsService, ViewModel, ViewModel.WorkingDirectory) { Owner = this };
         dlg.ShowDialog();
     }
 
