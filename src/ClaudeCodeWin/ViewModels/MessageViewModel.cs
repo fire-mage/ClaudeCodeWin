@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using ClaudeCodeWin.Infrastructure;
@@ -18,12 +19,22 @@ public class MessageViewModel : ViewModelBase
         @"(?:[A-Za-z]:\\[^\s""<>|*?]+|/[^\s""<>|*?]+)\.(?:png|jpg|jpeg|gif|bmp|webp)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    /// <summary>
+    /// Completion markers used to detect task completion in multiple languages.
+    /// </summary>
+    public static readonly string[] CompletionMarkers =
+    [
+        "готово", "done", "terminé", "fertig", "listo", "pronto",
+        "выводы", "результат", "completed", "finished", "完了", "完成"
+    ];
+
     private string _text = string.Empty;
     private bool _isStreaming;
     private bool _isThinking;
     private string _toolActivitySummary = string.Empty;
     private bool _isBookmarked;
     private string? _taskOutputText;
+    private string? _completionSummary;
 
     public MessageRole Role { get; }
     public DateTime Timestamp { get; }
@@ -129,6 +140,67 @@ public class MessageViewModel : ViewModelBase
         }
     }
     public bool HasTaskOutput => !string.IsNullOrEmpty(_taskOutputText);
+
+    /// <summary>
+    /// Extracted completion summary text, displayed as a styled panel.
+    /// </summary>
+    public string? CompletionSummary
+    {
+        get => _completionSummary;
+        set
+        {
+            SetProperty(ref _completionSummary, value);
+            OnPropertyChanged(nameof(HasCompletionSummary));
+        }
+    }
+    public bool HasCompletionSummary => !string.IsNullOrEmpty(_completionSummary);
+
+    /// <summary>
+    /// Extracts a completion summary from the end of the message.
+    /// Looks for the last horizontal rule (---) separator followed by text
+    /// that contains a completion marker. Splits the message: body stays in Text,
+    /// summary goes to CompletionSummary.
+    /// </summary>
+    public void ExtractCompletionSummary()
+    {
+        if (Role != MessageRole.Assistant || string.IsNullOrEmpty(_text))
+            return;
+
+        // Find the last horizontal rule (3+ dashes on its own line)
+        var lines = _text.Split('\n');
+        var lastSepIndex = -1;
+
+        for (var i = lines.Length - 1; i >= 0; i--)
+        {
+            var trimmed = lines[i].TrimEnd('\r').Trim();
+            if (trimmed.Length >= 3 && trimmed.All(c => c == '-'))
+            {
+                lastSepIndex = i;
+                break;
+            }
+        }
+
+        if (lastSepIndex < 0 || lastSepIndex >= lines.Length - 1)
+            return;
+
+        // Extract text after the separator
+        var summaryLines = lines.Skip(lastSepIndex + 1).ToArray();
+        var summary = string.Join("\n", summaryLines).Trim();
+
+        // Must be reasonable length
+        if (summary.Length < 5 || summary.Length > 3000)
+            return;
+
+        // Must contain a completion marker
+        var lowerSummary = summary.ToLowerInvariant();
+        if (!CompletionMarkers.Any(m => lowerSummary.Contains(m)))
+            return;
+
+        // Split: set summary, trim main text
+        CompletionSummary = summary;
+        _text = string.Join("\n", lines.Take(lastSepIndex)).TrimEnd();
+        OnPropertyChanged(nameof(Text));
+    }
 
     public bool IsBookmarked
     {

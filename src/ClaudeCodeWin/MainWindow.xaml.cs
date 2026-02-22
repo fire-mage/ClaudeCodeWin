@@ -728,23 +728,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private void QuickPrompt_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    private void FinalizeActions_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (sender is FrameworkElement element && element.ContextMenu is not null)
-        {
-            element.ContextMenu.PlacementTarget = element;
-            element.ContextMenu.IsOpen = true;
-            e.Handled = true;
-        }
-    }
-
-    private void QuickPromptItem_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is MenuItem menuItem && menuItem.Tag is string prompt)
-        {
-            if (ViewModel.QuickPromptCommand.CanExecute(prompt))
-                ViewModel.QuickPromptCommand.Execute(prompt);
-        }
+        if (ViewModel.OpenFinalizeActionsCommand.CanExecute(null))
+            ViewModel.OpenFinalizeActionsCommand.Execute(null);
+        e.Handled = true;
     }
 
     private void ToggleBookmark_Click(object sender, RoutedEventArgs e)

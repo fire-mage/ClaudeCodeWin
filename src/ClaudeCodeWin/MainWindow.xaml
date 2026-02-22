@@ -173,6 +173,49 @@
                                         </TextBox.ContextMenu>
                                     </TextBox>
 
+                                    <!-- Completion summary panel -->
+                                    <Border Margin="0,8,0,0"
+                                            CornerRadius="6"
+                                            Background="{StaticResource SurfaceLightBrush}"
+                                            BorderBrush="{StaticResource SuccessBrush}"
+                                            BorderThickness="2,0,0,0"
+                                            Padding="10,8"
+                                            Visibility="{Binding HasCompletionSummary, Converter={StaticResource BoolToVis}}">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                <TextBlock Text="&#x2714;" FontSize="13"
+                                                           Foreground="{StaticResource SuccessBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,6,0"/>
+                                                <TextBlock Text="Summary"
+                                                           FontSize="12"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{StaticResource SuccessBrush}"
+                                                           VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <TextBox Text="{Binding CompletionSummary, Mode=OneWay}"
+                                                     IsReadOnly="True"
+                                                     TextWrapping="Wrap"
+                                                     FontFamily="Cascadia Code,Consolas,Courier New"
+                                                     FontSize="13"
+                                                     Background="Transparent"
+                                                     BorderThickness="0"
+                                                     Padding="0"
+                                                     Foreground="{StaticResource TextBrush}"
+                                                     SelectionBrush="{StaticResource SelectionBrush}"
+                                                     IsTabStop="False"
+                                                     Cursor="IBeam">
+                                                <TextBox.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="Copy Selection" Command="ApplicationCommands.Copy"/>
+                                                        <MenuItem Header="Copy Summary" Click="CopyAllMessage_Click"
+                                                                  Tag="{Binding CompletionSummary}"/>
+                                                    </ContextMenu>
+                                                </TextBox.ContextMenu>
+                                            </TextBox>
+                                        </StackPanel>
+                                    </Border>
+
                                     <!-- Attachments (screenshots, files sent with this message) -->
                                     <ItemsControl ItemsSource="{Binding Attachments}"
                                                   Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVis}}"
@@ -646,7 +689,7 @@
             </Button.Style>
         </Button>
 
-        <!-- Task suggestion popup -->
+        <!-- Finalize Actions popup -->
         <Border Grid.Row="1"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
@@ -663,52 +706,77 @@
                     <DropShadowEffect Color="Black" Opacity="0.4" BlurRadius="16" ShadowDepth="4"/>
                 </Border.Effect>
                 <StackPanel>
-                    <TextBlock Text="&#x26A1; Task completed"
-                               FontSize="14" FontWeight="SemiBold"
-                               Foreground="{StaticResource PrimaryBrush}"
-                               Margin="0,0,0,10"/>
+                    <!-- Header with close button -->
+                    <Grid Margin="0,0,0,10">
+                        <TextBlock Text="&#x26A1; Finalize Actions"
+                                   FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource PrimaryBrush}"
+                                   VerticalAlignment="Center"/>
+                        <Button Content="&#x2715;"
+                                Command="{Binding CloseFinalizePopupCommand}"
+                                HorizontalAlignment="Right"
+                                Background="Transparent"
+                                Foreground="{StaticResource TextSecondaryBrush}"
+                                BorderThickness="0"
+                                FontSize="14"
+                                Cursor="Hand"
+                                Padding="4,0"
+                                ToolTip="Collapse"/>
+                    </Grid>
 
+                    <!-- Dynamic action buttons -->
                     <ItemsControl ItemsSource="{Binding SuggestedTasks}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Button Content="{Binding Label}"
-                                        Command="{Binding DataContext.RunSuggestedTaskCommand,
+                                <Button Command="{Binding DataContext.RunSuggestedTaskCommand,
                                             RelativeSource={RelativeSource AncestorType=Window}}"
                                         CommandParameter="{Binding}"
-                                        Style="{StaticResource PrimaryButton}"
                                         HorizontalAlignment="Stretch"
                                         Margin="0,0,0,4"
                                         Padding="12,7"
-                                        FontSize="12.5"/>
+                                        FontSize="12.5"
+                                        IsEnabled="{Binding IsCompleted, Converter={StaticResource InverseBool}}">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsCompleted}" Value="True">
+                                                    <Setter Property="Opacity" Value="0.5"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <Button.Content>
+                                        <TextBlock>
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="{Binding Label}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsCompleted}" Value="True">
+                                                            <Setter Property="Text" Value="{Binding CompletedStatusText}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Button.Content>
+                                </Button>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <Grid Margin="0,8,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Content="Not now"
-                                Command="{Binding DismissTaskSuggestionCommand}"
-                                Padding="8,5" FontSize="11.5"
-                                Margin="0,0,3,0"
-                                Background="Transparent"
-                                Foreground="{StaticResource TextSecondaryBrush}"
-                                BorderBrush="{StaticResource BorderBrush}"
-                                BorderThickness="1"
-                                Cursor="Hand"/>
-                        <Button Grid.Column="1" Content="Don't suggest"
-                                Command="{Binding DismissTaskSuggestionForProjectCommand}"
-                                Padding="8,5" FontSize="11.5"
-                                Margin="3,0,0,0"
-                                Background="Transparent"
-                                Foreground="{StaticResource TextSecondaryBrush}"
-                                BorderBrush="{StaticResource BorderBrush}"
-                                BorderThickness="1"
-                                Cursor="Hand"
-                                ToolTip="Stop suggesting tasks for this project"/>
-                    </Grid>
+                    <!-- Small "Don't suggest" link -->
+                    <Border Cursor="Hand" Background="Transparent"
+                            HorizontalAlignment="Right" Margin="0,6,0,0">
+                        <Border.InputBindings>
+                            <MouseBinding MouseAction="LeftClick"
+                                          Command="{Binding DontSuggestForProjectCommand}"/>
+                        </Border.InputBindings>
+                        <TextBlock Text="Don't suggest for this project"
+                                   FontSize="10.5"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextDecorations="Underline"
+                                   ToolTip="Stop showing finalize actions for this project"/>
+                    </Border>
                 </StackPanel>
             </Border>
         </Border>
@@ -1138,44 +1206,22 @@
             </Grid>
 
             <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Bottom">
+                <!-- Finalize Actions collapsed label (above Send) -->
+                <Border Cursor="Hand" Background="Transparent"
+                        Margin="0,0,0,4"
+                        Visibility="{Binding ShowFinalizeActionsLabel, Converter={StaticResource BoolToVis}}"
+                        MouseLeftButtonUp="FinalizeActions_Click">
+                    <TextBlock Text="Finalize &#x25BC;" FontSize="11"
+                               Foreground="{StaticResource PrimaryBrush}"
+                               HorizontalAlignment="Center"
+                               Padding="4,2"
+                               ToolTip="Open finalize actions panel"/>
+                </Border>
                 <Button Content="Send"
                         Style="{StaticResource PrimaryButton}"
                         Command="{Binding SendCommand}"
                         IsEnabled="{Binding IsUpdating, Converter={StaticResource InverseBool}}"
                         Margin="0,0,0,4"/>
-                <!-- Quick prompts dropdown -->
-                <Border x:Name="QuickPromptButton"
-                        Cursor="Hand" Background="Transparent"
-                        Margin="0,4,0,0"
-                        Visibility="{Binding HasDialogHistory, Converter={StaticResource BoolToVis}}"
-                        MouseLeftButtonUp="QuickPrompt_Click">
-                    <TextBlock Text="Quick Prompts &#x25BC;" FontSize="11"
-                               Foreground="{StaticResource PrimaryBrush}"
-                               HorizontalAlignment="Center"
-                               Padding="4,2"/>
-                    <Border.ContextMenu>
-                        <ContextMenu x:Name="QuickPromptMenu"
-                                     Background="{StaticResource SurfaceBrush}"
-                                     BorderBrush="{StaticResource BorderBrush}"
-                                     Foreground="{StaticResource TextBrush}">
-                            <MenuItem Header="Commit &amp; Push"
-                                      Foreground="{StaticResource TextBrush}"
-                                      ToolTip="Ask Claude to commit changes and push to GitHub"
-                                      Click="QuickPromptItem_Click"
-                                      Tag="Please commit all current changes with a descriptive message and push to the remote repository."/>
-                            <MenuItem Header="Deploy to Test"
-                                      Foreground="{StaticResource TextBrush}"
-                                      ToolTip="Ask Claude to deploy the project to test environment"
-                                      Click="QuickPromptItem_Click"
-                                      Tag="Please deploy this project to the test environment."/>
-                            <MenuItem Header="Deploy to Prod"
-                                      Foreground="{StaticResource TextBrush}"
-                                      ToolTip="Ask Claude to deploy the project to production"
-                                      Click="QuickPromptItem_Click"
-                                      Tag="Please deploy this project to the production environment."/>
-                        </ContextMenu>
-                    </Border.ContextMenu>
-                </Border>
             </StackPanel>
         </Grid>
 

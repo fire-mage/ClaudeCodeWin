@@ -25,7 +25,7 @@ public partial class MainViewModel : ViewModelBase
         - **File attachments**: the user can drag-and-drop files or paste screenshots (Ctrl+V) into the chat.
         - **Session persistence**: sessions are saved per project folder and restored on next launch (within 24h).
         - **Message queue**: messages sent while you are processing get queued and auto-sent sequentially.
-        - **AskUserQuestion support**: When you use the AskUserQuestion tool, the user sees interactive buttons and can select an option. The selected answer is sent back to you as the next user message.
+        - **AskUserQuestion support**: When you use the AskUserQuestion tool, the user sees interactive buttons and can select options or provide custom text input.
 
         ## Project registry
         - A `<project-registry>` section is injected at the start of each session with a list of all known local projects (path, git remote, tech stack, last opened date).
@@ -37,10 +37,16 @@ public partial class MainViewModel : ViewModelBase
         - When connecting via SSH or deploying, always use the configured SSH key with `-i` flag.
         - Refer to the known servers list for host/port/user details instead of asking the user.
 
+        ## Windows Shell Safety
+        **NEVER** use `/dev/null` in Bash commands (e.g. `2>/dev/null`, `> /dev/null`). On Windows, this creates a literal file named `nul` which can break cloud sync (OneDrive, Dropbox, etc.). Use `2>&1` to merge streams, or `|| true` to suppress errors.
+
         ## Important rules
         - When editing tasks.json or scripts.json, the format is a JSON array with camelCase keys. After editing, remind the user to click "Reload Tasks" or "Reload Scripts" in the menu.
-        - When you finish a task, always write a clear completion marker in the user's communication language (e.g. "Готово", "Done", "Terminé") as a separate final line. This helps the app detect task completion and suggest relevant follow-up actions.
+        - When you finish a task, write a brief summary of what was done and end with a completion word (e.g. "Done", "Готово") on a separate final line. Separate the summary from the working process with a horizontal rule (---). The app renders this section as a styled summary panel.
         - If the first fix attempt does not resolve a problem, stop guessing and start investigating: read logs, add diagnostics, trace the actual execution flow — determine the root cause before making the next fix. This rule does not apply to trivial failures like typos preventing a build/test from running.
+        - Minimize external dependencies. Any significant new dependency should be confirmed with the user before adding.
+        - When implementing a new feature or starting a new project, suggest writing tests first — they serve as a contract between you and the user, making it clear how to verify the work is complete.
+        - After completing significant development or refactoring work, suggest running a code quality review and a security vulnerability analysis.
         </system-instruction>
         """;
 
@@ -102,6 +108,8 @@ public partial class MainViewModel : ViewModelBase
     private string _rateLimitCountdown = "";
     private bool _showProjectPicker;
     private bool _showTaskSuggestion;
+    private bool _showFinalizeActionsLabel;
+    private bool _hasCompletedTask;
     private System.Windows.Threading.DispatcherTimer? _taskSuggestionTimer;
 
     // Track project roots already registered this session (avoid re-registering)
@@ -359,6 +367,18 @@ public partial class MainViewModel : ViewModelBase
         set => SetProperty(ref _showTaskSuggestion, value);
     }
 
+    public bool ShowFinalizeActionsLabel
+    {
+        get => _showFinalizeActionsLabel;
+        set => SetProperty(ref _showFinalizeActionsLabel, value);
+    }
+
+    public bool HasCompletedTask
+    {
+        get => _hasCompletedTask;
+        set => SetProperty(ref _hasCompletedTask, value);
+    }
+
     public ObservableCollection<TaskSuggestionItem> SuggestedTasks { get; } = [];
 
     public ObservableCollection<ProjectInfo> PickerProjects { get; } = [];
@@ -380,7 +400,6 @@ public partial class MainViewModel : ViewModelBase
     public RelayCommand ReturnQueuedToInputCommand { get; }
     public RelayCommand ViewChangedFileCommand { get; }
     public RelayCommand AnswerQuestionCommand { get; }
-    public RelayCommand QuickPromptCommand { get; }
     public RelayCommand SwitchToOpusCommand { get; }
     public RelayCommand ExpandContextCommand { get; }
     public RelayCommand DismissRateLimitCommand { get; }
@@ -388,8 +407,9 @@ public partial class MainViewModel : ViewModelBase
     public RelayCommand SelectProjectCommand { get; }
     public RelayCommand ContinueWithCurrentProjectCommand { get; }
     public RelayCommand RunSuggestedTaskCommand { get; }
-    public RelayCommand DismissTaskSuggestionCommand { get; }
-    public RelayCommand DismissTaskSuggestionForProjectCommand { get; }
+    public RelayCommand CloseFinalizePopupCommand { get; }
+    public RelayCommand OpenFinalizeActionsCommand { get; }
+    public RelayCommand DontSuggestForProjectCommand { get; }
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
     /// <summary>
@@ -429,6 +449,24 @@ public partial class MainViewModel : ViewModelBase
     {
         _taskSuggestionTimer?.Stop();
         _taskSuggestionTimer = null;
+    }
+
+    private void StartAutoCollapseTimer()
+    {
+        StopTaskSuggestionTimer();
+        _taskSuggestionTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(60)
+        };
+        _taskSuggestionTimer.Tick += (_, _) => CollapseToFinalizeLabel();
+        _taskSuggestionTimer.Start();
+    }
+
+    private void CollapseToFinalizeLabel()
+    {
+        ShowTaskSuggestion = false;
+        StopTaskSuggestionTimer();
+        ShowFinalizeActionsLabel = SuggestedTasks.Count > 0;
     }
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
@@ -531,11 +569,6 @@ public partial class MainViewModel : ViewModelBase
             if (_pendingControlRequestId is not null)
                 HandleControlAnswer(answer);
         });
-        QuickPromptCommand = new RelayCommand(p =>
-        {
-            if (p is string prompt)
-                _ = SendDirectAsync(prompt, null);
-        });
         SwitchToOpusCommand = new RelayCommand(SwitchToOpus);
         ExpandContextCommand = new RelayCommand(ExpandContext);
         DismissRateLimitCommand = new RelayCommand(() => ShowRateLimitBanner = false);
@@ -555,24 +588,36 @@ public partial class MainViewModel : ViewModelBase
         ContinueWithCurrentProjectCommand = new RelayCommand(() => ShowProjectPicker = false);
         RunSuggestedTaskCommand = new RelayCommand(p =>
         {
-            if (p is TaskSuggestionItem item)
+            if (p is TaskSuggestionItem item && !item.IsCompleted)
             {
-                ShowTaskSuggestion = false;
-                StopTaskSuggestionTimer();
+                // Mark as completed immediately (optimistic)
+                item.IsCompleted = true;
+                item.CompletedStatusText = item.IsCommit ? "Committed" : $"Ran {item.Label}";
+
+                // Collapse popup to label
+                CollapseToFinalizeLabel();
+
                 if (item.IsCommit)
                     _ = SendDirectAsync("Review the current git changes (staged and unstaged), create a commit with an appropriate message, and push to the remote repository.", null);
                 else if (item.Task is not null && _ownerWindow is not null)
                     TaskRunnerService.RunTaskPublic(item.Task, this, _ownerWindow);
             }
         });
-        DismissTaskSuggestionCommand = new RelayCommand(() =>
+        CloseFinalizePopupCommand = new RelayCommand(CollapseToFinalizeLabel);
+        OpenFinalizeActionsCommand = new RelayCommand(() =>
         {
-            ShowTaskSuggestion = false;
-            StopTaskSuggestionTimer();
+            if (SuggestedTasks.Count > 0)
+            {
+                ShowTaskSuggestion = true;
+                ShowFinalizeActionsLabel = false;
+                StartAutoCollapseTimer();
+            }
         });
-        DismissTaskSuggestionForProjectCommand = new RelayCommand(() =>
+        DontSuggestForProjectCommand = new RelayCommand(() =>
         {
             ShowTaskSuggestion = false;
+            ShowFinalizeActionsLabel = false;
+            HasCompletedTask = false;
             StopTaskSuggestionTimer();
             if (!string.IsNullOrEmpty(WorkingDirectory))
             {

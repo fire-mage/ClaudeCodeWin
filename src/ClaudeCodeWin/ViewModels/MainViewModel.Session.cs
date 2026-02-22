@@ -105,6 +105,13 @@ public partial class MainViewModel
         _contextWarningShown = false;
         _contextWindowSize = 0;
 
+        // Reset finalize actions state
+        ShowTaskSuggestion = false;
+        ShowFinalizeActionsLabel = false;
+        HasCompletedTask = false;
+        SuggestedTasks.Clear();
+        StopTaskSuggestionTimer();
+
         // Clear saved session for current project
         if (!string.IsNullOrEmpty(WorkingDirectory)
             && _settings.SavedSessions.Remove(WorkingDirectory))

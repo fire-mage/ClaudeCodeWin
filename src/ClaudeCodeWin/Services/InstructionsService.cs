@@ -85,14 +85,13 @@ public class InstructionsService
 
         Communicate with the user in English.
 
+        ## Windows Shell Safety
+
+        **NEVER** use `/dev/null` in Bash commands (e.g. `2>/dev/null`, `> /dev/null`). On Windows, this creates a literal file named `nul` which can break cloud sync (OneDrive, Dropbox, etc.). Use `2>&1` to merge streams, or `|| true` to suppress errors.
+
         ## Bug Fix Policy
 
-        If the first fix attempt does not resolve the problem, stop guessing and start investigating.
-        Read logs, add diagnostics, trace the actual execution flow — determine the root cause before making the next fix.
-
-        ## Response Formatting
-
-        After completing a task, write a clear completion summary separated from the working process.
+        If the first fix attempt does not resolve the problem, **stop guessing and start investigating**. Read logs, add diagnostics, trace the actual execution flow — determine the root cause before making the next fix.
         """;
 
     /// <summary>
@@ -118,7 +117,8 @@ public class InstructionsService
 
         ## Key Rules
 
-        [Project-specific rules for Claude]
+        - **Minimize dependencies** — prefer built-in APIs; confirm any new dependency with the user before adding
+        - [Add project-specific rules for Claude]
         """;
 
     /// <summary>

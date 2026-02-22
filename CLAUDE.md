@@ -50,7 +50,6 @@ src/ClaudeCodeWin/
 
 ## Key Rules
 
-- **No NuGet packages** — all functionality must use built-in .NET 9 APIs
+- **Minimize dependencies** — prefer built-in .NET 9 APIs; confirm any new NuGet dependency with the user before adding
 - **All UI text in English** (labels, buttons, messages in the app interface)
 - **Dark theme only** (defined in Resources/Themes/Dark.xaml)
-- **Communication with the user in Russian** — all conversation, explanations, summaries, and comments must be in Russian. Code comments remain in English.

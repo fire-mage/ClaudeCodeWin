@@ -11,6 +11,13 @@ public class StreamJsonParser
     private string? _currentToolUseId;
     private readonly StringBuilder _toolInputBuffer = new();
 
+    // Per-call usage from the last message_start/message_delta in the current turn.
+    // These represent the actual context size for the final API call (not aggregated).
+    private int _lastMsgInputTokens;
+    private int _lastMsgCacheReadTokens;
+    private int _lastMsgCacheCreationTokens;
+    private int _lastMsgOutputTokens;
+
     public string? SessionId => _sessionId;
 
     // Events
@@ -87,6 +94,15 @@ public class StreamJsonParser
         _currentToolUseId = null;
         _toolInputBuffer.Clear();
         _sessionId = null;
+        ResetPerCallUsage();
+    }
+
+    private void ResetPerCallUsage()
+    {
+        _lastMsgInputTokens = 0;
+        _lastMsgCacheReadTokens = 0;
+        _lastMsgCacheCreationTokens = 0;
+        _lastMsgOutputTokens = 0;
     }
 
     private void HandleStreamEvent(JsonElement root)
@@ -111,7 +127,11 @@ public class StreamJsonParser
                 HandleContentBlockStop();
                 break;
             case "message_start":
+                HandleMessageStart(evt);
+                break;
             case "message_delta":
+                HandleMessageDelta(evt);
+                break;
             case "message_stop":
                 break;
             default:
@@ -230,6 +250,48 @@ public class StreamJsonParser
             var toolName = _currentToolName ?? "Unknown";
             OnToolResult?.Invoke(toolName, toolUseId, resultContent);
         }
+    }
+
+    /// <summary>
+    /// Extracts per-call input token usage from a message_start streaming event.
+    /// Each API call in the agentic loop produces a message_start with the actual
+    /// input tokens for THAT call (= current conversation size).
+    /// We keep overwriting so _lastMsg* always reflects the most recent API call.
+    /// </summary>
+    private void HandleMessageStart(JsonElement evt)
+    {
+        // Structure: { "type": "message_start", "message": { "usage": { ... } } }
+        if (!evt.TryGetProperty("message", out var msg))
+            return;
+
+        if (!msg.TryGetProperty("usage", out var usage))
+            return;
+
+        if (usage.TryGetProperty("input_tokens", out var it))
+            _lastMsgInputTokens = it.GetInt32();
+        if (usage.TryGetProperty("cache_read_input_tokens", out var cr))
+            _lastMsgCacheReadTokens = cr.GetInt32();
+        if (usage.TryGetProperty("cache_creation_input_tokens", out var cc))
+            _lastMsgCacheCreationTokens = cc.GetInt32();
+
+        // Reset output — will be filled by message_delta
+        _lastMsgOutputTokens = 0;
+
+        DiagnosticLogger.Log("MESSAGE_START_USAGE",
+            $"input={_lastMsgInputTokens} cache_read={_lastMsgCacheReadTokens} cache_create={_lastMsgCacheCreationTokens}");
+    }
+
+    /// <summary>
+    /// Extracts output token count from a message_delta streaming event.
+    /// </summary>
+    private void HandleMessageDelta(JsonElement evt)
+    {
+        // Structure: { "type": "message_delta", "usage": { "output_tokens": N } }
+        if (!evt.TryGetProperty("usage", out var usage))
+            return;
+
+        if (usage.TryGetProperty("output_tokens", out var ot))
+            _lastMsgOutputTokens = ot.GetInt32();
     }
 
     private void HandleContentBlockStart(JsonElement root)
@@ -417,7 +479,15 @@ public class StreamJsonParser
 
         DiagnosticLogger.Log("RESULT_FINAL",
             $"model={model} input={inputTokens} output={outputTokens} window={contextWindow} session={sessionId}");
+        DiagnosticLogger.Log("RESULT_PER_CALL",
+            $"lastCall: input={_lastMsgInputTokens} cache_read={_lastMsgCacheReadTokens} " +
+            $"cache_create={_lastMsgCacheCreationTokens} output={_lastMsgOutputTokens}");
 
-        OnCompleted?.Invoke(new ResultData(sessionId, model, inputTokens, outputTokens, cacheRead, cacheCreation, contextWindow));
+        OnCompleted?.Invoke(new ResultData(
+            sessionId, model, inputTokens, outputTokens, cacheRead, cacheCreation, contextWindow,
+            _lastMsgInputTokens, _lastMsgCacheReadTokens, _lastMsgCacheCreationTokens, _lastMsgOutputTokens));
+
+        // Reset per-call counters for the next turn
+        ResetPerCallUsage();
     }
 }

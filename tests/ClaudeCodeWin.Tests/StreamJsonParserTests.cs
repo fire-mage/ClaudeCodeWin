@@ -222,4 +222,55 @@ public class StreamJsonParserTests
 
         Assert.Null(_parser.SessionId);
     }
+
+    [Fact]
+    public void MessageStart_ExtractsPerCallUsage_IntoResultData()
+    {
+        ResultData? result = null;
+        _parser.OnCompleted += r => result = r;
+
+        // Simulate message_start with per-call usage (first API call in the turn)
+        _parser.ProcessLine("""{"type":"stream_event","event":{"type":"message_start","message":{"usage":{"input_tokens":50,"cache_read_input_tokens":20000,"cache_creation_input_tokens":100}}}}""");
+
+        // Simulate a second message_start (next API call after tool use) — should overwrite
+        _parser.ProcessLine("""{"type":"stream_event","event":{"type":"message_start","message":{"usage":{"input_tokens":60,"cache_read_input_tokens":21000,"cache_creation_input_tokens":200}}}}""");
+
+        // message_delta with output tokens
+        _parser.ProcessLine("""{"type":"stream_event","event":{"type":"message_delta","usage":{"output_tokens":500}}}""");
+
+        // Result event with aggregated values (sum of both calls)
+        _parser.ProcessLine("""{"type":"result","session_id":"s1","usage":{"input_tokens":110,"output_tokens":900,"cache_read_input_tokens":41000,"cache_creation_input_tokens":300},"modelUsage":{"claude-sonnet":{"contextWindow":200000}}}""");
+
+        Assert.NotNull(result);
+
+        // Aggregated values (sum of all API calls)
+        Assert.Equal(110, result.InputTokens);
+        Assert.Equal(900, result.OutputTokens);
+        Assert.Equal(41000, result.CacheReadTokens);
+        Assert.Equal(300, result.CacheCreationTokens);
+
+        // Per-call values (from the LAST message_start/delta — second API call)
+        Assert.Equal(60, result.LastCallInputTokens);
+        Assert.Equal(21000, result.LastCallCacheReadTokens);
+        Assert.Equal(200, result.LastCallCacheCreationTokens);
+        Assert.Equal(500, result.LastCallOutputTokens);
+    }
+
+    [Fact]
+    public void MessageStart_NoUsage_PerCallFieldsStayZero()
+    {
+        ResultData? result = null;
+        _parser.OnCompleted += r => result = r;
+
+        // message_start without usage (older CLI version)
+        _parser.ProcessLine("""{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg1"}}}""");
+
+        _parser.ProcessLine("""{"type":"result","session_id":"s1","usage":{"input_tokens":10,"output_tokens":20},"modelUsage":{"claude-sonnet":{"contextWindow":200000}}}""");
+
+        Assert.NotNull(result);
+        Assert.Equal(0, result.LastCallInputTokens);
+        Assert.Equal(0, result.LastCallCacheReadTokens);
+        Assert.Equal(0, result.LastCallCacheCreationTokens);
+        Assert.Equal(0, result.LastCallOutputTokens);
+    }
 }

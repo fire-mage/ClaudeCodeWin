@@ -210,6 +210,7 @@ public partial class MainViewModel
             {
                 _currentAssistantMessage.IsStreaming = false;
                 _currentAssistantMessage.IsThinking = false;
+                _currentAssistantMessage.ExtractCompletionSummary();
             }
 
             _currentAssistantMessage = null;
@@ -222,21 +223,40 @@ public partial class MainViewModel
                 ModelName = result.Model;
 
             // Track context usage
-            // Total input = uncached + cache_read + cache_creation (all count toward context window)
             if (result.ContextWindow > 0)
                 _contextWindowSize = result.ContextWindow;
 
-            var totalInput = result.InputTokens + result.CacheReadTokens + result.CacheCreationTokens;
+            // Use per-call usage from the last message_start event (= actual current conversation size).
+            // Falls back to aggregated result.usage if message_start data is unavailable (all zeros).
+            var lastCallInput = result.LastCallInputTokens + result.LastCallCacheReadTokens + result.LastCallCacheCreationTokens;
+            var lastCallTotal = lastCallInput + result.LastCallOutputTokens;
+            var usePerCall = lastCallInput > 0;
+
+            // Aggregated total (for logging / fallback)
+            var aggInput = result.InputTokens + result.CacheReadTokens + result.CacheCreationTokens;
+            var aggTotal = aggInput + result.OutputTokens;
+
+            var totalTokens = usePerCall ? lastCallTotal : aggTotal;
+            var totalInput = usePerCall ? lastCallInput : aggInput;
+
             if (_contextWindowSize > 0 && totalInput > 0)
             {
-                var totalTokens = totalInput + result.OutputTokens;
                 var pct = (int)(totalTokens * 100.0 / _contextWindowSize);
+
+                // Safety: if still using aggregated fallback and pct > 100%, cap display
+                // (aggregated values can exceed context window due to multi-call turns)
+                if (!usePerCall && pct > 100)
+                    pct = Math.Min(pct, 99); // indicate near-full without misleading >100%
+
                 ContextUsageText = $"Ctx: {pct}%";
 
                 DiagnosticLogger.Log("CTX",
-                    $"input={result.InputTokens:N0} output={result.OutputTokens:N0} " +
-                    $"cache_read={result.CacheReadTokens:N0} cache_create={result.CacheCreationTokens:N0} " +
-                    $"total_input={totalInput:N0} window={_contextWindowSize:N0} pct={pct}%");
+                    $"source={( usePerCall ? "per-call" : "aggregated" )} " +
+                    $"perCall: input={result.LastCallInputTokens:N0} cache_read={result.LastCallCacheReadTokens:N0} " +
+                    $"cache_create={result.LastCallCacheCreationTokens:N0} output={result.LastCallOutputTokens:N0} " +
+                    $"agg: input={result.InputTokens:N0} cache_read={result.CacheReadTokens:N0} " +
+                    $"cache_create={result.CacheCreationTokens:N0} output={result.OutputTokens:N0} " +
+                    $"used={totalTokens:N0} window={_contextWindowSize:N0} pct={pct}%");
 
                 // Compaction detection: significant Ctx% drop (>20pp) between turns
                 if (_previousCtxPercent > 0 && _previousCtxPercent - pct > 20)
@@ -292,18 +312,16 @@ public partial class MainViewModel
         });
     }
 
-    private static readonly string[] CompletionMarkers =
-    [
-        "готово", "done", "terminé", "fertig", "listo", "pronto",
-        "выводы", "результат", "completed", "finished", "完了", "完成"
-    ];
-
     private bool DetectCompletionMarker()
     {
         // Find the last assistant message
         for (var i = Messages.Count - 1; i >= 0; i--)
         {
             if (Messages[i].Role != MessageRole.Assistant) continue;
+
+            // If summary was already extracted, it contains the marker
+            if (Messages[i].HasCompletionSummary)
+                return true;
 
             var text = Messages[i].Text;
             if (string.IsNullOrEmpty(text)) continue;
@@ -312,7 +330,7 @@ public partial class MainViewModel
             var tail = text.Length > 500 ? text[^500..] : text;
             var lower = tail.ToLowerInvariant();
 
-            foreach (var marker in CompletionMarkers)
+            foreach (var marker in MessageViewModel.CompletionMarkers)
             {
                 if (lower.Contains(marker))
                     return true;
@@ -364,7 +382,10 @@ public partial class MainViewModel
         foreach (var s in suggestions)
             SuggestedTasks.Add(s);
 
+        HasCompletedTask = true;
+        ShowFinalizeActionsLabel = false;
         ShowTaskSuggestion = true;
+        StartAutoCollapseTimer();
     }
 
     private void HandleFileChanged(string filePath)
