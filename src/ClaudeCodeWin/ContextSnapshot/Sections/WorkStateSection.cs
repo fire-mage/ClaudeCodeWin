@@ -1,19 +1,13 @@
 using System.IO;
 using System.Text.Json;
 using ClaudeCodeWin.ContextSnapshot.Models;
+using ClaudeCodeWin.Infrastructure;
 
 namespace ClaudeCodeWin.ContextSnapshot.Sections;
 
 public class WorkStateSection : ISnapshotSection
 {
     private readonly string _stateFilePath;
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true
-    };
 
     public string Title => "Work State";
 
@@ -36,7 +30,7 @@ public class WorkStateSection : ISnapshotSection
         try
         {
             var json = File.ReadAllText(fullPath);
-            var state = JsonSerializer.Deserialize<WorkState>(json, JsonOptions);
+            var state = JsonSerializer.Deserialize<WorkState>(json, JsonDefaults.ReadOptions);
             if (state == null)
             {
                 md.Line("*State file is empty.*");

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Windows;
+using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 using ClaudeCodeWin.Services;
 
@@ -42,10 +43,9 @@ public partial class MainViewModel
         // Don't auto-register parent directories of the current working directory
         if (!string.IsNullOrEmpty(WorkingDirectory))
         {
-            var currentDir = Path.GetFullPath(WorkingDirectory).TrimEnd('\\', '/') + "\\";
-            var detectedDir = Path.GetFullPath(projectRoot).TrimEnd('\\', '/') + "\\";
-            if (currentDir.StartsWith(detectedDir, StringComparison.OrdinalIgnoreCase)
-                && !currentDir.Equals(detectedDir, StringComparison.OrdinalIgnoreCase))
+            var currentDir = Path.GetFullPath(WorkingDirectory);
+            var detectedDir = Path.GetFullPath(projectRoot);
+            if (currentDir.IsSubPathOf(detectedDir))
                 return;
         }
 
@@ -133,7 +133,7 @@ public partial class MainViewModel
 
     public void AddTaskOutput(string taskName, string output)
     {
-        Application.Current.Dispatcher.InvokeAsync(() =>
+        RunOnUI(() =>
         {
             var msg = new MessageViewModel(MessageRole.System, $"Task \"{taskName}\" completed")
             {

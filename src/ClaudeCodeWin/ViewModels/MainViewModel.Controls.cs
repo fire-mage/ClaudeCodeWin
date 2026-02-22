@@ -10,7 +10,7 @@ public partial class MainViewModel
 {
     private void HandleControlRequest(string requestId, string toolName, string toolUseId, JsonElement input)
     {
-        Application.Current.Dispatcher.InvokeAsync(() =>
+        RunOnUI(() =>
         {
             if (toolName == "ExitPlanMode")
             {

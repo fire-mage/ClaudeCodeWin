@@ -77,7 +77,7 @@
                           ToolTip="Shell commands: run predefined terminal commands in your project folder.&#x0a;Output appears in a separate window. Customize via tasks.json.&#x0a;Example: 'Git Status' runs 'git status' and displays the result."/>
                 <MenuItem Header="_App"
                           ToolTip="Updates and application information">
-                    <MenuItem Header="Check for _Updates..." Command="{Binding CheckForUpdatesCommand}"
+                    <MenuItem Header="Check for _Updates..." Command="{Binding Update.CheckForUpdatesCommand}"
                               ToolTip="Check if a newer version is available on the update server.&#x0a;If found, download and install with one click. Also checks automatically every 4 hours."/>
                     <MenuItem Header="_Settings..." Click="MenuItem_Settings_Click"
                               ToolTip="Application settings: update channel, preferences."/>
@@ -710,7 +710,7 @@
                 VerticalAlignment="Bottom"
                 Margin="0,0,24,12"
                 Panel.ZIndex="15"
-                Visibility="{Binding ShowTaskSuggestion, Converter={StaticResource BoolToVis}}"
+                Visibility="{Binding FinalizeActions.ShowTaskSuggestion, Converter={StaticResource BoolToVis}}"
                 MaxWidth="320"
                 RenderTransformOrigin="1,1">
             <Border.RenderTransform>
@@ -738,14 +738,14 @@
                                    Foreground="{StaticResource WarningBrush}"
                                    VerticalAlignment="Center"/>
                         <TextBlock Grid.Column="1"
-                                   Text="{Binding FinalizeCountdown, StringFormat={}{0}s}"
+                                   Text="{Binding FinalizeActions.FinalizeCountdown, StringFormat={}{0}s}"
                                    FontSize="11"
                                    Foreground="{StaticResource TextSecondaryBrush}"
                                    VerticalAlignment="Center"
                                    Margin="8,0,4,0"/>
                         <Button Grid.Column="2"
                                 Content="&#x2715;"
-                                Command="{Binding CloseFinalizePopupCommand}"
+                                Command="{Binding FinalizeActions.CloseFinalizePopupCommand}"
                                 Background="Transparent"
                                 Foreground="{StaticResource TextSecondaryBrush}"
                                 BorderThickness="0"
@@ -756,10 +756,10 @@
                     </Grid>
 
                     <!-- Dynamic action buttons -->
-                    <ItemsControl ItemsSource="{Binding SuggestedTasks}">
+                    <ItemsControl ItemsSource="{Binding FinalizeActions.SuggestedTasks}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Button Command="{Binding DataContext.RunSuggestedTaskCommand,
+                                <Button Command="{Binding DataContext.FinalizeActions.RunSuggestedTaskCommand,
                                             RelativeSource={RelativeSource AncestorType=Window}}"
                                         CommandParameter="{Binding}"
                                         HorizontalAlignment="Stretch"
@@ -800,7 +800,7 @@
                             HorizontalAlignment="Right" Margin="0,6,0,0">
                         <Border.InputBindings>
                             <MouseBinding MouseAction="LeftClick"
-                                          Command="{Binding DontSuggestForProjectCommand}"/>
+                                          Command="{Binding FinalizeActions.DontSuggestForProjectCommand}"/>
                         </Border.InputBindings>
                         <TextBlock Text="Don't suggest for this project"
                                    FontSize="10.5"
@@ -1046,7 +1046,7 @@
                 <TextBox x:Name="InputTextBox"
                          Style="{StaticResource InputTextBox}"
                          Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
-                         IsEnabled="{Binding IsUpdating, Converter={StaticResource InverseBool}}"
+                         IsEnabled="{Binding Update.IsUpdating, Converter={StaticResource InverseBool}}"
                          MaxHeight="200"
                          MinHeight="40"
                          VerticalAlignment="Stretch"/>
@@ -1082,7 +1082,7 @@
                            FontWeight="SemiBold"
                            Margin="12,10,0,0"
                            VerticalAlignment="Top"
-                           Visibility="{Binding IsUpdating, Converter={StaticResource BoolToVis}}"/>
+                           Visibility="{Binding Update.IsUpdating, Converter={StaticResource BoolToVis}}"/>
 
                 <!-- Autocomplete popup -->
                 <Popup x:Name="AutocompletePopup"
@@ -1140,7 +1140,7 @@
                 <!-- Finalize Actions collapsed label (above Send) -->
                 <Border Cursor="Hand" Background="Transparent"
                         Margin="0,0,0,4"
-                        Visibility="{Binding ShowFinalizeActionsLabel, Converter={StaticResource BoolToVis}}"
+                        Visibility="{Binding FinalizeActions.ShowFinalizeActionsLabel, Converter={StaticResource BoolToVis}}"
                         MouseLeftButtonUp="FinalizeActions_Click">
                     <TextBlock x:Name="FinalizeLabelText"
                                Text="&#x26A1; Finalize Actions &#x25B2;" FontSize="11"
@@ -1160,7 +1160,7 @@
                 <Button Content="Send"
                         Style="{StaticResource PrimaryButton}"
                         Command="{Binding SendCommand}"
-                        IsEnabled="{Binding IsUpdating, Converter={StaticResource InverseBool}}"
+                        IsEnabled="{Binding Update.IsUpdating, Converter={StaticResource InverseBool}}"
                         Margin="0,0,0,4"/>
             </StackPanel>
         </Grid>
@@ -1321,7 +1321,7 @@
         <Border Grid.Row="0" Grid.RowSpan="8"
                 Background="#DD1e1e2e"
                 Panel.ZIndex="101"
-                Visibility="{Binding ShowUpdateOverlay, Converter={StaticResource BoolToVis}}">
+                Visibility="{Binding Update.ShowUpdateOverlay, Converter={StaticResource BoolToVis}}">
             <Border HorizontalAlignment="Center" VerticalAlignment="Center"
                     Background="{StaticResource SurfaceBrush}"
                     CornerRadius="12" Padding="32"
@@ -1337,10 +1337,10 @@
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding UpdateDownloading}" Value="True">
+                                    <DataTrigger Binding="{Binding Update.UpdateDownloading}" Value="True">
                                         <Setter Property="Text" Value="Updating..."/>
                                     </DataTrigger>
-                                    <DataTrigger Binding="{Binding UpdateFailed}" Value="True">
+                                    <DataTrigger Binding="{Binding Update.UpdateFailed}" Value="True">
                                         <Setter Property="Text" Value="Update Failed"/>
                                         <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
                                     </DataTrigger>
@@ -1350,7 +1350,7 @@
                     </TextBlock>
 
                     <!-- Version transition -->
-                    <TextBlock Text="{Binding UpdateTitle}"
+                    <TextBlock Text="{Binding Update.UpdateTitle}"
                                FontSize="14"
                                Foreground="{StaticResource TextBrush}"
                                Margin="0,0,0,10"/>
@@ -1361,9 +1361,9 @@
                             BorderThickness="1" Padding="10"
                             MaxHeight="160"
                             Margin="0,0,0,14"
-                            Visibility="{Binding UpdateReleaseNotes, Converter={StaticResource BoolToVis}}">
+                            Visibility="{Binding Update.UpdateReleaseNotes, Converter={StaticResource BoolToVis}}">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <TextBlock Text="{Binding UpdateReleaseNotes}"
+                            <TextBlock Text="{Binding Update.UpdateReleaseNotes}"
                                        FontSize="12"
                                        Foreground="{StaticResource TextSecondaryBrush}"
                                        TextWrapping="Wrap"/>
@@ -1372,13 +1372,13 @@
 
                     <!-- Progress bar (visible during download) -->
                     <ProgressBar Minimum="0" Maximum="100"
-                                 Value="{Binding UpdateProgressPercent, Mode=OneWay}"
+                                 Value="{Binding Update.UpdateProgressPercent, Mode=OneWay}"
                                  Height="8"
                                  Margin="0,0,0,12"
                                  Foreground="{StaticResource PrimaryBrush}"
                                  Background="{StaticResource BackgroundBrush}"
                                  BorderThickness="0"
-                                 Visibility="{Binding UpdateDownloading, Converter={StaticResource BoolToVis}}"/>
+                                 Visibility="{Binding Update.UpdateDownloading, Converter={StaticResource BoolToVis}}"/>
 
                     <!-- Status indicator -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
@@ -1388,7 +1388,7 @@
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding UpdateDownloading}" Value="True">
+                                        <DataTrigger Binding="{Binding Update.UpdateDownloading}" Value="True">
                                             <DataTrigger.EnterActions>
                                                 <BeginStoryboard x:Name="UpdatePulse">
                                                     <Storyboard RepeatBehavior="Forever">
@@ -1403,7 +1403,7 @@
                                                 <StopStoryboard BeginStoryboardName="UpdatePulse"/>
                                             </DataTrigger.ExitActions>
                                         </DataTrigger>
-                                        <DataTrigger Binding="{Binding UpdateFailed}" Value="True">
+                                        <DataTrigger Binding="{Binding Update.UpdateFailed}" Value="True">
                                             <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
                                             <Setter Property="Opacity" Value="1.0"/>
                                         </DataTrigger>
@@ -1411,7 +1411,7 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                        <TextBlock Text="{Binding UpdateStatusText}"
+                        <TextBlock Text="{Binding Update.UpdateStatusText}"
                                    FontSize="13"
                                    Foreground="{StaticResource TextBrush}"
                                    VerticalAlignment="Center"
@@ -1424,18 +1424,18 @@
                                Foreground="#FFE0A0"
                                HorizontalAlignment="Center"
                                Margin="0,0,0,12"
-                               Visibility="{Binding UpdateDownloading, Converter={StaticResource BoolToVis}}"/>
+                               Visibility="{Binding Update.UpdateDownloading, Converter={StaticResource BoolToVis}}"/>
 
                     <!-- Buttons: Install / Later (before download starts) -->
                     <StackPanel Orientation="Horizontal"
                                 HorizontalAlignment="Center"
                                 Margin="0,4,0,0"
-                                Visibility="{Binding UpdateDownloading, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
+                                Visibility="{Binding Update.UpdateDownloading, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
                         <!-- Hide buttons when failed too -->
                         <StackPanel.Style>
                             <Style TargetType="StackPanel">
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding UpdateFailed}" Value="True">
+                                    <DataTrigger Binding="{Binding Update.UpdateFailed}" Value="True">
                                         <Setter Property="Visibility" Value="Collapsed"/>
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -1516,7 +1516,7 @@
                             HorizontalAlignment="Center"
                             Margin="0,4,0,0"
                             Click="UpdateClose_Click"
-                            Visibility="{Binding UpdateFailed, Converter={StaticResource BoolToVis}}">
+                            Visibility="{Binding Update.UpdateFailed, Converter={StaticResource BoolToVis}}">
                         <Button.Style>
                             <Style TargetType="Button">
                                 <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
@@ -1558,7 +1558,7 @@
         <Border Grid.Row="0" Grid.RowSpan="8"
                 Background="#DD1e1e2e"
                 Panel.ZIndex="100"
-                Visibility="{Binding ShowDependencyOverlay, Converter={StaticResource BoolToVis}}">
+                Visibility="{Binding DependencySetup.ShowDependencyOverlay, Converter={StaticResource BoolToVis}}">
             <Border HorizontalAlignment="Center" VerticalAlignment="Center"
                     Background="{StaticResource SurfaceBrush}"
                     CornerRadius="12" Padding="32"
@@ -1567,19 +1567,19 @@
                     BorderThickness="1">
                 <StackPanel>
                     <!-- Step counter -->
-                    <TextBlock Text="{Binding DependencyStep}"
+                    <TextBlock Text="{Binding DependencySetup.DependencyStep}"
                                FontSize="11" FontWeight="SemiBold"
                                Foreground="{StaticResource TextSecondaryBrush}"
                                Margin="0,0,0,4"/>
 
                     <!-- Title -->
-                    <TextBlock Text="{Binding DependencyTitle}"
+                    <TextBlock Text="{Binding DependencySetup.DependencyTitle}"
                                FontSize="18" FontWeight="Bold"
                                Foreground="{StaticResource PrimaryBrush}"
                                Margin="0,0,0,6"/>
 
                     <!-- Subtitle / description -->
-                    <TextBlock Text="{Binding DependencySubtitle}"
+                    <TextBlock Text="{Binding DependencySetup.DependencySubtitle}"
                                FontSize="12"
                                Foreground="{StaticResource TextSecondaryBrush}"
                                TextWrapping="Wrap"
@@ -1593,7 +1593,7 @@
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ShowDependencyOverlay}" Value="True">
+                                        <DataTrigger Binding="{Binding DependencySetup.ShowDependencyOverlay}" Value="True">
                                             <DataTrigger.EnterActions>
                                                 <BeginStoryboard x:Name="DepPulse">
                                                     <Storyboard RepeatBehavior="Forever">
@@ -1608,7 +1608,7 @@
                                                 <StopStoryboard BeginStoryboardName="DepPulse"/>
                                             </DataTrigger.ExitActions>
                                         </DataTrigger>
-                                        <DataTrigger Binding="{Binding DependencyFailed}" Value="True">
+                                        <DataTrigger Binding="{Binding DependencySetup.DependencyFailed}" Value="True">
                                             <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
                                             <Setter Property="Opacity" Value="1.0"/>
                                         </DataTrigger>
@@ -1616,7 +1616,7 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                        <TextBlock Text="{Binding DependencyStatus}"
+                        <TextBlock Text="{Binding DependencySetup.DependencyStatus}"
                                    FontSize="13"
                                    Foreground="{StaticResource TextBrush}"
                                    VerticalAlignment="Center"/>
@@ -1629,7 +1629,7 @@
                             Height="200">
                         <ScrollViewer x:Name="DepLogScroller" VerticalScrollBarVisibility="Auto">
                             <TextBlock x:Name="DepLogText"
-                                       Text="{Binding DependencyLog}"
+                                       Text="{Binding DependencySetup.DependencyLog}"
                                        FontFamily="Cascadia Code,Consolas,Courier New"
                                        FontSize="11"
                                        Foreground="{StaticResource TextSecondaryBrush}"
@@ -1646,7 +1646,7 @@
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding DependencyFailed}" Value="True">
+                                    <DataTrigger Binding="{Binding DependencySetup.DependencyFailed}" Value="True">
                                         <Setter Property="Visibility" Value="Collapsed"/>
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -1660,7 +1660,7 @@
                             HorizontalAlignment="Center"
                             Margin="0,16,0,0"
                             Click="DepCloseButton_Click"
-                            Visibility="{Binding DependencyFailed, Converter={StaticResource BoolToVis}}">
+                            Visibility="{Binding DependencySetup.DependencyFailed, Converter={StaticResource BoolToVis}}">
                         <Button.Style>
                             <Style TargetType="Button">
                                 <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>

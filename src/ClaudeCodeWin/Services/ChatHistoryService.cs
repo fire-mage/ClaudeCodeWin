@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 
 namespace ClaudeCodeWin.Services;
@@ -10,12 +11,6 @@ public class ChatHistoryService
     private static readonly string HistoryDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "ClaudeCodeWin", "history");
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
 
     public ChatHistoryService()
     {
@@ -47,7 +42,7 @@ public class ChatHistoryService
             try
             {
                 var json = File.ReadAllText(file);
-                var entry = JsonSerializer.Deserialize<ChatHistoryEntry>(json, JsonOptions);
+                var entry = JsonSerializer.Deserialize<ChatHistoryEntry>(json, JsonDefaults.Options);
                 if (entry is null) continue;
 
                 if (processedIds.Contains(entry.Id))
@@ -81,7 +76,7 @@ public class ChatHistoryService
         try
         {
             var json = File.ReadAllText(jsonPath);
-            return JsonSerializer.Deserialize<ChatHistoryEntry>(json, JsonOptions);
+            return JsonSerializer.Deserialize<ChatHistoryEntry>(json, JsonDefaults.Options);
         }
         catch { return null; }
     }
@@ -105,7 +100,7 @@ public class ChatHistoryService
 
     private static void SaveToDat(ChatHistoryEntry entry)
     {
-        var json = JsonSerializer.Serialize(entry, JsonOptions);
+        var json = JsonSerializer.Serialize(entry, JsonDefaults.Options);
         var jsonBytes = Encoding.UTF8.GetBytes(json);
         var protectedBytes = SettingsService.DpapiProtect(jsonBytes);
         var path = Path.Combine(HistoryDir, $"{entry.Id}.dat");
@@ -120,7 +115,7 @@ public class ChatHistoryService
             var jsonBytes = SettingsService.DpapiUnprotect(protectedBytes);
             if (jsonBytes.Length == 0) return null;
             var json = Encoding.UTF8.GetString(jsonBytes);
-            return JsonSerializer.Deserialize<ChatHistoryEntry>(json, JsonOptions);
+            return JsonSerializer.Deserialize<ChatHistoryEntry>(json, JsonDefaults.Options);
         }
         catch { return null; }
     }

@@ -1,6 +1,5 @@
 using System.Collections.Specialized;
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -46,12 +45,12 @@ public partial class MainWindow : Window
         UpdateSwitchProjectMenuHeader();
 
         // Finalize Actions: blink animation + collapse animation
-        viewModel.PropertyChanged += (_, e) =>
+        viewModel.FinalizeActions.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(MainViewModel.FinalizeLabelBlinking) && viewModel.FinalizeLabelBlinking)
+            if (e.PropertyName == nameof(FinalizeActionsViewModel.FinalizeLabelBlinking) && viewModel.FinalizeActions.FinalizeLabelBlinking)
                 Dispatcher.BeginInvoke(StartFinalizeLabelBlink);
         };
-        viewModel.OnFinalizeCollapse = () => Dispatcher.BeginInvoke(AnimateFinalizeCollapse);
+        viewModel.FinalizeActions.OnFinalizeCollapse = () => Dispatcher.BeginInvoke(AnimateFinalizeCollapse);
 
         // Set window icon from embedded resource
         try
@@ -183,17 +182,17 @@ public partial class MainWindow : Window
 
     private void UpdateInstall_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.StartUpdate();
+        ViewModel.Update.StartUpdate();
     }
 
     private void UpdateLater_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.DismissUpdate();
+        ViewModel.Update.DismissUpdate();
     }
 
     private void UpdateClose_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.DismissUpdate();
+        ViewModel.Update.DismissUpdate();
     }
 
     public void ScrollDependencyLog()
@@ -626,27 +625,8 @@ public partial class MainWindow : Window
 
     private void UpdateSwitchProjectMenuHeader()
     {
-        var count = GetFilteredProjectCount();
+        var count = _projectRegistry.GetFilteredProjects(50).Count;
         SwitchProjectMenu.Header = count > 0 ? $"Switch _Project ({count})" : "Switch _Project";
-    }
-
-    private int GetFilteredProjectCount()
-    {
-        var projects = _projectRegistry.GetMostRecentProjects(50);
-
-        // Apply same nesting filter as ProjectSwitchDialog
-        var sorted = projects.OrderBy(p => p.Path.Length).ToList();
-        var roots = new List<ProjectInfo>();
-        foreach (var p in sorted)
-        {
-            var normalizedPath = p.Path.TrimEnd('\\', '/') + "\\";
-            var isNested = roots.Any(r =>
-                normalizedPath.StartsWith(r.Path.TrimEnd('\\', '/') + "\\", StringComparison.OrdinalIgnoreCase));
-            if (!isNested)
-                roots.Add(p);
-        }
-
-        return roots.Count;
     }
 
     private void MenuItem_SwitchProject_Click(object sender, RoutedEventArgs e)
@@ -683,8 +663,8 @@ public partial class MainWindow : Window
 
     private void FinalizeActions_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (ViewModel.OpenFinalizeActionsCommand.CanExecute(null))
-            ViewModel.OpenFinalizeActionsCommand.Execute(null);
+        if (ViewModel.FinalizeActions.OpenFinalizeActionsCommand.CanExecute(null))
+            ViewModel.FinalizeActions.OpenFinalizeActionsCommand.Execute(null);
         e.Handled = true;
     }
 
@@ -716,7 +696,7 @@ public partial class MainWindow : Window
             scaleTransform.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, null);
             scaleTransform.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleYProperty, null);
 
-            ViewModel.ShowTaskSuggestion = false;
+            ViewModel.FinalizeActions.ShowTaskSuggestion = false;
             FinalizePopupBorder.Opacity = 1;
             scaleTransform.ScaleX = 1;
             scaleTransform.ScaleY = 1;
@@ -796,109 +776,6 @@ public partial class MainWindow : Window
 
     private void MenuItem_About_Click(object sender, RoutedEventArgs e)
     {
-        var infoVersion = typeof(MainWindow).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion ?? "unknown";
-
-        var parts = infoVersion.Split('+');
-        var version = parts[0];
-        var buildHash = parts.Length > 1 ? parts[1][..Math.Min(7, parts[1].Length)] : "";
-
-        var exePath = Environment.ProcessPath ?? "";
-        var buildDate = !string.IsNullOrEmpty(exePath) && File.Exists(exePath)
-            ? File.GetLastWriteTime(exePath).ToString("yyyy-MM-dd")
-            : "unknown";
-
-        const string email = "claudecodewin.support@main.fish";
-
-        var aboutWindow = new Window
-        {
-            Title = "About ClaudeCodeWin",
-            Width = 420,
-            Height = 280,
-            ResizeMode = ResizeMode.NoResize,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = this,
-            Background = (Brush)FindResource("BackgroundBrush"),
-        };
-
-        var stack = new StackPanel { Margin = new Thickness(28, 24, 28, 24) };
-
-        stack.Children.Add(new TextBlock
-        {
-            Text = $"ClaudeCodeWin v{version}",
-            FontSize = 20,
-            FontWeight = FontWeights.Bold,
-            Foreground = (Brush)FindResource("PrimaryBrush")
-        });
-
-        stack.Children.Add(new TextBlock
-        {
-            Text = "WPF GUI for Claude Code CLI",
-            Margin = new Thickness(0, 4, 0, 0),
-            Foreground = (Brush)FindResource("TextSecondaryBrush")
-        });
-
-        var buildText = $"Built: {buildDate}";
-        if (!string.IsNullOrEmpty(buildHash))
-            buildText += $"  |  Build: {buildHash}";
-
-        stack.Children.Add(new TextBlock
-        {
-            Text = buildText,
-            Margin = new Thickness(0, 16, 0, 0),
-            FontSize = 12,
-            Foreground = (Brush)FindResource("TextSecondaryBrush")
-        });
-
-        // Email row with subtle copy button
-        var emailPanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 16, 0, 0)
-        };
-
-        emailPanel.Children.Add(new TextBlock
-        {
-            Text = $"Support: {email}",
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 13
-        });
-
-        var copyButton = new Button
-        {
-            Content = "Copy",
-            Margin = new Thickness(8, 0, 0, 0),
-            Padding = new Thickness(8, 2, 8, 2),
-            FontSize = 10,
-            Cursor = Cursors.Hand,
-            Background = Brushes.Transparent,
-            Foreground = (Brush)FindResource("TextSecondaryBrush"),
-            BorderBrush = (Brush)FindResource("BorderBrush"),
-            BorderThickness = new Thickness(1),
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        copyButton.Click += (_, _) =>
-        {
-            Clipboard.SetText(email);
-            copyButton.Content = "Copied!";
-        };
-        emailPanel.Children.Add(copyButton);
-        stack.Children.Add(emailPanel);
-
-        // Close button — prominent, primary style
-        var closeButton = new Button
-        {
-            Content = "Close",
-            Margin = new Thickness(0, 24, 0, 0),
-            Padding = new Thickness(32, 8, 32, 8),
-            Style = (Style)FindResource("PrimaryButton"),
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-        closeButton.Click += (_, _) => aboutWindow.Close();
-        stack.Children.Add(closeButton);
-
-        aboutWindow.Content = stack;
-        aboutWindow.ShowDialog();
+        new AboutWindow { Owner = this }.ShowDialog();
     }
 }

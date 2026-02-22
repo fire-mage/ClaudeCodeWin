@@ -2,6 +2,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 
 namespace ClaudeCodeWin.Services;
@@ -14,12 +15,6 @@ public class SettingsService
 
     private static readonly string SettingsPath = Path.Combine(SettingsDir, "settings.json");
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
     public AppSettings Load()
     {
         if (!File.Exists(SettingsPath))
@@ -28,7 +23,7 @@ public class SettingsService
         try
         {
             var json = File.ReadAllText(SettingsPath);
-            var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonDefaults.Options) ?? new AppSettings();
 
             // Auto-migrate plaintext password to DPAPI-protected
             if (!string.IsNullOrEmpty(settings.SshMasterPassword))
@@ -49,7 +44,7 @@ public class SettingsService
     public void Save(AppSettings settings)
     {
         Directory.CreateDirectory(SettingsDir);
-        var json = JsonSerializer.Serialize(settings, JsonOptions);
+        var json = JsonSerializer.Serialize(settings, JsonDefaults.Options);
         File.WriteAllText(SettingsPath, json);
     }
 

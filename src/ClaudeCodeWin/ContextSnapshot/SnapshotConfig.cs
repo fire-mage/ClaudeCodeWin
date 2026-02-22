@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using ClaudeCodeWin.Infrastructure;
 
 namespace ClaudeCodeWin.ContextSnapshot;
 
@@ -23,13 +24,6 @@ public class ProjectConfig
 
 public static class ConfigLoader
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true
-    };
-
     public static SnapshotConfig? Load(string configPath)
     {
         if (!File.Exists(configPath))
@@ -38,7 +32,7 @@ public static class ConfigLoader
         try
         {
             var json = File.ReadAllText(configPath);
-            var config = JsonSerializer.Deserialize<SnapshotConfig>(json, JsonOptions);
+            var config = JsonSerializer.Deserialize<SnapshotConfig>(json, JsonDefaults.ReadOptions);
             if (config == null || config.Projects.Count == 0)
                 return null;
 

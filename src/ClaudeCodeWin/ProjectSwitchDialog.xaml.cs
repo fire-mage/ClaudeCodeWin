@@ -13,36 +13,7 @@ public partial class ProjectSwitchDialog : Window
     {
         InitializeComponent();
 
-        var projects = LoadFilteredProjects(projectRegistry, currentWorkingDirectory, 50);
-        ProjectList.ItemsSource = projects;
-    }
-
-    private static List<ProjectInfo> LoadFilteredProjects(
-        ProjectRegistryService registry, string? currentDir, int maxCount)
-    {
-        var projects = registry.GetMostRecentProjects(maxCount);
-
-        // Filter out nested sub-projects (keep topmost roots)
-        var sorted = projects.OrderBy(p => p.Path.Length).ToList();
-        var roots = new List<ProjectInfo>();
-        foreach (var p in sorted)
-        {
-            var normalizedPath = p.Path.TrimEnd('\\', '/') + "\\";
-            var isNested = roots.Any(r =>
-                normalizedPath.StartsWith(r.Path.TrimEnd('\\', '/') + "\\", StringComparison.OrdinalIgnoreCase));
-            if (!isNested)
-                roots.Add(p);
-        }
-
-        var filtered = roots.OrderByDescending(p => p.LastOpened).ToList();
-
-        // Mark the current project
-        var current = currentDir?.TrimEnd('\\', '/');
-        foreach (var p in filtered)
-            p.IsCurrent = !string.IsNullOrEmpty(current)
-                && string.Equals(p.Path.TrimEnd('\\', '/'), current, StringComparison.OrdinalIgnoreCase);
-
-        return filtered;
+        ProjectList.ItemsSource = projectRegistry.GetFilteredProjects(50, currentWorkingDirectory);
     }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)

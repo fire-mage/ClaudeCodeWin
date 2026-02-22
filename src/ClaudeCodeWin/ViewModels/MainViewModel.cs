@@ -55,7 +55,6 @@ public partial class MainViewModel : ViewModelBase
     private readonly SettingsService _settingsService;
     private readonly AppSettings _settings;
     private readonly GitService _gitService;
-    private readonly UpdateService _updateService;
     private readonly FileIndexService _fileIndexService;
     private readonly ChatHistoryService _chatHistoryService;
     private readonly ProjectRegistryService _projectRegistry;
@@ -63,8 +62,6 @@ public partial class MainViewModel : ViewModelBase
     private readonly UsageService _usageService;
     private TaskRunnerService? _taskRunnerService;
     private Window? _ownerWindow;
-    private VersionInfo? _pendingUpdate;
-    private string? _downloadedUpdatePath;
 
     private string _inputText = string.Empty;
     private bool _isProcessing;
@@ -90,21 +87,6 @@ public partial class MainViewModel : ViewModelBase
     private string? _currentChatId;
     private string _ctaText = "";
     private CtaState _ctaState = CtaState.Welcome;
-    private bool _isUpdating;
-    private bool _showUpdateOverlay;
-    private string _updateTitle = "";
-    private string _updateStatusText = "";
-    private int _updateProgressPercent;
-    private bool _updateFailed;
-    private bool _updateDownloading;
-    private string _updateReleaseNotes = "";
-    private bool _showDependencyOverlay;
-    private string _dependencyTitle = "";
-    private string _dependencySubtitle = "";
-    private string _dependencyStep = "";
-    private string _dependencyStatus = "Preparing...";
-    private string _dependencyLog = "";
-    private bool _dependencyFailed;
     private int _contextWindowSize;
     private bool _contextWarningShown;
     private int _previousInputTokens;
@@ -112,16 +94,6 @@ public partial class MainViewModel : ViewModelBase
     private string _todoProgressText = "";
     private bool _showRateLimitBanner;
     private string _rateLimitCountdown = "";
-    private bool _showTaskSuggestion;
-    private bool _showFinalizeActionsLabel;
-    private bool _hasCompletedTask;
-    private bool _finalizeLabelBlinking;
-    private int _finalizeCountdown;
-    private System.Windows.Threading.DispatcherTimer? _taskSuggestionTimer;
-    private System.Windows.Threading.DispatcherTimer? _blinkTimer;
-
-    /// <summary>Set by View to animate popup collapse instead of instant hide.</summary>
-    public Action? OnFinalizeCollapse { get; set; }
 
     // Track project roots already registered this session (avoid re-registering)
     private readonly HashSet<string> _registeredProjectRoots =
@@ -155,95 +127,8 @@ public partial class MainViewModel : ViewModelBase
         set => SetProperty(ref _isProcessing, value);
     }
 
-    public bool IsUpdating
-    {
-        get => _isUpdating;
-        set => SetProperty(ref _isUpdating, value);
-    }
-
-    public bool ShowUpdateOverlay
-    {
-        get => _showUpdateOverlay;
-        set => SetProperty(ref _showUpdateOverlay, value);
-    }
-
-    public string UpdateTitle
-    {
-        get => _updateTitle;
-        set => SetProperty(ref _updateTitle, value);
-    }
-
-    public string UpdateStatusText
-    {
-        get => _updateStatusText;
-        set => SetProperty(ref _updateStatusText, value);
-    }
-
-    public int UpdateProgressPercent
-    {
-        get => _updateProgressPercent;
-        set => SetProperty(ref _updateProgressPercent, value);
-    }
-
-    public bool UpdateFailed
-    {
-        get => _updateFailed;
-        set => SetProperty(ref _updateFailed, value);
-    }
-
-    public bool UpdateDownloading
-    {
-        get => _updateDownloading;
-        set => SetProperty(ref _updateDownloading, value);
-    }
-
-    public string UpdateReleaseNotes
-    {
-        get => _updateReleaseNotes;
-        set => SetProperty(ref _updateReleaseNotes, value);
-    }
-
-    public bool ShowDependencyOverlay
-    {
-        get => _showDependencyOverlay;
-        set => SetProperty(ref _showDependencyOverlay, value);
-    }
-
-    public string DependencyTitle
-    {
-        get => _dependencyTitle;
-        set => SetProperty(ref _dependencyTitle, value);
-    }
-
-    public string DependencySubtitle
-    {
-        get => _dependencySubtitle;
-        set => SetProperty(ref _dependencySubtitle, value);
-    }
-
-    public string DependencyStep
-    {
-        get => _dependencyStep;
-        set => SetProperty(ref _dependencyStep, value);
-    }
-
-    public string DependencyStatus
-    {
-        get => _dependencyStatus;
-        set => SetProperty(ref _dependencyStatus, value);
-    }
-
-    public string DependencyLog
-    {
-        get => _dependencyLog;
-        set => SetProperty(ref _dependencyLog, value);
-    }
-
-    public bool DependencyFailed
-    {
-        get => _dependencyFailed;
-        set => SetProperty(ref _dependencyFailed, value);
-    }
+    public UpdateViewModel Update { get; }
+    public DependencySetupViewModel DependencySetup { get; } = new();
 
     public bool HasAttachments => Attachments.Count > 0;
     public bool HasQueuedMessages => MessageQueue.Count > 0;
@@ -300,7 +185,7 @@ public partial class MainViewModel : ViewModelBase
         get
         {
             if (string.IsNullOrEmpty(_projectPath)) return "";
-            var trimmed = _projectPath.TrimEnd('\\', '/');
+            var trimmed = _projectPath.NormalizePath();
             var lastSep = trimmed.LastIndexOfAny(['\\', '/']);
             return lastSep >= 0 ? trimmed[..(lastSep + 1)] : "";
         }
@@ -311,7 +196,7 @@ public partial class MainViewModel : ViewModelBase
         get
         {
             if (string.IsNullOrEmpty(_projectPath)) return "";
-            var trimmed = _projectPath.TrimEnd('\\', '/');
+            var trimmed = _projectPath.NormalizePath();
             var lastSep = trimmed.LastIndexOfAny(['\\', '/']);
             return lastSep >= 0 ? trimmed[(lastSep + 1)..] : trimmed;
         }
@@ -408,37 +293,7 @@ public partial class MainViewModel : ViewModelBase
         set => SetProperty(ref _rateLimitCountdown, value);
     }
 
-    public bool ShowTaskSuggestion
-    {
-        get => _showTaskSuggestion;
-        set => SetProperty(ref _showTaskSuggestion, value);
-    }
-
-    public bool ShowFinalizeActionsLabel
-    {
-        get => _showFinalizeActionsLabel;
-        set => SetProperty(ref _showFinalizeActionsLabel, value);
-    }
-
-    public bool HasCompletedTask
-    {
-        get => _hasCompletedTask;
-        set => SetProperty(ref _hasCompletedTask, value);
-    }
-
-    public int FinalizeCountdown
-    {
-        get => _finalizeCountdown;
-        set => SetProperty(ref _finalizeCountdown, value);
-    }
-
-    public bool FinalizeLabelBlinking
-    {
-        get => _finalizeLabelBlinking;
-        set => SetProperty(ref _finalizeLabelBlinking, value);
-    }
-
-    public ObservableCollection<TaskSuggestionItem> SuggestedTasks { get; } = [];
+    public FinalizeActionsViewModel FinalizeActions { get; }
 
     public bool HasDialogHistory => Messages.Any(m => m.Role == MessageRole.Assistant);
 
@@ -462,115 +317,16 @@ public partial class MainViewModel : ViewModelBase
     public RelayCommand ReduceContextCommand { get; }
     public RelayCommand DismissRateLimitCommand { get; }
     public RelayCommand UpgradeAccountCommand { get; }
-    public RelayCommand RunSuggestedTaskCommand { get; }
-    public RelayCommand CloseFinalizePopupCommand { get; }
-    public RelayCommand OpenFinalizeActionsCommand { get; }
-    public RelayCommand DontSuggestForProjectCommand { get; }
-    public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
     /// <summary>
     /// Returns the built-in CCW system instruction text for display in the Instructions editor.
     /// </summary>
     public static string GetSystemInstructionText() => SystemInstruction;
 
-    public void SetUpdateChannel(string channel)
-    {
-        _updateService.UpdateChannel = channel;
-    }
-
-    public void StartUpdate()
-    {
-        if (_pendingUpdate is null) return;
-        IsUpdating = true;
-        UpdateDownloading = true;
-        UpdateStatusText = "Starting download...";
-        _ = _updateService.DownloadAndApplyAsync(_pendingUpdate);
-    }
-
-    public void DismissUpdate()
-    {
-        ShowUpdateOverlay = false;
-        UpdateFailed = false;
-        UpdateDownloading = false;
-        IsUpdating = false;
-    }
-
     public void SetTaskRunner(TaskRunnerService taskRunnerService, Window ownerWindow)
     {
         _taskRunnerService = taskRunnerService;
         _ownerWindow = ownerWindow;
-    }
-
-    private void StopTaskSuggestionTimer()
-    {
-        _taskSuggestionTimer?.Stop();
-        _taskSuggestionTimer = null;
-    }
-
-    private void StopBlinkTimer()
-    {
-        _blinkTimer?.Stop();
-        _blinkTimer = null;
-        FinalizeLabelBlinking = false;
-    }
-
-    private void StartAutoCollapseTimer()
-    {
-        StopTaskSuggestionTimer();
-        FinalizeCountdown = 60;
-        _taskSuggestionTimer = new System.Windows.Threading.DispatcherTimer
-        {
-            Interval = TimeSpan.FromSeconds(1)
-        };
-        _taskSuggestionTimer.Tick += (_, _) =>
-        {
-            FinalizeCountdown--;
-            if (FinalizeCountdown <= 0)
-                CollapseToFinalizeLabel();
-        };
-        _taskSuggestionTimer.Start();
-    }
-
-    private void CollapseToFinalizeLabel()
-    {
-        StopTaskSuggestionTimer();
-        FinalizeCountdown = 0;
-        var showLabel = SuggestedTasks.Count > 0;
-
-        if (ShowTaskSuggestion && OnFinalizeCollapse is not null)
-        {
-            // Animate, then show label
-            ShowFinalizeActionsLabel = showLabel;
-            if (showLabel) StartBlinkTimer();
-            OnFinalizeCollapse();
-        }
-        else
-        {
-            ShowTaskSuggestion = false;
-            if (showLabel)
-            {
-                ShowFinalizeActionsLabel = true;
-                StartBlinkTimer();
-            }
-        }
-    }
-
-    private void StartBlinkTimer()
-    {
-        StopBlinkTimer();
-        FinalizeLabelBlinking = true;
-        var elapsed = 0;
-        _blinkTimer = new System.Windows.Threading.DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(500)
-        };
-        _blinkTimer.Tick += (_, _) =>
-        {
-            elapsed++;
-            if (elapsed >= 10) // 5 seconds (10 x 500ms)
-                StopBlinkTimer();
-        };
-        _blinkTimer.Start();
     }
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
@@ -584,7 +340,6 @@ public partial class MainViewModel : ViewModelBase
         _settingsService = settingsService;
         _settings = settings;
         _gitService = gitService;
-        _updateService = updateService;
         _fileIndexService = fileIndexService;
         _chatHistoryService = chatHistoryService;
         _projectRegistry = projectRegistry;
@@ -620,18 +375,8 @@ public partial class MainViewModel : ViewModelBase
                 _settingsService.Save(_settings);
             }
         });
-        CheckForUpdatesCommand = new AsyncRelayCommand(async () =>
-        {
-            StatusText = "Checking for updates...";
-            var update = await _updateService.CheckForUpdateAsync();
-            if (update is null)
-            {
-                StatusText = "";
-                MessageBox.Show($"You are on the latest version ({_updateService.CurrentVersion}).",
-                    "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            // If update found, OnUpdateAvailable handler will show overlay
-        });
+        Update = new UpdateViewModel(updateService, settings);
+        Update.OnStatusTextChange += text => StatusText = text;
 
         RemoveQueuedMessageCommand = new RelayCommand(p =>
         {
@@ -682,50 +427,13 @@ public partial class MainViewModel : ViewModelBase
             try { Process.Start(new ProcessStartInfo("https://console.anthropic.com/settings/billing") { UseShellExecute = true }); }
             catch { }
         });
-        RunSuggestedTaskCommand = new RelayCommand(p =>
+        FinalizeActions = new FinalizeActionsViewModel(settingsService, settings, () => WorkingDirectory);
+        FinalizeActions.OnCommitRequested += msg => _ = SendDirectAsync(msg, null);
+        FinalizeActions.OnRunTaskRequested += task =>
         {
-            if (p is TaskSuggestionItem item && !item.IsCompleted)
-            {
-                // Mark as completed immediately (optimistic)
-                item.IsCompleted = true;
-                item.CompletedStatusText = item.IsCommit ? "Committed" : $"Ran {item.Label}";
-
-                // Collapse popup to label
-                CollapseToFinalizeLabel();
-
-                if (item.IsCommit)
-                    _ = SendDirectAsync("Review the current git changes (staged and unstaged), create a commit with an appropriate message, and push to the remote repository.", null);
-                else if (item.Task is not null && _ownerWindow is not null)
-                    TaskRunnerService.RunTaskPublic(item.Task, this, _ownerWindow);
-            }
-        });
-        CloseFinalizePopupCommand = new RelayCommand(CollapseToFinalizeLabel);
-        OpenFinalizeActionsCommand = new RelayCommand(() =>
-        {
-            if (SuggestedTasks.Count > 0)
-            {
-                StopBlinkTimer();
-                ShowTaskSuggestion = true;
-                ShowFinalizeActionsLabel = false;
-                StartAutoCollapseTimer();
-            }
-        });
-        DontSuggestForProjectCommand = new RelayCommand(() =>
-        {
-            ShowTaskSuggestion = false;
-            ShowFinalizeActionsLabel = false;
-            HasCompletedTask = false;
-            StopTaskSuggestionTimer();
-            if (!string.IsNullOrEmpty(WorkingDirectory))
-            {
-                var normalized = WorkingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                if (!_settings.TaskSuggestionDismissedProjects.Contains(normalized, StringComparer.OrdinalIgnoreCase))
-                {
-                    _settings.TaskSuggestionDismissedProjects.Add(normalized);
-                    _settingsService.Save(_settings);
-                }
-            }
-        });
+            if (_ownerWindow is not null)
+                TaskRunnerService.RunTaskPublic(task, this, _ownerWindow);
+        };
 
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
         Messages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasDialogHistory));
@@ -736,57 +444,6 @@ public partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(ChangedFilesText));
         };
 
-        // Subscribe to update events
-        _updateService.OnUpdateAvailable += info =>
-        {
-            Application.Current.Dispatcher.InvokeAsync(() =>
-            {
-                _pendingUpdate = info;
-                UpdateTitle = $"v{_updateService.CurrentVersion}  →  v{info.Version}";
-                UpdateReleaseNotes = info.ReleaseNotes ?? "";
-                UpdateStatusText = "A new version is available.";
-                UpdateProgressPercent = 0;
-                UpdateFailed = false;
-                UpdateDownloading = false;
-                ShowUpdateOverlay = true;
-            });
-        };
-
-        _updateService.OnDownloadProgress += percent =>
-        {
-            Application.Current.Dispatcher.InvokeAsync(() =>
-            {
-                UpdateProgressPercent = percent;
-                UpdateStatusText = $"Downloading update... {percent}%";
-            });
-        };
-
-        _updateService.OnUpdateReady += path =>
-        {
-            Application.Current.Dispatcher.InvokeAsync(() =>
-            {
-                _downloadedUpdatePath = path;
-                UpdateStatusText = "Update ready — restarting...";
-                UpdateProgressPercent = 100;
-                UpdateService.ApplyUpdate(path);
-            });
-        };
-
-        _updateService.OnError += error =>
-        {
-            Application.Current.Dispatcher.InvokeAsync(() =>
-            {
-                IsUpdating = false;
-                UpdateFailed = true;
-                UpdateDownloading = false;
-                UpdateStatusText = error;
-            });
-        };
-
-        // Start periodic update checks
-        _updateService.UpdateChannel = settings.UpdateChannel ?? "stable";
-        _updateService.StartPeriodicCheck();
-
         _cliService.OnTextBlockStart += HandleTextBlockStart;
         _cliService.OnTextDelta += HandleTextDelta;
         _cliService.OnToolUseStarted += HandleToolUseStarted;
@@ -796,12 +453,12 @@ public partial class MainViewModel : ViewModelBase
         _cliService.OnControlRequest += HandleControlRequest;
         _cliService.OnFileChanged += HandleFileChanged;
         _cliService.OnRateLimitDetected += () =>
-            Application.Current.Dispatcher.InvokeAsync(() => _usageService.SetRateLimitedExternally());
+            RunOnUI(() => _usageService.SetRateLimitedExternally());
 
         // Subscribe to rate limit changes from UsageService
         _usageService.OnRateLimitChanged += isLimited =>
         {
-            Application.Current.Dispatcher.InvokeAsync(() =>
+            RunOnUI(() =>
             {
                 if (isLimited)
                 {
@@ -831,7 +488,7 @@ public partial class MainViewModel : ViewModelBase
 
         _cliService.OnCompactionDetected += msg =>
         {
-            Application.Current.Dispatcher.InvokeAsync(() =>
+            RunOnUI(() =>
             {
                 var ctx = ContextUsageText;
                 Messages.Add(new MessageViewModel(MessageRole.System,

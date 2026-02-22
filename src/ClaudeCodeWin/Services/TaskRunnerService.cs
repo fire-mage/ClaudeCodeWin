@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 using ClaudeCodeWin.ViewModels;
 using ClaudeCodeWin.Views;
@@ -16,12 +17,6 @@ public class TaskRunnerService
 
     private static readonly string TasksPath = Path.Combine(TasksDir, "tasks.json");
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
     public List<TaskDefinition> LoadTasks()
     {
         if (!File.Exists(TasksPath))
@@ -34,7 +29,7 @@ public class TaskRunnerService
         try
         {
             var json = File.ReadAllText(TasksPath);
-            return JsonSerializer.Deserialize<List<TaskDefinition>>(json, JsonOptions) ?? [];
+            return JsonSerializer.Deserialize<List<TaskDefinition>>(json, JsonDefaults.Options) ?? [];
         }
         catch
         {
@@ -45,7 +40,7 @@ public class TaskRunnerService
     public void SaveTasks(List<TaskDefinition> tasks)
     {
         Directory.CreateDirectory(TasksDir);
-        var json = JsonSerializer.Serialize(tasks, JsonOptions);
+        var json = JsonSerializer.Serialize(tasks, JsonDefaults.Options);
         File.WriteAllText(TasksPath, json);
     }
 
@@ -54,7 +49,7 @@ public class TaskRunnerService
         if (string.IsNullOrEmpty(workingDirectory))
             return [];
 
-        var normalized = workingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalized = workingDirectory.NormalizePath();
         var projectName = Path.GetFileName(normalized);
         var tasks = LoadTasks();
 
@@ -68,9 +63,8 @@ public class TaskRunnerService
             // Match by workingDirectory: task belongs to this folder or a parent
             if (!string.IsNullOrEmpty(t.WorkingDirectory))
             {
-                var taskDir = t.WorkingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                if (string.Equals(taskDir, normalized, StringComparison.OrdinalIgnoreCase) ||
-                    normalized.StartsWith(taskDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                if (t.WorkingDirectory.PathEquals(normalized) ||
+                    normalized.IsSubPathOf(t.WorkingDirectory))
                     return true;
             }
 
@@ -261,7 +255,7 @@ public class TaskRunnerService
         {
             try
             {
-                var parsed = JsonSerializer.Deserialize<List<TaskDefinition>>(textBox.Text, JsonOptions);
+                var parsed = JsonSerializer.Deserialize<List<TaskDefinition>>(textBox.Text, JsonDefaults.Options);
                 if (parsed is null)
                 {
                     errorText.Text = "JSON parsed as null. Expected a JSON array.";

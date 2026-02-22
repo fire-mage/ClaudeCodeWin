@@ -33,7 +33,7 @@ public partial class WelcomeDialog : Window
             : $"Start a fresh conversation in {projectName}";
 
         // Section 2: Load projects
-        var projects = LoadFilteredProjects(50);
+        var projects = _projectRegistry.GetFilteredProjects(50, _currentWorkingDirectory);
         if (projects.Count < 2)
         {
             SwitchProjectSection.Visibility = Visibility.Collapsed;
@@ -63,33 +63,6 @@ public partial class WelcomeDialog : Window
             ContinueChatSection.Visibility = Visibility.Collapsed;
         else
             RecentChatsList.ItemsSource = recentChats;
-    }
-
-    private List<ProjectInfo> LoadFilteredProjects(int maxCount)
-    {
-        var projects = _projectRegistry.GetMostRecentProjects(maxCount);
-
-        // Filter out nested sub-projects (keep topmost roots)
-        var sorted = projects.OrderBy(p => p.Path.Length).ToList();
-        var roots = new List<ProjectInfo>();
-        foreach (var p in sorted)
-        {
-            var normalizedPath = p.Path.TrimEnd('\\', '/') + "\\";
-            var isNested = roots.Any(r =>
-                normalizedPath.StartsWith(r.Path.TrimEnd('\\', '/') + "\\", StringComparison.OrdinalIgnoreCase));
-            if (!isNested)
-                roots.Add(p);
-        }
-
-        var filtered = roots.OrderByDescending(p => p.LastOpened).ToList();
-
-        // Mark the current project
-        var currentDir = _currentWorkingDirectory?.TrimEnd('\\', '/');
-        foreach (var p in filtered)
-            p.IsCurrent = !string.IsNullOrEmpty(currentDir)
-                && string.Equals(p.Path.TrimEnd('\\', '/'), currentDir, StringComparison.OrdinalIgnoreCase);
-
-        return filtered;
     }
 
     private static string ExtractProjectName(string? path)

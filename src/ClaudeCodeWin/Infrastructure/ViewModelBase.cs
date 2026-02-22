@@ -21,4 +21,7 @@ public abstract class ViewModelBase : INotifyPropertyChanged
         OnPropertyChanged(propertyName);
         return true;
     }
+
+    protected static void RunOnUI(Action action)
+        => System.Windows.Application.Current.Dispatcher.InvokeAsync(action);
 }

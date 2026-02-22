@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 
 namespace ClaudeCodeWin.Services;
@@ -9,12 +10,6 @@ public class ProjectRegistryService
     private static readonly string RegistryPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "ClaudeCodeWin", "project-registry.json");
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
 
     private List<ProjectInfo> _projects = [];
 
@@ -30,6 +25,36 @@ public class ProjectRegistryService
             .Take(count)
             .ToList();
 
+    /// <summary>
+    /// Returns projects filtered to remove nested sub-projects (keeps topmost roots),
+    /// sorted by LastOpened descending, with the current project marked.
+    /// </summary>
+    public List<ProjectInfo> GetFilteredProjects(int maxCount, string? currentDir = null)
+    {
+        var projects = GetMostRecentProjects(maxCount);
+
+        // Filter out nested sub-projects (keep topmost roots)
+        var sorted = projects.OrderBy(p => p.Path.Length).ToList();
+        var roots = new List<ProjectInfo>();
+        foreach (var p in sorted)
+        {
+            var isNested = roots.Any(r => p.Path.IsSubPathOf(r.Path));
+            if (!isNested)
+                roots.Add(p);
+        }
+
+        var filtered = roots.OrderByDescending(p => p.LastOpened).ToList();
+
+        // Mark the current project
+        if (!string.IsNullOrEmpty(currentDir))
+        {
+            foreach (var p in filtered)
+                p.IsCurrent = p.Path.PathEquals(currentDir);
+        }
+
+        return filtered;
+    }
+
     public void Load()
     {
         if (!File.Exists(RegistryPath))
@@ -38,7 +63,7 @@ public class ProjectRegistryService
         try
         {
             var json = File.ReadAllText(RegistryPath);
-            _projects = JsonSerializer.Deserialize<List<ProjectInfo>>(json, JsonOptions) ?? [];
+            _projects = JsonSerializer.Deserialize<List<ProjectInfo>>(json, JsonDefaults.Options) ?? [];
         }
         catch
         {
@@ -51,7 +76,7 @@ public class ProjectRegistryService
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(RegistryPath)!);
-            var json = JsonSerializer.Serialize(_projects, JsonOptions);
+            var json = JsonSerializer.Serialize(_projects, JsonDefaults.Options);
             File.WriteAllText(RegistryPath, json);
         }
         catch { }

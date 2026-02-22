@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using ClaudeCodeWin.ContextSnapshot;
+using ClaudeCodeWin.Models;
 using ClaudeCodeWin.Services;
 using ClaudeCodeWin.ViewModels;
 
@@ -23,174 +24,80 @@ public partial class App : Application
         catch { /* last resort — can't log the log failure */ }
     }
 
-    private async void Application_Startup(object sender, StartupEventArgs e)
+    private void SetupCrashHandlers()
     {
-        // Global crash handler — writes to %LocalAppData%\ClaudeCodeWin\crash.log
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             WriteCrashLog("UnhandledException", (Exception)args.ExceptionObject);
         DispatcherUnhandledException += (_, args) =>
         {
             WriteCrashLog("DispatcherUnhandledException", args.Exception);
-            args.Handled = false; // let it crash, but at least we logged it
+            args.Handled = false;
         };
         TaskScheduler.UnobservedTaskException += (_, args) =>
             WriteCrashLog("UnobservedTaskException", args.Exception);
+    }
+
+    private async void Application_Startup(object sender, StartupEventArgs e)
+    {
+        SetupCrashHandlers();
 
         try
         {
-        // Create all services upfront — they don't depend on Git/Claude being installed
-        var cliService = new ClaudeCliService();
-        var notificationService = new NotificationService();
-        var scriptService = new ScriptService();
-        var settingsService = new SettingsService();
-        var taskRunnerService = new TaskRunnerService();
-        var gitService = new GitService();
-        var updateService = new UpdateService();
-        var fileIndexService = new FileIndexService();
-        var chatHistoryService = new ChatHistoryService();
-        var projectRegistry = new ProjectRegistryService();
-        projectRegistry.Load();
+            // Create all services
+            var cliService = new ClaudeCliService();
+            var notificationService = new NotificationService();
+            var scriptService = new ScriptService();
+            var settingsService = new SettingsService();
+            var taskRunnerService = new TaskRunnerService();
+            var gitService = new GitService();
+            var updateService = new UpdateService();
+            var fileIndexService = new FileIndexService();
+            var chatHistoryService = new ChatHistoryService();
+            var projectRegistry = new ProjectRegistryService();
+            projectRegistry.Load();
 
-        var settings = settingsService.Load();
-        if (!string.IsNullOrEmpty(settings.WorkingDirectory))
-            cliService.WorkingDirectory = settings.WorkingDirectory;
+            var settings = settingsService.Load();
+            if (!string.IsNullOrEmpty(settings.WorkingDirectory))
+                cliService.WorkingDirectory = settings.WorkingDirectory;
 
-        var usageService = new UsageService();
-        var contextSnapshotService = new ContextSnapshotService();
+            var usageService = new UsageService();
+            var contextSnapshotService = new ContextSnapshotService();
 
-        var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService, projectRegistry, contextSnapshotService, usageService);
-        var mainWindow = new MainWindow(mainViewModel, notificationService, settingsService, settings, fileIndexService, chatHistoryService, projectRegistry);
+            // Create and show main window
+            var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService, projectRegistry, contextSnapshotService, usageService);
+            var mainWindow = new MainWindow(mainViewModel, notificationService, settingsService, settings, fileIndexService, chatHistoryService, projectRegistry);
+            mainWindow.Show();
 
-        // Show MainWindow immediately so the user sees the app
-        mainWindow.Show();
-
-        // Run dependency checks in the overlay
-        var dependencyService = new ClaudeCodeDependencyService();
-        var needsGit = !dependencyService.IsGitInstalled();
-        var needsCli = !(await dependencyService.CheckAsync()).IsInstalled;
-        var needsGh = !dependencyService.IsGhInstalled();
-
-        // Git installer requires admin. If Git is missing and we're not admin, request elevation.
-        if (needsGit && !ClaudeCodeDependencyService.IsAdministrator())
-        {
-            var result = MessageBox.Show(
-                "Git for Windows needs to be installed, which requires administrator privileges.\n\n" +
-                "The application will restart with elevated permissions.\nClick OK to continue.",
-                "Administrator Required", MessageBoxButton.OKCancel, MessageBoxImage.Information);
-
-            if (result == MessageBoxResult.OK && ClaudeCodeDependencyService.RequestElevation())
-            {
-                Shutdown();
+            // Dependency checks and installation
+            if (!await EnsureDependencies(mainViewModel, mainWindow))
                 return;
-            }
-            else
-            {
-                MessageBox.Show(
-                    "Git for Windows is required. Please install it manually from:\nhttps://git-scm.com/downloads/win\n\nThen restart the application.",
-                    "Git Required", MessageBoxButton.OK, MessageBoxImage.Warning);
-                Shutdown();
+
+            // Apply CLI path
+            var depService = new ClaudeCodeDependencyService();
+            var depStatus = await depService.CheckAsync();
+            if (!string.IsNullOrEmpty(settings.ClaudeExePath))
+                cliService.ClaudeExePath = settings.ClaudeExePath;
+            else if (depStatus.ExePath is not null)
+                cliService.ClaudeExePath = depStatus.ExePath;
+
+            // Authentication
+            if (!EnsureAuthentication(depService, depStatus))
                 return;
-            }
-        }
 
-        if (needsGit || needsCli || needsGh)
-        {
-            var success = await RunDependencySetup(mainViewModel, mainWindow, dependencyService, needsGit, needsCli, needsGh);
-            if (!success)
-            {
-                // Don't Shutdown() — let the overlay stay visible with the error and Close button.
-                return;
-            }
-        }
+            // Welcome flow
+            RunWelcomeFlow(mainViewModel, mainWindow, chatHistoryService, projectRegistry, settings);
 
-        // Apply Claude CLI path
-        var depStatus = await dependencyService.CheckAsync();
-        if (!string.IsNullOrEmpty(settings.ClaudeExePath))
-            cliService.ClaudeExePath = settings.ClaudeExePath;
-        else if (depStatus.ExePath is not null)
-            cliService.ClaudeExePath = depStatus.ExePath;
+            // Instruction deduplication
+            CheckInstructionDeduplication(settings.WorkingDirectory);
 
-        // Check authentication — requires interactive terminal, so use separate window
-        if (!dependencyService.IsAuthenticated())
-        {
-            var claudeExe = depStatus.ExePath ?? "claude";
-            var loginWindow = new LoginPromptWindow(dependencyService, claudeExe);
-            loginWindow.ShowDialog();
+            // Usage service wiring
+            ConfigureUsageService(mainViewModel, usageService);
+            usageService.Start();
 
-            if (!loginWindow.Success)
-            {
-                MessageBox.Show(
-                    "Anthropic account login is required to use Claude Code.\nThe application will now exit.",
-                    "Login Required", MessageBoxButton.OK, MessageBoxImage.Warning);
-                Shutdown();
-                return;
-            }
-        }
-
-        // Welcome dialog: unified startup flow (new chat, switch project, continue chat, general chat)
-        var history = chatHistoryService.ListAll();
-        var projectCount = projectRegistry.GetMostRecentProjects(2).Count;
-        if (history.Count > 0 || projectCount >= 2)
-        {
-            var welcomeDialog = new WelcomeDialog(chatHistoryService, projectRegistry, settings.WorkingDirectory)
-            {
-                Owner = mainWindow
-            };
-
-            if (welcomeDialog.ShowDialog() == true)
-            {
-                switch (welcomeDialog.ChosenAction)
-                {
-                    case Models.WelcomeDialogResult.NewChat:
-                        mainViewModel.NewSessionCommand.Execute(null);
-                        break;
-                    case Models.WelcomeDialogResult.SwitchProject:
-                        mainViewModel.SetWorkingDirectory(welcomeDialog.SelectedProjectPath!);
-                        break;
-                    case Models.WelcomeDialogResult.ContinueChat:
-                        mainViewModel.LoadChatFromHistory(welcomeDialog.SelectedChatEntry!);
-                        break;
-                    case Models.WelcomeDialogResult.GeneralChat:
-                        mainViewModel.StartGeneralChat();
-                        break;
-                }
-            }
-        }
-
-        // Deduplication check: compare project CLAUDE.md with global CLAUDE.md
-        CheckInstructionDeduplication(settings.WorkingDirectory);
-
-        // Wire up usage service → status bar
-        usageService.OnUsageUpdated += () =>
-        {
-            if (!usageService.IsOnline)
-            {
-                mainViewModel.StatusText = "NO INTERNET";
-                return;
-            }
-
-            if (mainViewModel.StatusText == "NO INTERNET")
-                mainViewModel.StatusText = mainViewModel.IsProcessing ? "Processing..." : "Ready";
-
-            if (!usageService.IsLoaded) return;
-            var sessionPct = $"{usageService.SessionUtilization:F0}%";
-            var sessionCountdown = usageService.GetSessionCountdown();
-            var sessionExtra = string.IsNullOrEmpty(sessionCountdown)
-                ? " | " : $" ({sessionCountdown}) | ";
-            var weekPct = $"{usageService.WeeklyUtilization:F0}%";
-
-            mainViewModel.SessionPctText = sessionPct;
-            mainViewModel.SessionExtraText = sessionExtra;
-            mainViewModel.WeekPctText = weekPct;
-            mainViewModel.UsageText = $"Session: {sessionPct}{sessionExtra}Week: {weekPct}";
-        };
-        usageService.Start();
-
-        // Setup menus
-        scriptService.PopulateMenu(mainWindow, mainViewModel, gitService, settings, projectRegistry);
-        taskRunnerService.PopulateMenu(mainWindow, mainViewModel);
-        mainViewModel.SetTaskRunner(taskRunnerService, mainWindow);
-
+            // Menus
+            scriptService.PopulateMenu(mainWindow, mainViewModel, gitService, settings, projectRegistry);
+            taskRunnerService.PopulateMenu(mainWindow, mainViewModel);
+            mainViewModel.SetTaskRunner(taskRunnerService, mainWindow);
         }
         catch (Exception ex)
         {
@@ -202,20 +109,139 @@ public partial class App : Application
         }
     }
 
+    private async Task<bool> EnsureDependencies(MainViewModel vm, MainWindow window)
+    {
+        var depService = new ClaudeCodeDependencyService();
+        var needsGit = !depService.IsGitInstalled();
+        var needsCli = !(await depService.CheckAsync()).IsInstalled;
+        var needsGh = !depService.IsGhInstalled();
+
+        // Git requires admin
+        if (needsGit && !ClaudeCodeDependencyService.IsAdministrator())
+        {
+            var result = MessageBox.Show(
+                "Git for Windows needs to be installed, which requires administrator privileges.\n\n" +
+                "The application will restart with elevated permissions.\nClick OK to continue.",
+                "Administrator Required", MessageBoxButton.OKCancel, MessageBoxImage.Information);
+
+            if (result == MessageBoxResult.OK && ClaudeCodeDependencyService.RequestElevation())
+            {
+                Shutdown();
+                return false;
+            }
+
+            MessageBox.Show(
+                "Git for Windows is required. Please install it manually from:\nhttps://git-scm.com/downloads/win\n\nThen restart the application.",
+                "Git Required", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Shutdown();
+            return false;
+        }
+
+        if (needsGit || needsCli || needsGh)
+        {
+            var success = await RunDependencySetup(vm, window, depService, needsGit, needsCli, needsGh);
+            if (!success)
+                return false;
+        }
+
+        return true;
+    }
+
+    private bool EnsureAuthentication(ClaudeCodeDependencyService depService, DependencyStatus depStatus)
+    {
+        if (depService.IsAuthenticated())
+            return true;
+
+        var claudeExe = depStatus.ExePath ?? "claude";
+        var loginWindow = new LoginPromptWindow(depService, claudeExe);
+        loginWindow.ShowDialog();
+
+        if (loginWindow.Success)
+            return true;
+
+        MessageBox.Show(
+            "Anthropic account login is required to use Claude Code.\nThe application will now exit.",
+            "Login Required", MessageBoxButton.OK, MessageBoxImage.Warning);
+        Shutdown();
+        return false;
+    }
+
+    private static void RunWelcomeFlow(
+        MainViewModel vm, MainWindow window,
+        ChatHistoryService chatHistory, ProjectRegistryService projectRegistry,
+        AppSettings settings)
+    {
+        var history = chatHistory.ListAll();
+        var projectCount = projectRegistry.GetMostRecentProjects(2).Count;
+        if (history.Count == 0 && projectCount < 2)
+            return;
+
+        var welcomeDialog = new WelcomeDialog(chatHistory, projectRegistry, settings.WorkingDirectory)
+        {
+            Owner = window
+        };
+
+        if (welcomeDialog.ShowDialog() != true)
+            return;
+
+        switch (welcomeDialog.ChosenAction)
+        {
+            case WelcomeDialogResult.NewChat:
+                vm.NewSessionCommand.Execute(null);
+                break;
+            case WelcomeDialogResult.SwitchProject:
+                vm.SetWorkingDirectory(welcomeDialog.SelectedProjectPath!);
+                break;
+            case WelcomeDialogResult.ContinueChat:
+                vm.LoadChatFromHistory(welcomeDialog.SelectedChatEntry!);
+                break;
+            case WelcomeDialogResult.GeneralChat:
+                vm.StartGeneralChat();
+                break;
+        }
+    }
+
+    private static void ConfigureUsageService(MainViewModel vm, UsageService usageService)
+    {
+        usageService.OnUsageUpdated += () =>
+        {
+            if (!usageService.IsOnline)
+            {
+                vm.StatusText = "NO INTERNET";
+                return;
+            }
+
+            if (vm.StatusText == "NO INTERNET")
+                vm.StatusText = vm.IsProcessing ? "Processing..." : "Ready";
+
+            if (!usageService.IsLoaded) return;
+            var sessionPct = $"{usageService.SessionUtilization:F0}%";
+            var sessionCountdown = usageService.GetSessionCountdown();
+            var sessionExtra = string.IsNullOrEmpty(sessionCountdown)
+                ? " | " : $" ({sessionCountdown}) | ";
+            var weekPct = $"{usageService.WeeklyUtilization:F0}%";
+
+            vm.SessionPctText = sessionPct;
+            vm.SessionExtraText = sessionExtra;
+            vm.WeekPctText = weekPct;
+            vm.UsageText = $"Session: {sessionPct}{sessionExtra}Week: {weekPct}";
+        };
+    }
+
     private static async Task<bool> RunDependencySetup(
         MainViewModel vm, MainWindow window, ClaudeCodeDependencyService depService,
         bool needGit, bool needCli, bool needGh)
     {
-        vm.ShowDependencyOverlay = true;
+        vm.DependencySetup.ShowDependencyOverlay = true;
 
         void UpdateProgress(string message)
         {
             window.Dispatcher.InvokeAsync(() =>
             {
-                vm.DependencyStatus = message;
-                if (vm.DependencyLog.Length > 0)
-                    vm.DependencyLog += "\n";
-                vm.DependencyLog += message;
+                vm.DependencySetup.DependencyStatus = message;
+                if (vm.DependencySetup.DependencyLog.Length > 0)
+                    vm.DependencySetup.DependencyLog += "\n";
+                vm.DependencySetup.DependencyLog += message;
                 window.ScrollDependencyLog();
             });
         }
@@ -223,63 +249,59 @@ public partial class App : Application
         var totalSteps = (needGit ? 1 : 0) + (needCli ? 1 : 0) + (needGh ? 1 : 0);
         var currentStep = 0;
 
-        // Step: Git for Windows (full installer, requires admin)
         if (needGit)
         {
             currentStep++;
-            vm.DependencyStep = $"Step {currentStep} of {totalSteps} — First-time setup";
-            vm.DependencyTitle = "Installing Git for Windows";
-            vm.DependencySubtitle = "Git is required for version control and is used by Claude Code internally. The installer will run silently in the background.";
-            vm.DependencyStatus = "Connecting to GitHub...";
-            vm.DependencyLog = "";
+            vm.DependencySetup.DependencyStep = $"Step {currentStep} of {totalSteps} — First-time setup";
+            vm.DependencySetup.DependencyTitle = "Installing Git for Windows";
+            vm.DependencySetup.DependencySubtitle = "Git is required for version control and is used by Claude Code internally. The installer will run silently in the background.";
+            vm.DependencySetup.DependencyStatus = "Connecting to GitHub...";
+            vm.DependencySetup.DependencyLog = "";
 
             var gitOk = await depService.InstallGitAsync(UpdateProgress);
             if (!gitOk)
             {
-                vm.DependencyStatus = "Git installation failed. Check your internet connection and try again.";
-                vm.DependencyFailed = true;
+                vm.DependencySetup.DependencyStatus = "Git installation failed. Check your internet connection and try again.";
+                vm.DependencySetup.DependencyFailed = true;
                 return false;
             }
         }
 
-        // Step: Claude Code CLI
         if (needCli)
         {
             currentStep++;
-            vm.DependencyStep = $"Step {currentStep} of {totalSteps} — First-time setup";
-            vm.DependencyTitle = "Installing Claude Code CLI";
-            vm.DependencySubtitle = "Claude Code CLI is the core engine that powers this application.\nDownloading ~222MB — this will take a few minutes. Please wait.";
-            vm.DependencyStatus = "Fetching latest version...";
-            vm.DependencyLog = "";
+            vm.DependencySetup.DependencyStep = $"Step {currentStep} of {totalSteps} — First-time setup";
+            vm.DependencySetup.DependencyTitle = "Installing Claude Code CLI";
+            vm.DependencySetup.DependencySubtitle = "Claude Code CLI is the core engine that powers this application.\nDownloading ~222MB — this will take a few minutes. Please wait.";
+            vm.DependencySetup.DependencyStatus = "Fetching latest version...";
+            vm.DependencySetup.DependencyLog = "";
 
             var cliOk = await depService.InstallAsync(UpdateProgress);
             if (!cliOk)
             {
-                vm.DependencyStatus = "Claude Code CLI installation failed. Check your internet connection and try again.";
-                vm.DependencyFailed = true;
+                vm.DependencySetup.DependencyStatus = "Claude Code CLI installation failed. Check your internet connection and try again.";
+                vm.DependencySetup.DependencyFailed = true;
                 return false;
             }
         }
 
-        // Step: GitHub CLI (non-critical — failure doesn't block the app)
         if (needGh)
         {
             currentStep++;
-            vm.DependencyStep = $"Step {currentStep} of {totalSteps} — First-time setup";
-            vm.DependencyTitle = "Installing GitHub CLI";
-            vm.DependencySubtitle = "GitHub CLI enables pull requests, issue management, and repository operations directly from the app.";
-            vm.DependencyStatus = "Connecting to GitHub...";
-            vm.DependencyLog = "";
+            vm.DependencySetup.DependencyStep = $"Step {currentStep} of {totalSteps} — First-time setup";
+            vm.DependencySetup.DependencyTitle = "Installing GitHub CLI";
+            vm.DependencySetup.DependencySubtitle = "GitHub CLI enables pull requests, issue management, and repository operations directly from the app.";
+            vm.DependencySetup.DependencyStatus = "Connecting to GitHub...";
+            vm.DependencySetup.DependencyLog = "";
 
             var ghOk = await depService.InstallGhAsync(UpdateProgress);
             if (!ghOk)
             {
                 UpdateProgress("GitHub CLI installation failed (non-critical). You can install it later.");
-                // Don't return false — gh is optional, Git + Claude CLI are sufficient
             }
         }
 
-        vm.ShowDependencyOverlay = false;
+        vm.DependencySetup.ShowDependencyOverlay = false;
         return true;
     }
 

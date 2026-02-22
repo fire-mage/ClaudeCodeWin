@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 using ClaudeCodeWin.ViewModels;
 
@@ -16,12 +17,6 @@ public partial class ScriptService
         "ClaudeCodeWin");
 
     private static readonly string ScriptsPath = Path.Combine(ScriptsDir, "scripts.json");
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
 
     [GeneratedRegex(@"\{file:(.+?)\}")]
     private static partial Regex FileVariableRegex();
@@ -38,7 +33,7 @@ public partial class ScriptService
         try
         {
             var json = File.ReadAllText(ScriptsPath);
-            return JsonSerializer.Deserialize<List<ScriptDefinition>>(json, JsonOptions) ?? [];
+            return JsonSerializer.Deserialize<List<ScriptDefinition>>(json, JsonDefaults.Options) ?? [];
         }
         catch
         {
@@ -49,7 +44,7 @@ public partial class ScriptService
     public void SaveScripts(List<ScriptDefinition> scripts)
     {
         Directory.CreateDirectory(ScriptsDir);
-        var json = JsonSerializer.Serialize(scripts, JsonOptions);
+        var json = JsonSerializer.Serialize(scripts, JsonDefaults.Options);
         File.WriteAllText(ScriptsPath, json);
     }
 

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 using ClaudeCodeWin.Services;
 
@@ -106,7 +107,7 @@ public partial class MainViewModel
 
     private void HandleTextBlockStart()
     {
-        Application.Current.Dispatcher.InvokeAsync(() =>
+        RunOnUI(() =>
         {
             if (_currentAssistantMessage is null) return;
 
@@ -124,7 +125,7 @@ public partial class MainViewModel
 
     private void HandleTextDelta(string text)
     {
-        Application.Current.Dispatcher.InvokeAsync(() =>
+        RunOnUI(() =>
         {
             if (_currentAssistantMessage is not null)
             {
@@ -145,7 +146,7 @@ public partial class MainViewModel
 
     private void HandleToolUseStarted(string toolName, string toolUseId, string input)
     {
-        Application.Current.Dispatcher.InvokeAsync(() =>
+        RunOnUI(() =>
         {
             if (_currentAssistantMessage is not null)
             {
@@ -183,7 +184,7 @@ public partial class MainViewModel
 
     private void HandleToolResult(string toolName, string toolUseId, string content)
     {
-        Application.Current.Dispatcher.InvokeAsync(() =>
+        RunOnUI(() =>
         {
             if (_currentAssistantMessage is null) return;
 
@@ -204,7 +205,7 @@ public partial class MainViewModel
 
     private void HandleMessageStarted(string model, int inputTokens, int cacheReadTokens, int cacheCreationTokens)
     {
-        Application.Current.Dispatcher.InvokeAsync(() =>
+        RunOnUI(() =>
         {
             // Show model name immediately when the first API call starts
             if (!string.IsNullOrEmpty(model) && string.IsNullOrEmpty(ModelName))
@@ -222,7 +223,7 @@ public partial class MainViewModel
 
     private void HandleCompleted(ResultData result)
     {
-        Application.Current.Dispatcher.InvokeAsync(() =>
+        RunOnUI(() =>
         {
             if (_currentAssistantMessage is not null)
             {
@@ -367,7 +368,7 @@ public partial class MainViewModel
             return;
 
         // Check if dismissed for this project
-        var normalized = WorkingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalized = WorkingDirectory.NormalizePath();
         if (_settings.TaskSuggestionDismissedProjects.Contains(normalized, StringComparer.OrdinalIgnoreCase))
             return;
 
@@ -397,19 +398,19 @@ public partial class MainViewModel
         if (suggestions.Count == 0)
             return;
 
-        SuggestedTasks.Clear();
+        FinalizeActions.SuggestedTasks.Clear();
         foreach (var s in suggestions)
-            SuggestedTasks.Add(s);
+            FinalizeActions.SuggestedTasks.Add(s);
 
-        HasCompletedTask = true;
-        ShowFinalizeActionsLabel = false;
-        ShowTaskSuggestion = true;
-        StartAutoCollapseTimer();
+        FinalizeActions.HasCompletedTask = true;
+        FinalizeActions.ShowFinalizeActionsLabel = false;
+        FinalizeActions.ShowTaskSuggestion = true;
+        FinalizeActions.StartAutoCollapseTimer();
     }
 
     private void HandleFileChanged(string filePath)
     {
-        Application.Current.Dispatcher.InvokeAsync(() =>
+        RunOnUI(() =>
         {
             if (!ChangedFiles.Contains(filePath))
                 ChangedFiles.Add(filePath);
@@ -418,7 +419,7 @@ public partial class MainViewModel
 
     private void HandleError(string error)
     {
-        Application.Current.Dispatcher.InvokeAsync(() =>
+        RunOnUI(() =>
         {
             if (_currentAssistantMessage is not null)
             {

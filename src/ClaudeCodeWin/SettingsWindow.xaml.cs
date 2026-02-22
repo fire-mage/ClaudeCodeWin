@@ -44,7 +44,7 @@ public partial class SettingsWindow : Window
         var channel = BetaRadio.IsChecked == true ? "beta" : "stable";
         _settings.UpdateChannel = channel;
         _settingsService.Save(_settings);
-        _viewModel.SetUpdateChannel(channel);
+        _viewModel.Update.SetUpdateChannel(channel);
     }
 
     private void AutoConfirm_Changed(object sender, RoutedEventArgs e)
