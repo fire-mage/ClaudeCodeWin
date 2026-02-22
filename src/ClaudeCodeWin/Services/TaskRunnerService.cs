@@ -54,13 +54,28 @@ public class TaskRunnerService
         if (string.IsNullOrEmpty(workingDirectory))
             return [];
 
-        var projectName = Path.GetFileName(workingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        var normalized = workingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var projectName = Path.GetFileName(normalized);
         var tasks = LoadTasks();
 
         return tasks.Where(t =>
-            !string.IsNullOrEmpty(t.Project) &&
-            string.Equals(t.Project, projectName, StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        {
+            // Match by project name (folder name)
+            if (!string.IsNullOrEmpty(t.Project) &&
+                string.Equals(t.Project, projectName, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // Match by workingDirectory: task belongs to this folder or a parent
+            if (!string.IsNullOrEmpty(t.WorkingDirectory))
+            {
+                var taskDir = t.WorkingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (string.Equals(taskDir, normalized, StringComparison.OrdinalIgnoreCase) ||
+                    normalized.StartsWith(taskDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }).ToList();
     }
 
     public void PopulateMenu(MainWindow mainWindow, MainViewModel viewModel)
