@@ -79,8 +79,14 @@ public partial class MainViewModel : ViewModelBase
     private List<FileAttachment>? _lastSentAttachments;
     private string _projectPath = "";
     private string _gitStatusText = "";
+    private string _gitDirtyText = "";
+    private bool _hasGitRepo;
     private string _usageText = "";
+    private string _sessionPctText = "";
+    private string _sessionExtraText = "";
+    private string _weekPctText = "";
     private string _contextUsageText = "";
+    private string _contextPctText = "";
     private string? _currentChatId;
     private string _ctaText = "";
     private CtaState _ctaState = CtaState.Welcome;
@@ -311,16 +317,52 @@ public partial class MainViewModel : ViewModelBase
         set => SetProperty(ref _gitStatusText, value);
     }
 
+    public string GitDirtyText
+    {
+        get => _gitDirtyText;
+        set => SetProperty(ref _gitDirtyText, value);
+    }
+
+    public bool HasGitRepo
+    {
+        get => _hasGitRepo;
+        set => SetProperty(ref _hasGitRepo, value);
+    }
+
     public string UsageText
     {
         get => _usageText;
         set => SetProperty(ref _usageText, value);
     }
 
+    public string SessionPctText
+    {
+        get => _sessionPctText;
+        set => SetProperty(ref _sessionPctText, value);
+    }
+
+    public string SessionExtraText
+    {
+        get => _sessionExtraText;
+        set => SetProperty(ref _sessionExtraText, value);
+    }
+
+    public string WeekPctText
+    {
+        get => _weekPctText;
+        set => SetProperty(ref _weekPctText, value);
+    }
+
     public string ContextUsageText
     {
         get => _contextUsageText;
         set => SetProperty(ref _contextUsageText, value);
+    }
+
+    public string ContextPctText
+    {
+        get => _contextPctText;
+        set => SetProperty(ref _contextPctText, value);
     }
 
     public string TodoProgressText

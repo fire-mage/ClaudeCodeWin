@@ -22,6 +22,7 @@
         <converters:EditDiffLineTypeToBrushConverter x:Key="DiffLineBrush"/>
         <converters:GitStatusToBrushConverter x:Key="GitStatusBrush"/>
         <converters:StatusTextToBrushConverter x:Key="StatusTextBrush"/>
+        <converters:StringToVisibilityConverter x:Key="StringToVis"/>
     </Window.Resources>
 
     <Window.TaskbarItemInfo>
@@ -1212,6 +1213,7 @@
                            FontSize="12"
                            Foreground="{Binding StatusText, Converter={StaticResource StatusTextBrush}}"
                            VerticalAlignment="Center"/>
+                <!-- Folder block — all grey -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal"
                             VerticalAlignment="Center" Margin="0,0,16,0">
                     <TextBlock Text="{Binding ProjectParentPath}"
@@ -1220,26 +1222,50 @@
                                TextTrimming="CharacterEllipsis"/>
                     <TextBlock Text="{Binding ProjectFolderName}"
                                FontSize="11" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                </StackPanel>
+                <!-- Git block — project name (gold) + git status: (grey) + dirty info (colored) -->
+                <StackPanel Grid.Column="3" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="0,0,16,0"
+                            ToolTip="Git repository status. Commit your changes regularly for safe rollback.">
+                    <TextBlock Text="{Binding ProjectFolderName}"
+                               FontSize="12" FontWeight="SemiBold"
+                               Foreground="{StaticResource AccentBrush}"
+                               Visibility="{Binding HasGitRepo, Converter={StaticResource BoolToVis}}"/>
+                    <TextBlock Text=" git status: "
+                               FontSize="12"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Visibility="{Binding HasGitRepo, Converter={StaticResource BoolToVis}}"/>
+                    <TextBlock Text="{Binding GitDirtyText}"
+                               FontSize="12"
+                               Foreground="{Binding GitDirtyText, Converter={StaticResource GitStatusBrush}}"/>
+                </StackPanel>
+                <!-- Context block — label grey, percentage gold; hidden when no data -->
+                <StackPanel Grid.Column="4" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="0,0,16,0"
+                            ToolTip="Context window usage. Shows what percentage of Claude's memory is used.&#x0a;At 80%+ consider starting a new session or expanding to 1M tokens."
+                            Visibility="{Binding ContextPctText, Converter={StaticResource StringToVis}}">
+                    <TextBlock Text="Context window used: "
+                               FontSize="11"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Text="{Binding ContextPctText}"
+                               FontSize="11"
                                Foreground="{StaticResource AccentBrush}"/>
                 </StackPanel>
-                <TextBlock Grid.Column="3" Text="{Binding GitStatusText}"
-                           FontSize="12"
-                           Foreground="{Binding GitStatusText, Converter={StaticResource GitStatusBrush}}"
-                           VerticalAlignment="Center" Margin="0,0,16,0"
-                           ToolTip="Git repository status. Commit your changes regularly for safe rollback."/>
-                <TextBlock Grid.Column="4" Text="{Binding ContextUsageText}"
-                           FontSize="11"
-                           Foreground="{StaticResource AccentBrush}"
-                           VerticalAlignment="Center" Margin="0,0,16,0"
-                           ToolTip="Context window usage. Shows what percentage of Claude's memory is used.&#x0a;At 80%+ consider starting a new session or expanding to 1M tokens."/>
+                <!-- Session block — labels grey, percentages gold -->
                 <Border Grid.Column="5" VerticalAlignment="Center" Margin="0,0,16,0"
                         Cursor="Hand" Background="Transparent"
                         MouseLeftButtonUp="MemoryIndicator_Click"
-                        ToolTip="Usage limits from your Anthropic subscription.&#x0a;Session resets every 5 hours, weekly every 7 days.&#x0a;Click for session menu.">
+                        ToolTip="Usage limits from your Anthropic subscription.&#x0a;Session resets every 5 hours, weekly every 7 days.&#x0a;Click for session menu."
+                        Visibility="{Binding SessionPctText, Converter={StaticResource StringToVis}}">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding UsageText}"
-                                   FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
-                                   VerticalAlignment="Center"/>
+                        <TextBlock FontSize="11" VerticalAlignment="Center">
+                            <Run Text="Session: " Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <Run Text="{Binding SessionPctText, Mode=OneWay}" Foreground="{StaticResource AccentBrush}"/>
+                            <Run Text="{Binding SessionExtraText, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <Run Text="Week: " Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <Run Text="{Binding WeekPctText, Mode=OneWay}" Foreground="{StaticResource AccentBrush}"/>
+                        </TextBlock>
                         <TextBlock Text=" &#x25BC;" FontSize="7"
                                    Foreground="{StaticResource TextSecondaryBrush}"
                                    VerticalAlignment="Center" Margin="2,1,0,0"/>

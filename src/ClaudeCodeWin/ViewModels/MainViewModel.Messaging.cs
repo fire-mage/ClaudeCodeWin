@@ -249,6 +249,7 @@ public partial class MainViewModel
                     pct = Math.Min(pct, 99); // indicate near-full without misleading >100%
 
                 ContextUsageText = $"Ctx: {pct}%";
+                ContextPctText = $"{pct}%";
 
                 DiagnosticLogger.Log("CTX",
                     $"source={( usePerCall ? "per-call" : "aggregated" )} " +

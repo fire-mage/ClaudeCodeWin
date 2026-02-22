@@ -691,6 +691,12 @@ public partial class MainWindow : Window
 
         opacityAnim.Completed += (_, _) =>
         {
+            // Clear held animations first — WPF animations with FillBehavior.HoldEnd
+            // override local values, so we must remove them before resetting.
+            FinalizePopupBorder.BeginAnimation(OpacityProperty, null);
+            scaleTransform.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, null);
+            scaleTransform.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleYProperty, null);
+
             ViewModel.ShowTaskSuggestion = false;
             FinalizePopupBorder.Opacity = 1;
             scaleTransform.ScaleX = 1;

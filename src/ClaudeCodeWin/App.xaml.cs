@@ -173,13 +173,16 @@ public partial class App : Application
                 mainViewModel.StatusText = mainViewModel.IsProcessing ? "Processing..." : "Ready";
 
             if (!usageService.IsLoaded) return;
-            var session = $"Session: {usageService.SessionUtilization:F0}%";
+            var sessionPct = $"{usageService.SessionUtilization:F0}%";
             var sessionCountdown = usageService.GetSessionCountdown();
-            if (!string.IsNullOrEmpty(sessionCountdown))
-                session += $" ({sessionCountdown})";
+            var sessionExtra = string.IsNullOrEmpty(sessionCountdown)
+                ? " | " : $" ({sessionCountdown}) | ";
+            var weekPct = $"{usageService.WeeklyUtilization:F0}%";
 
-            var weekly = $"Week: {usageService.WeeklyUtilization:F0}%";
-            mainViewModel.UsageText = $"{session} | {weekly}";
+            mainViewModel.SessionPctText = sessionPct;
+            mainViewModel.SessionExtraText = sessionExtra;
+            mainViewModel.WeekPctText = weekPct;
+            mainViewModel.UsageText = $"Session: {sessionPct}{sessionExtra}Week: {weekPct}";
         };
         usageService.Start();
 

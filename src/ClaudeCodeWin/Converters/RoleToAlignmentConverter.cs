@@ -78,12 +78,21 @@ public class GitStatusToBrushConverter : IValueConverter
         var text = value as string ?? "";
         var key = text switch
         {
-            _ when text.Contains("unstaged") || text.Contains("unpushed") => "WarningBrush",
+            _ when text.Contains("unstaged") || text.Contains("unpushed") => "AccentBrush",
             _ when text.Contains("clean") => "SuccessBrush",
             _ => "TextSecondaryBrush" // "no git" or empty
         };
         return Application.Current.FindResource(key);
     }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+public class StringToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => string.IsNullOrEmpty(value as string) ? Visibility.Collapsed : Visibility.Visible;
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotSupportedException();

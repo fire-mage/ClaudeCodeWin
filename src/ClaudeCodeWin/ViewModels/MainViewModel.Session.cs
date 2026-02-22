@@ -101,6 +101,7 @@ public partial class MainViewModel
         ModelName = "";
         StatusText = "";
         ContextUsageText = "";
+        ContextPctText = "";
         TodoProgressText = "";
         _contextWarningShown = false;
         _contextWindowSize = 0;
@@ -164,17 +165,22 @@ public partial class MainViewModel
         var (branch, dirtyCount, unpushedCount) = _gitService.GetStatus(WorkingDirectory);
         if (branch is null)
         {
+            HasGitRepo = false;
+            GitDirtyText = "no git";
             GitStatusText = "no git";
             return;
         }
 
+        HasGitRepo = true;
+
         if (dirtyCount == 0 && unpushedCount == 0)
         {
-            GitStatusText = $"git: {branch}, clean";
+            GitDirtyText = "clean";
+            GitStatusText = "clean";
             return;
         }
 
-        var parts = new List<string> { $"git: {branch}" };
+        var parts = new List<string>();
 
         if (dirtyCount > 0)
             parts.Add($"{dirtyCount} file(s) unstaged");
@@ -182,7 +188,9 @@ public partial class MainViewModel
         if (unpushedCount > 0)
             parts.Add($"{unpushedCount} unpushed");
 
-        GitStatusText = string.Join(", ", parts);
+        var dirtyText = string.Join(", ", parts);
+        GitDirtyText = dirtyText;
+        GitStatusText = dirtyText;
     }
 
     private void RefreshAutocompleteIndex()
