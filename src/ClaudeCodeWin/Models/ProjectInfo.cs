@@ -10,4 +10,7 @@ public class ProjectInfo
     public DateTime LastOpened { get; set; }
     public DateTime RegisteredAt { get; set; }
     public string? Notes { get; set; }
+
+    /// <summary>Set to true for the project matching the current WorkingDirectory in the picker.</summary>
+    public bool IsCurrent { get; set; }
 }

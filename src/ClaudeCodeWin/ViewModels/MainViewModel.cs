@@ -110,7 +110,13 @@ public partial class MainViewModel : ViewModelBase
     private bool _showTaskSuggestion;
     private bool _showFinalizeActionsLabel;
     private bool _hasCompletedTask;
+    private bool _finalizeLabelBlinking;
+    private int _finalizeCountdown;
     private System.Windows.Threading.DispatcherTimer? _taskSuggestionTimer;
+    private System.Windows.Threading.DispatcherTimer? _blinkTimer;
+
+    /// <summary>Set by View to animate popup collapse instead of instant hide.</summary>
+    public Action? OnFinalizeCollapse { get; set; }
 
     // Track project roots already registered this session (avoid re-registering)
     private readonly HashSet<string> _registeredProjectRoots =
@@ -379,6 +385,18 @@ public partial class MainViewModel : ViewModelBase
         set => SetProperty(ref _hasCompletedTask, value);
     }
 
+    public int FinalizeCountdown
+    {
+        get => _finalizeCountdown;
+        set => SetProperty(ref _finalizeCountdown, value);
+    }
+
+    public bool FinalizeLabelBlinking
+    {
+        get => _finalizeLabelBlinking;
+        set => SetProperty(ref _finalizeLabelBlinking, value);
+    }
+
     public ObservableCollection<TaskSuggestionItem> SuggestedTasks { get; } = [];
 
     public ObservableCollection<ProjectInfo> PickerProjects { get; } = [];
@@ -406,6 +424,7 @@ public partial class MainViewModel : ViewModelBase
     public RelayCommand UpgradeAccountCommand { get; }
     public RelayCommand SelectProjectCommand { get; }
     public RelayCommand ContinueWithCurrentProjectCommand { get; }
+    public RelayCommand StartGeneralChatCommand { get; }
     public RelayCommand RunSuggestedTaskCommand { get; }
     public RelayCommand CloseFinalizePopupCommand { get; }
     public RelayCommand OpenFinalizeActionsCommand { get; }
@@ -451,22 +470,70 @@ public partial class MainViewModel : ViewModelBase
         _taskSuggestionTimer = null;
     }
 
+    private void StopBlinkTimer()
+    {
+        _blinkTimer?.Stop();
+        _blinkTimer = null;
+        FinalizeLabelBlinking = false;
+    }
+
     private void StartAutoCollapseTimer()
     {
         StopTaskSuggestionTimer();
+        FinalizeCountdown = 60;
         _taskSuggestionTimer = new System.Windows.Threading.DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(60)
+            Interval = TimeSpan.FromSeconds(1)
         };
-        _taskSuggestionTimer.Tick += (_, _) => CollapseToFinalizeLabel();
+        _taskSuggestionTimer.Tick += (_, _) =>
+        {
+            FinalizeCountdown--;
+            if (FinalizeCountdown <= 0)
+                CollapseToFinalizeLabel();
+        };
         _taskSuggestionTimer.Start();
     }
 
     private void CollapseToFinalizeLabel()
     {
-        ShowTaskSuggestion = false;
         StopTaskSuggestionTimer();
-        ShowFinalizeActionsLabel = SuggestedTasks.Count > 0;
+        FinalizeCountdown = 0;
+        var showLabel = SuggestedTasks.Count > 0;
+
+        if (ShowTaskSuggestion && OnFinalizeCollapse is not null)
+        {
+            // Animate, then show label
+            ShowFinalizeActionsLabel = showLabel;
+            if (showLabel) StartBlinkTimer();
+            OnFinalizeCollapse();
+        }
+        else
+        {
+            ShowTaskSuggestion = false;
+            if (showLabel)
+            {
+                ShowFinalizeActionsLabel = true;
+                StartBlinkTimer();
+            }
+        }
+    }
+
+    private void StartBlinkTimer()
+    {
+        StopBlinkTimer();
+        FinalizeLabelBlinking = true;
+        var elapsed = 0;
+        _blinkTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(500)
+        };
+        _blinkTimer.Tick += (_, _) =>
+        {
+            elapsed++;
+            if (elapsed >= 10) // 5 seconds (10 x 500ms)
+                StopBlinkTimer();
+        };
+        _blinkTimer.Start();
     }
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
@@ -586,6 +653,7 @@ public partial class MainViewModel : ViewModelBase
             }
         });
         ContinueWithCurrentProjectCommand = new RelayCommand(() => ShowProjectPicker = false);
+        StartGeneralChatCommand = new RelayCommand(StartGeneralChat);
         RunSuggestedTaskCommand = new RelayCommand(p =>
         {
             if (p is TaskSuggestionItem item && !item.IsCompleted)
@@ -608,6 +676,7 @@ public partial class MainViewModel : ViewModelBase
         {
             if (SuggestedTasks.Count > 0)
             {
+                StopBlinkTimer();
                 ShowTaskSuggestion = true;
                 ShowFinalizeActionsLabel = false;
                 StartAutoCollapseTimer();

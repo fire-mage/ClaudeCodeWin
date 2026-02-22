@@ -280,6 +280,19 @@ public partial class MainViewModel
         UpdateCta(CtaState.WaitingForUser);
     }
 
+    private void StartGeneralChat()
+    {
+        _cliService.StopSession();
+        _cliService.WorkingDirectory = null;
+        _settings.WorkingDirectory = null;
+        _settingsService.Save(_settings);
+
+        ShowProjectPicker = false;
+        ShowWelcome = false;
+        ProjectPath = "";
+        NewSessionCommand.Execute(null);
+    }
+
     public void ShowProjectPickerIfNeeded()
     {
         var projects = _projectRegistry.GetMostRecentProjects(20);
@@ -300,6 +313,12 @@ public partial class MainViewModel
         // Re-sort by LastOpened descending and take top 10
         var filtered = roots.OrderByDescending(p => p.LastOpened).Take(10).ToList();
         if (filtered.Count < 2) return;
+
+        // Mark the current project
+        var currentDir = WorkingDirectory?.TrimEnd('\\', '/');
+        foreach (var p in filtered)
+            p.IsCurrent = !string.IsNullOrEmpty(currentDir)
+                && string.Equals(p.Path.TrimEnd('\\', '/'), currentDir, StringComparison.OrdinalIgnoreCase);
 
         PickerProjects.Clear();
         foreach (var p in filtered)

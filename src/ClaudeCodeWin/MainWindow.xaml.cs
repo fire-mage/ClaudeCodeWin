@@ -46,6 +46,14 @@ public partial class MainWindow : Window
         viewModel.RecentFolders.CollectionChanged += (_, _) => RebuildRecentProjectsMenu();
         RebuildRecentProjectsMenu();
 
+        // Finalize Actions: blink animation + collapse animation
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.FinalizeLabelBlinking) && viewModel.FinalizeLabelBlinking)
+                Dispatcher.BeginInvoke(StartFinalizeLabelBlink);
+        };
+        viewModel.OnFinalizeCollapse = () => Dispatcher.BeginInvoke(AnimateFinalizeCollapse);
+
         // Set window icon from embedded resource
         try
         {
@@ -733,6 +741,39 @@ public partial class MainWindow : Window
         if (ViewModel.OpenFinalizeActionsCommand.CanExecute(null))
             ViewModel.OpenFinalizeActionsCommand.Execute(null);
         e.Handled = true;
+    }
+
+    private void StartFinalizeLabelBlink()
+    {
+        if (FinalizeLabelText.Resources["BlinkStoryboard"] is System.Windows.Media.Animation.Storyboard sb)
+            sb.Begin(FinalizeLabelText);
+    }
+
+    private void AnimateFinalizeCollapse()
+    {
+        var scaleTransform = FinalizePopupBorder.RenderTransform as System.Windows.Media.ScaleTransform;
+        if (scaleTransform is null) return;
+
+        var duration = new Duration(TimeSpan.FromMilliseconds(250));
+        var opacityAnim = new System.Windows.Media.Animation.DoubleAnimation(1, 0, duration)
+        {
+            EasingFunction = new System.Windows.Media.Animation.CubicEase
+                { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn }
+        };
+        var scaleXAnim = new System.Windows.Media.Animation.DoubleAnimation(1, 0.3, duration);
+        var scaleYAnim = new System.Windows.Media.Animation.DoubleAnimation(1, 0.3, duration);
+
+        opacityAnim.Completed += (_, _) =>
+        {
+            ViewModel.ShowTaskSuggestion = false;
+            FinalizePopupBorder.Opacity = 1;
+            scaleTransform.ScaleX = 1;
+            scaleTransform.ScaleY = 1;
+        };
+
+        FinalizePopupBorder.BeginAnimation(OpacityProperty, opacityAnim);
+        scaleTransform.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, scaleXAnim);
+        scaleTransform.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleYProperty, scaleYAnim);
     }
 
     private void ToggleBookmark_Click(object sender, RoutedEventArgs e)

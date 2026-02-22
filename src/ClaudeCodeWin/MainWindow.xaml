@@ -690,13 +690,18 @@
         </Button>
 
         <!-- Finalize Actions popup -->
-        <Border Grid.Row="1"
+        <Border x:Name="FinalizePopupBorder"
+                Grid.Row="1"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
                 Margin="0,0,24,12"
                 Panel.ZIndex="15"
                 Visibility="{Binding ShowTaskSuggestion, Converter={StaticResource BoolToVis}}"
-                MaxWidth="320">
+                MaxWidth="320"
+                RenderTransformOrigin="1,1">
+            <Border.RenderTransform>
+                <ScaleTransform ScaleX="1" ScaleY="1"/>
+            </Border.RenderTransform>
             <Border Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1"
@@ -706,15 +711,27 @@
                     <DropShadowEffect Color="Black" Opacity="0.4" BlurRadius="16" ShadowDepth="4"/>
                 </Border.Effect>
                 <StackPanel>
-                    <!-- Header with close button -->
+                    <!-- Header with timer and close button -->
                     <Grid Margin="0,0,0,10">
-                        <TextBlock Text="&#x26A1; Finalize Actions"
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0"
+                                   Text="&#x26A1; Finalize Actions"
                                    FontSize="14" FontWeight="SemiBold"
-                                   Foreground="{StaticResource PrimaryBrush}"
+                                   Foreground="{StaticResource WarningBrush}"
                                    VerticalAlignment="Center"/>
-                        <Button Content="&#x2715;"
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding FinalizeCountdown, StringFormat={}{0}s}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   VerticalAlignment="Center"
+                                   Margin="8,0,4,0"/>
+                        <Button Grid.Column="2"
+                                Content="&#x2715;"
                                 Command="{Binding CloseFinalizePopupCommand}"
-                                HorizontalAlignment="Right"
                                 Background="Transparent"
                                 Foreground="{StaticResource TextSecondaryBrush}"
                                 BorderThickness="0"
@@ -905,12 +922,20 @@
                                                FontSize="14" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextBrush}"/>
 
-                                    <TextBlock Grid.Row="0" Grid.Column="1"
-                                               Text="{Binding TechStack}"
-                                               FontSize="11"
-                                               Foreground="{StaticResource PrimaryBrush}"
-                                               VerticalAlignment="Center"
-                                               Margin="8,0,0,0"/>
+                                    <StackPanel Grid.Row="0" Grid.Column="1"
+                                                Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Border Background="{StaticResource PrimaryBrush}"
+                                                CornerRadius="3" Padding="5,1" Margin="8,0,0,0"
+                                                Visibility="{Binding IsCurrent, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="Current" FontSize="10" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource BackgroundBrush}"/>
+                                        </Border>
+                                        <TextBlock Text="{Binding TechStack}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource PrimaryBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0,0,0"/>
+                                    </StackPanel>
 
                                     <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                                                Text="{Binding Path}"
@@ -953,6 +978,12 @@
                             Padding="20,8"
                             Background="{StaticResource SurfaceBrush}"
                             Foreground="{StaticResource TextBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"/>
+                    <Button Content="General chat"
+                            Command="{Binding StartGeneralChatCommand}"
+                            Padding="20,8" Margin="8,0,0,0"
+                            Background="Transparent"
+                            Foreground="{StaticResource TextSecondaryBrush}"
                             BorderBrush="{StaticResource BorderBrush}"/>
                 </StackPanel>
 
@@ -1211,11 +1242,20 @@
                         Margin="0,0,0,4"
                         Visibility="{Binding ShowFinalizeActionsLabel, Converter={StaticResource BoolToVis}}"
                         MouseLeftButtonUp="FinalizeActions_Click">
-                    <TextBlock Text="Finalize &#x25BC;" FontSize="11"
-                               Foreground="{StaticResource PrimaryBrush}"
+                    <TextBlock x:Name="FinalizeLabelText"
+                               Text="&#x26A1; Finalize Actions &#x25B2;" FontSize="11"
+                               Foreground="{StaticResource WarningBrush}"
                                HorizontalAlignment="Center"
                                Padding="4,2"
-                               ToolTip="Open finalize actions panel"/>
+                               ToolTip="Open finalize actions panel">
+                        <TextBlock.Resources>
+                            <Storyboard x:Key="BlinkStoryboard" RepeatBehavior="10x">
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                 From="1" To="0.2" Duration="0:0:0.25"
+                                                 AutoReverse="True"/>
+                            </Storyboard>
+                        </TextBlock.Resources>
+                    </TextBlock>
                 </Border>
                 <Button Content="Send"
                         Style="{StaticResource PrimaryButton}"
