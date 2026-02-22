@@ -41,7 +41,7 @@ public partial class MainViewModel : ViewModelBase
         **NEVER** use `/dev/null` in Bash commands (e.g. `2>/dev/null`, `> /dev/null`). On Windows, this creates a literal file named `nul` which can break cloud sync (OneDrive, Dropbox, etc.). Use `2>&1` to merge streams, or `|| true` to suppress errors.
 
         ## Important rules
-        - When editing tasks.json or scripts.json, the format is a JSON array with camelCase keys. After editing, remind the user to click "Reload Tasks" or "Reload Scripts" in the menu.
+        - When editing tasks.json or scripts.json, the format is a JSON array with camelCase keys. After editing, remind the user to click "Reload Scripts" in the menu.
         - When you finish a task, write a brief summary of what was done and end with a completion word (e.g. "Done", "Готово") on a separate final line. Separate the summary from the working process with a horizontal rule (---). The app renders this section as a styled summary panel.
         - If the first fix attempt does not resolve a problem, stop guessing and start investigating: read logs, add diagnostics, trace the actual execution flow — determine the root cause before making the next fix. This rule does not apply to trivial failures like typos preventing a build/test from running.
         - Minimize external dependencies. Any significant new dependency should be confirmed with the user before adding.

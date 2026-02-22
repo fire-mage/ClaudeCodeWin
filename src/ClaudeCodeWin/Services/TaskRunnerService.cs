@@ -81,7 +81,7 @@ public class TaskRunnerService
             var projectMenu = new MenuItem
             {
                 Header = group.Key,
-                ToolTip = $"Tasks for project: {group.Key}"
+                ToolTip = $"Scripts for project: {group.Key}"
             };
 
             foreach (var task in group)
@@ -120,31 +120,9 @@ public class TaskRunnerService
         if (tasks.Count > 0)
             tasksMenu.Items.Add(new Separator());
 
-        var openFolder = new MenuItem
-        {
-            Header = "Open Tasks Folder...",
-            ToolTip = $"Open the folder with tasks.json to add or edit tasks.\n{TasksDir}"
-        };
-        openFolder.Click += (_, _) =>
-        {
-            Directory.CreateDirectory(TasksDir);
-            System.Diagnostics.Process.Start("explorer.exe", TasksDir);
-        };
-        tasksMenu.Items.Add(openFolder);
-
-        var reload = new MenuItem
-        {
-            Header = "Reload Tasks",
-            ToolTip = "Re-read tasks.json and refresh this menu after manual edits."
-        };
-        reload.Click += (_, _) => PopulateMenu(mainWindow, viewModel);
-        tasksMenu.Items.Add(reload);
-
-        tasksMenu.Items.Add(new Separator());
-
         var editTasks = new MenuItem
         {
-            Header = "Edit Tasks...",
+            Header = "Edit Scripts...",
             ToolTip = "Open the built-in editor to modify tasks.json."
         };
         editTasks.Click += (_, _) => EditTasksJson(mainWindow, viewModel);
@@ -152,14 +130,14 @@ public class TaskRunnerService
 
         var howTo = new MenuItem
         {
-            Header = "How to add a task",
-            ToolTip = "Show instructions for adding custom tasks."
+            Header = "How to add a script",
+            ToolTip = "Show instructions for adding custom scripts."
         };
         howTo.Click += (_, _) =>
         {
             MessageBox.Show(
-                "Tasks are stored in tasks.json as a JSON array.\n\n" +
-                "Each task has these fields:\n" +
+                "Scripts are stored in tasks.json as a JSON array.\n\n" +
+                "Each script has these fields:\n" +
                 "  \u2022 name \u2014 display name in the menu\n" +
                 "  \u2022 command \u2014 shell command to run\n" +
                 "  \u2022 project \u2014 (optional) project name for grouping in submenu\n" +
@@ -173,10 +151,10 @@ public class TaskRunnerService
                 "    \"project\": \"MyProject\"\n" +
                 "  }\n" +
                 "]\n\n" +
-                "Tasks with a 'project' field appear in a submenu:\n" +
-                "  Tasks > MyProject > Deploy API\n\n" +
-                "Use Edit Tasks... to modify, or open the folder manually.",
-                "How to Add a Task",
+                "Scripts with a 'project' field appear in a submenu:\n" +
+                "  My Scripts > MyProject > Deploy API\n\n" +
+                "Use Edit Scripts... to modify, or ask Claude to add a script for you.",
+                "How to Add a Script",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         };
@@ -194,7 +172,7 @@ public class TaskRunnerService
 
         var editorWindow = new Window
         {
-            Title = "Edit Tasks \u2014 tasks.json",
+            Title = "Edit Scripts \u2014 tasks.json",
             Width = 600,
             Height = 500,
             MinWidth = 400,
@@ -304,8 +282,8 @@ public class TaskRunnerService
         if (task.ConfirmBeforeRun)
         {
             var result = MessageBox.Show(
-                $"Run task \"{task.Name}\"?\n\nCommand: {task.Command}",
-                "Confirm Task",
+                $"Run script \"{task.Name}\"?\n\nCommand: {task.Command}",
+                "Confirm Script",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
 
@@ -329,8 +307,8 @@ public class TaskRunnerService
         [
             new TaskDefinition
             {
-                Name = "Hello Task",
-                Command = "echo Tasks are working! You can add your own tasks such as deploy scripts, build commands, or git workflows. Go to Tasks > Edit Tasks... or ask Claude to add a task for you.",
+                Name = "Hello Script",
+                Command = "echo Scripts are working! You can add your own scripts such as deploy commands, build scripts, or git workflows. Go to My Scripts > Edit Scripts... or ask Claude to add a script for you.",
                 ConfirmBeforeRun = false
             }
         ];
