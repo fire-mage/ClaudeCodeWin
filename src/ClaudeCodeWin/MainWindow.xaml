@@ -55,6 +55,20 @@
                     <MenuItem Header="Chat _History..." Click="MenuItem_ChatHistory_Click"
                               ToolTip="Browse and reopen previous conversations."/>
                     <Separator/>
+                    <MenuItem Header="{Binding ExpandContextMenuHeader}"
+                              Command="{Binding ExpandContextCommand}"
+                              ToolTip="Toggle between standard (200K) and extended (1M) context window. Starts a new session.">
+                        <MenuItem.Style>
+                            <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsContextExpanded}" Value="True">
+                                        <Setter Property="Foreground" Value="#f38ba8"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </MenuItem.Style>
+                    </MenuItem>
+                    <Separator/>
                     <MenuItem Header="E_xit" Click="MenuItem_Exit_Click"
                               ToolTip="Close the application. Window position and size are saved automatically."/>
                 </MenuItem>
@@ -1207,6 +1221,7 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <TextBlock Grid.Column="0" Text="{Binding StatusText}"
@@ -1275,13 +1290,19 @@
                             <MenuItem Header="New Session" Command="{Binding NewSessionCommand}"
                                       InputGestureText="Ctrl+N"
                                       ToolTip="Start a fresh conversation. Clears history and resets memory usage."/>
-                            <MenuItem Header="Expand Context (1M tokens)"
-                                      Command="{Binding ExpandContextCommand}"
-                                      ToolTip="Toggle between standard and extended context window."/>
                         </ContextMenu>
                     </Border.ContextMenu>
                 </Border>
-                <Border Grid.Column="6" VerticalAlignment="Center"
+                <!-- Reduce Context button — visible only when 1M mode is active -->
+                <Border Grid.Column="6" VerticalAlignment="Center" Margin="0,0,12,0"
+                        Cursor="Hand" Background="Transparent"
+                        MouseLeftButtonUp="ReduceContext_Click"
+                        ToolTip="Switch back to standard context (200K) and start a new chat."
+                        Visibility="{Binding IsContextExpanded, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="Reduce Context" FontSize="11" FontWeight="SemiBold"
+                               Foreground="#f38ba8"/>
+                </Border>
+                <Border Grid.Column="7" VerticalAlignment="Center"
                         Background="Transparent"
                         MouseLeftButtonUp="ModelIndicator_Click">
                     <TextBlock Text="{Binding ModelName}"

@@ -276,6 +276,12 @@ public partial class MainViewModel : ViewModelBase
         !string.IsNullOrEmpty(_modelName)
         && !_modelName.Contains("opus", StringComparison.OrdinalIgnoreCase);
 
+    public bool IsContextExpanded =>
+        _cliService.ModelOverride?.Contains("[1m]") == true;
+
+    public string ExpandContextMenuHeader =>
+        IsContextExpanded ? "Reduce Context (1M -> 200k Tokens)" : "Expand Context (1M Tokens)";
+
     public string ProjectPath
     {
         get => _projectPath;
@@ -453,6 +459,7 @@ public partial class MainViewModel : ViewModelBase
     public RelayCommand AnswerQuestionCommand { get; }
     public RelayCommand SwitchToOpusCommand { get; }
     public RelayCommand ExpandContextCommand { get; }
+    public RelayCommand ReduceContextCommand { get; }
     public RelayCommand DismissRateLimitCommand { get; }
     public RelayCommand UpgradeAccountCommand { get; }
     public RelayCommand RunSuggestedTaskCommand { get; }
@@ -668,6 +675,7 @@ public partial class MainViewModel : ViewModelBase
         });
         SwitchToOpusCommand = new RelayCommand(SwitchToOpus);
         ExpandContextCommand = new RelayCommand(ExpandContext);
+        ReduceContextCommand = new RelayCommand(ReduceContext);
         DismissRateLimitCommand = new RelayCommand(() => ShowRateLimitBanner = false);
         UpgradeAccountCommand = new RelayCommand(() =>
         {
@@ -818,6 +826,8 @@ public partial class MainViewModel : ViewModelBase
             if (_showRateLimitBanner)
                 RateLimitCountdown = _usageService.GetSessionCountdown();
         };
+
+        _cliService.OnMessageStarted += HandleMessageStarted;
 
         _cliService.OnCompactionDetected += msg =>
         {

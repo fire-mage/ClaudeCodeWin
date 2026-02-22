@@ -31,6 +31,7 @@ public class StreamJsonParser
     public event Action<string, string, List<string>>? OnSessionStarted; // sessionId, model, tools
     public event Action<string>? OnSystemNotification; // human-readable system notification from CLI
     public event Action<string, string>? OnUnknownEvent; // type, rawJson
+    public event Action<string, int, int, int>? OnMessageStarted; // model, inputTokens, cacheReadTokens, cacheCreationTokens
 
     public static string EscapeJson(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
@@ -260,25 +261,31 @@ public class StreamJsonParser
     /// </summary>
     private void HandleMessageStart(JsonElement evt)
     {
-        // Structure: { "type": "message_start", "message": { "usage": { ... } } }
+        // Structure: { "type": "message_start", "message": { "model": "...", "usage": { ... } } }
         if (!evt.TryGetProperty("message", out var msg))
             return;
 
-        if (!msg.TryGetProperty("usage", out var usage))
-            return;
+        // Extract model name from message_start (available immediately when API call starts)
+        var model = msg.TryGetProperty("model", out var modelProp) ? modelProp.GetString() ?? "" : "";
 
-        if (usage.TryGetProperty("input_tokens", out var it))
-            _lastMsgInputTokens = it.GetInt32();
-        if (usage.TryGetProperty("cache_read_input_tokens", out var cr))
-            _lastMsgCacheReadTokens = cr.GetInt32();
-        if (usage.TryGetProperty("cache_creation_input_tokens", out var cc))
-            _lastMsgCacheCreationTokens = cc.GetInt32();
+        if (msg.TryGetProperty("usage", out var usage))
+        {
+            if (usage.TryGetProperty("input_tokens", out var it))
+                _lastMsgInputTokens = it.GetInt32();
+            if (usage.TryGetProperty("cache_read_input_tokens", out var cr))
+                _lastMsgCacheReadTokens = cr.GetInt32();
+            if (usage.TryGetProperty("cache_creation_input_tokens", out var cc))
+                _lastMsgCacheCreationTokens = cc.GetInt32();
 
-        // Reset output — will be filled by message_delta
-        _lastMsgOutputTokens = 0;
+            // Reset output — will be filled by message_delta
+            _lastMsgOutputTokens = 0;
 
-        DiagnosticLogger.Log("MESSAGE_START_USAGE",
-            $"input={_lastMsgInputTokens} cache_read={_lastMsgCacheReadTokens} cache_create={_lastMsgCacheCreationTokens}");
+            DiagnosticLogger.Log("MESSAGE_START_USAGE",
+                $"model={model} input={_lastMsgInputTokens} cache_read={_lastMsgCacheReadTokens} cache_create={_lastMsgCacheCreationTokens}");
+        }
+
+        if (!string.IsNullOrEmpty(model) || _lastMsgInputTokens > 0)
+            OnMessageStarted?.Invoke(model, _lastMsgInputTokens, _lastMsgCacheReadTokens, _lastMsgCacheCreationTokens);
     }
 
     /// <summary>

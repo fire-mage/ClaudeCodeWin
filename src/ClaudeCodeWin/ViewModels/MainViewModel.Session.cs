@@ -158,6 +158,23 @@ public partial class MainViewModel
             _contextWarningShown = false;
             Messages.Add(new MessageViewModel(MessageRole.System, "Expanding context window to 1M tokens. Starting new session."));
         }
+
+        OnPropertyChanged(nameof(IsContextExpanded));
+        OnPropertyChanged(nameof(ExpandContextMenuHeader));
+    }
+
+    private void ReduceContext()
+    {
+        if (!IsContextExpanded) return;
+
+        // Strip [1m] suffix from current model override
+        var currentOverride = _cliService.ModelOverride ?? "sonnet";
+        _cliService.ModelOverride = currentOverride.Replace("[1m]", "");
+        StartNewSession();
+        Messages.Add(new MessageViewModel(MessageRole.System, "Switched back to standard context window (200K). New session started."));
+
+        OnPropertyChanged(nameof(IsContextExpanded));
+        OnPropertyChanged(nameof(ExpandContextMenuHeader));
     }
 
     private void RefreshGitStatus()

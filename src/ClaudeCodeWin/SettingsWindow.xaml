@@ -116,17 +116,6 @@
                 </StackPanel>
             </CheckBox>
 
-            <Button Content="Expand Context (1M tokens)"
-                    Click="ExpandContext_Click"
-                    Padding="16,6" Margin="0,4,0,0"
-                    HorizontalAlignment="Left"
-                    Background="{StaticResource SurfaceLightBrush}"
-                    Foreground="{StaticResource PrimaryBrush}"
-                    BorderBrush="{StaticResource PrimaryBrush}"
-                    BorderThickness="1"
-                    Cursor="Hand"
-                    ToolTip="Toggle between standard (200K) and extended (1M) context window. Starts a new session."/>
-
             <!-- Instructions section -->
             <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,20,0,16"/>
 

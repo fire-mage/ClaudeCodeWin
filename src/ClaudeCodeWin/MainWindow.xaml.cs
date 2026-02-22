@@ -626,8 +626,27 @@ public partial class MainWindow : Window
 
     private void UpdateSwitchProjectMenuHeader()
     {
-        var count = _projectRegistry.GetMostRecentProjects(50).Count;
+        var count = GetFilteredProjectCount();
         SwitchProjectMenu.Header = count > 0 ? $"Switch _Project ({count})" : "Switch _Project";
+    }
+
+    private int GetFilteredProjectCount()
+    {
+        var projects = _projectRegistry.GetMostRecentProjects(50);
+
+        // Apply same nesting filter as ProjectSwitchDialog
+        var sorted = projects.OrderBy(p => p.Path.Length).ToList();
+        var roots = new List<ProjectInfo>();
+        foreach (var p in sorted)
+        {
+            var normalizedPath = p.Path.TrimEnd('\\', '/') + "\\";
+            var isNested = roots.Any(r =>
+                normalizedPath.StartsWith(r.Path.TrimEnd('\\', '/') + "\\", StringComparison.OrdinalIgnoreCase));
+            if (!isNested)
+                roots.Add(p);
+        }
+
+        return roots.Count;
     }
 
     private void MenuItem_SwitchProject_Click(object sender, RoutedEventArgs e)
@@ -761,6 +780,12 @@ public partial class MainWindow : Window
         var container = MessagesControl.ItemContainerGenerator.ContainerFromItem(msg) as FrameworkElement;
         if (container is not null)
             container.BringIntoView();
+    }
+
+    private void ReduceContext_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        ViewModel.ReduceContextCommand.Execute(null);
+        e.Handled = true;
     }
 
     private void MenuItem_Settings_Click(object sender, RoutedEventArgs e)

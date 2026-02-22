@@ -62,12 +62,6 @@ public partial class SettingsWindow : Window
         _settingsService.Save(_settings);
     }
 
-    private void ExpandContext_Click(object sender, RoutedEventArgs e)
-    {
-        _viewModel.ExpandContextCommand.Execute(null);
-        Close();
-    }
-
     private void ManageInstructions_Click(object sender, RoutedEventArgs e)
     {
         var systemInstruction = MainViewModel.GetSystemInstructionText();

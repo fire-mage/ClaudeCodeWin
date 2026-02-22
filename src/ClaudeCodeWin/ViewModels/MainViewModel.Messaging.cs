@@ -202,6 +202,24 @@ public partial class MainViewModel
         });
     }
 
+    private void HandleMessageStarted(string model, int inputTokens, int cacheReadTokens, int cacheCreationTokens)
+    {
+        Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            // Show model name immediately when the first API call starts
+            if (!string.IsNullOrEmpty(model) && string.IsNullOrEmpty(ModelName))
+                ModelName = model;
+
+            // Update context usage in real-time during processing
+            if (_contextWindowSize > 0 && inputTokens > 0)
+            {
+                var totalInput = inputTokens + cacheReadTokens + cacheCreationTokens;
+                var pct = (int)(totalInput * 100.0 / _contextWindowSize);
+                ContextPctText = $"{pct}%";
+            }
+        });
+    }
+
     private void HandleCompleted(ResultData result)
     {
         Application.Current.Dispatcher.InvokeAsync(() =>

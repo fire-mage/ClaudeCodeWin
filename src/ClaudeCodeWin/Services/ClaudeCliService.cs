@@ -73,6 +73,7 @@ public class ClaudeCliService
     public event Action? OnRateLimitDetected; // fired when CLI stderr indicates rate limiting
     public event Action<string>? OnCompactionDetected; // message about context compaction
     public event Action<string>? OnSystemNotification; // human-readable system message from CLI
+    public event Action<string, int, int, int>? OnMessageStarted; // model, inputTokens, cacheReadTokens, cacheCreationTokens
 
     public string ClaudeExePath { get; set; } = "claude";
     public string? WorkingDirectory { get; set; }
@@ -91,6 +92,9 @@ public class ClaudeCliService
             _sessionId = sid;
             OnSessionStarted?.Invoke(sid, model, tools);
         };
+
+        _parser.OnMessageStarted += (model, input, cacheRead, cacheCreation) =>
+            OnMessageStarted?.Invoke(model, input, cacheRead, cacheCreation);
 
         _parser.OnCompleted += result =>
         {
