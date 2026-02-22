@@ -106,7 +106,6 @@ public partial class MainViewModel : ViewModelBase
     private string _todoProgressText = "";
     private bool _showRateLimitBanner;
     private string _rateLimitCountdown = "";
-    private bool _showProjectPicker;
     private bool _showTaskSuggestion;
     private bool _showFinalizeActionsLabel;
     private bool _hasCompletedTask;
@@ -361,12 +360,6 @@ public partial class MainViewModel : ViewModelBase
         set => SetProperty(ref _rateLimitCountdown, value);
     }
 
-    public bool ShowProjectPicker
-    {
-        get => _showProjectPicker;
-        set => SetProperty(ref _showProjectPicker, value);
-    }
-
     public bool ShowTaskSuggestion
     {
         get => _showTaskSuggestion;
@@ -399,8 +392,6 @@ public partial class MainViewModel : ViewModelBase
 
     public ObservableCollection<TaskSuggestionItem> SuggestedTasks { get; } = [];
 
-    public ObservableCollection<ProjectInfo> PickerProjects { get; } = [];
-
     public bool HasDialogHistory => Messages.Any(m => m.Role == MessageRole.Assistant);
 
     public string? WorkingDirectory => _cliService.WorkingDirectory;
@@ -422,9 +413,6 @@ public partial class MainViewModel : ViewModelBase
     public RelayCommand ExpandContextCommand { get; }
     public RelayCommand DismissRateLimitCommand { get; }
     public RelayCommand UpgradeAccountCommand { get; }
-    public RelayCommand SelectProjectCommand { get; }
-    public RelayCommand ContinueWithCurrentProjectCommand { get; }
-    public RelayCommand StartGeneralChatCommand { get; }
     public RelayCommand RunSuggestedTaskCommand { get; }
     public RelayCommand CloseFinalizePopupCommand { get; }
     public RelayCommand OpenFinalizeActionsCommand { get; }
@@ -644,16 +632,6 @@ public partial class MainViewModel : ViewModelBase
             try { Process.Start(new ProcessStartInfo("https://console.anthropic.com/settings/billing") { UseShellExecute = true }); }
             catch { }
         });
-        SelectProjectCommand = new RelayCommand(p =>
-        {
-            if (p is string path)
-            {
-                ShowProjectPicker = false;
-                SetWorkingDirectory(path);
-            }
-        });
-        ContinueWithCurrentProjectCommand = new RelayCommand(() => ShowProjectPicker = false);
-        StartGeneralChatCommand = new RelayCommand(StartGeneralChat);
         RunSuggestedTaskCommand = new RelayCommand(p =>
         {
             if (p is TaskSuggestionItem item && !item.IsCompleted)

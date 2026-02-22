@@ -43,17 +43,16 @@
         <!-- Menu bar with gradient border -->
         <StackPanel Grid.Row="0">
             <Menu Background="{StaticResource SurfaceBrush}">
-                <MenuItem Header="_Session"
-                          ToolTip="Session management: start new conversations, change project folder">
-                    <MenuItem Header="_New Session" Command="{Binding NewSessionCommand}"
+                <MenuItem Header="_Chats"
+                          ToolTip="Chat management: start new conversations, switch projects, browse history">
+                    <MenuItem Header="New _Chat" Command="{Binding NewSessionCommand}"
                               InputGestureText="Ctrl+N"
-                              ToolTip="Start a fresh conversation with Claude. Clears chat history and resets context.&#x0a;Example: Use after finishing one task to start a new unrelated task."/>
-                    <MenuItem Header="Change _Project Folder..." Command="{Binding SelectFolderCommand}"
-                              ToolTip="Select a different project folder as Claude's working directory.&#x0a;Claude reads files, runs commands, and writes code relative to this folder.&#x0a;Example: Switch between ProjectA and ProjectB."/>
+                              ToolTip="Start a fresh conversation in the current project."/>
+                    <MenuItem Header="Switch _Project" x:Name="SwitchProjectMenu"
+                              Click="MenuItem_SwitchProject_Click"
+                              ToolTip="Choose a different project folder and start a new chat."/>
                     <MenuItem Header="Chat _History..." Click="MenuItem_ChatHistory_Click"
                               ToolTip="Browse and reopen previous conversations."/>
-                    <MenuItem Header="Recent _Projects" x:Name="RecentProjectsMenu"
-                              ToolTip="Recently opened project folders. Click to switch, use X to remove."/>
                     <Separator/>
                     <MenuItem Header="E_xit" Click="MenuItem_Exit_Click"
                               ToolTip="Close the application. Window position and size are saved automatically."/>
@@ -880,120 +879,6 @@
             </StackPanel>
         </Border>
 
-        <!-- Project picker overlay -->
-        <Border Grid.Row="1"
-                Background="{StaticResource BackgroundBrush}"
-                Visibility="{Binding ShowProjectPicker, Converter={StaticResource BoolToVis}}"
-                Panel.ZIndex="11">
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                        MaxWidth="550" Margin="40">
-                <TextBlock Text="Select a project"
-                           FontSize="22" FontWeight="Bold"
-                           Foreground="{StaticResource PrimaryBrush}"
-                           HorizontalAlignment="Center"
-                           Margin="0,0,0,6"/>
-                <TextBlock Text="Choose a project folder to work with, or continue with the current one."
-                           FontSize="13"
-                           Foreground="{StaticResource TextSecondaryBrush}"
-                           HorizontalAlignment="Center"
-                           TextAlignment="Center"
-                           Margin="0,0,0,20"/>
-
-                <ScrollViewer MaxHeight="350" VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled">
-                <ItemsControl ItemsSource="{Binding PickerProjects}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Background="{StaticResource SurfaceBrush}"
-                                    CornerRadius="6" Padding="12,8" Margin="0,0,0,4"
-                                    Cursor="Hand">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-
-                                    <TextBlock Grid.Row="0" Grid.Column="0"
-                                               Text="{Binding Name}"
-                                               FontSize="14" FontWeight="SemiBold"
-                                               Foreground="{StaticResource TextBrush}"/>
-
-                                    <StackPanel Grid.Row="0" Grid.Column="1"
-                                                Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Border Background="{StaticResource PrimaryBrush}"
-                                                CornerRadius="3" Padding="5,1" Margin="8,0,0,0"
-                                                Visibility="{Binding IsCurrent, Converter={StaticResource BoolToVis}}">
-                                            <TextBlock Text="Current" FontSize="10" FontWeight="SemiBold"
-                                                       Foreground="{StaticResource BackgroundBrush}"/>
-                                        </Border>
-                                        <TextBlock Text="{Binding TechStack}"
-                                                   FontSize="11"
-                                                   Foreground="{StaticResource PrimaryBrush}"
-                                                   VerticalAlignment="Center"
-                                                   Margin="8,0,0,0"/>
-                                    </StackPanel>
-
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                                               Text="{Binding Path}"
-                                               FontSize="11"
-                                               Foreground="{StaticResource TextSecondaryBrush}"
-                                               TextTrimming="CharacterEllipsis"
-                                               Margin="0,2,0,0"/>
-                                </Grid>
-
-                                <Border.InputBindings>
-                                    <MouseBinding Gesture="LeftClick"
-                                                  Command="{Binding DataContext.SelectProjectCommand,
-                                                      RelativeSource={RelativeSource AncestorType=Window}}"
-                                                  CommandParameter="{Binding Path}"/>
-                                </Border.InputBindings>
-
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Style.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                </ScrollViewer>
-
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
-                            Margin="0,16,0,0">
-                    <Button Content="Continue with current"
-                            Style="{StaticResource PrimaryButton}"
-                            Command="{Binding ContinueWithCurrentProjectCommand}"
-                            Padding="20,8" Margin="0,0,8,0"/>
-                    <Button Content="Browse..."
-                            Command="{Binding SelectFolderCommand}"
-                            Padding="20,8"
-                            Background="{StaticResource SurfaceBrush}"
-                            Foreground="{StaticResource TextBrush}"
-                            BorderBrush="{StaticResource BorderBrush}"/>
-                    <Button Content="General chat"
-                            Command="{Binding StartGeneralChatCommand}"
-                            Padding="20,8" Margin="8,0,0,0"
-                            Background="Transparent"
-                            Foreground="{StaticResource TextSecondaryBrush}"
-                            BorderBrush="{StaticResource BorderBrush}"/>
-                </StackPanel>
-
-                <TextBlock Text="Press Escape to continue with current project"
-                           FontSize="11" FontStyle="Italic"
-                           Foreground="{StaticResource TextSecondaryBrush}"
-                           HorizontalAlignment="Center"
-                           Margin="0,12,0,0"/>
-            </StackPanel>
-        </Border>
 
         <!-- Message queue -->
         <Border Grid.Row="2"

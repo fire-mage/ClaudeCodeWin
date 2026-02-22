@@ -127,22 +127,33 @@ public partial class App : Application
             }
         }
 
-        // Startup dialog: offer to resume a previous session or start new
+        // Welcome dialog: unified startup flow (new chat, switch project, continue chat, general chat)
         var history = chatHistoryService.ListAll();
-        if (history.Count > 0)
+        var projectCount = projectRegistry.GetMostRecentProjects(2).Count;
+        if (history.Count > 0 || projectCount >= 2)
         {
-            var startupDialog = new StartupDialog(chatHistoryService) { Owner = mainWindow };
-            if (startupDialog.ShowDialog() == true && startupDialog.SelectedEntry is not null)
+            var welcomeDialog = new WelcomeDialog(chatHistoryService, projectRegistry, settings.WorkingDirectory)
             {
-                // User chose to resume a session
-                mainViewModel.LoadChatFromHistory(startupDialog.SelectedEntry);
-            }
-            else
+                Owner = mainWindow
+            };
+
+            if (welcomeDialog.ShowDialog() == true)
             {
-                // User chose "New session" — reset pre-restored session from constructor,
-                // then show project picker if multiple projects
-                mainViewModel.NewSessionCommand.Execute(null);
-                mainViewModel.ShowProjectPickerIfNeeded();
+                switch (welcomeDialog.ChosenAction)
+                {
+                    case Models.WelcomeDialogResult.NewChat:
+                        mainViewModel.NewSessionCommand.Execute(null);
+                        break;
+                    case Models.WelcomeDialogResult.SwitchProject:
+                        mainViewModel.SetWorkingDirectory(welcomeDialog.SelectedProjectPath!);
+                        break;
+                    case Models.WelcomeDialogResult.ContinueChat:
+                        mainViewModel.LoadChatFromHistory(welcomeDialog.SelectedChatEntry!);
+                        break;
+                    case Models.WelcomeDialogResult.GeneralChat:
+                        mainViewModel.StartGeneralChat();
+                        break;
+                }
             }
         }
 

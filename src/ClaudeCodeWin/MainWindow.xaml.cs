@@ -42,9 +42,8 @@ public partial class MainWindow : Window
         InputTextBox.TextChanged += InputTextBox_TextChanged;
         AutocompleteList.MouseDoubleClick += AutocompleteList_MouseDoubleClick;
 
-        // Rebuild Recent Projects submenu whenever the collection changes
-        viewModel.RecentFolders.CollectionChanged += (_, _) => RebuildRecentProjectsMenu();
-        RebuildRecentProjectsMenu();
+        // Update Switch Project menu header with project count
+        UpdateSwitchProjectMenuHeader();
 
         // Finalize Actions: blink animation + collapse animation
         viewModel.PropertyChanged += (_, e) =>
@@ -259,15 +258,9 @@ public partial class MainWindow : Window
             }
         }
 
-        // Escape = dismiss project picker, or LIFO: pop queue → input, then cancel Claude
+        // Escape = LIFO: pop queue → input, then cancel Claude
         if (e.Key == Key.Escape)
         {
-            if (ViewModel.ShowProjectPicker)
-            {
-                ViewModel.ShowProjectPicker = false;
-                e.Handled = true;
-                return;
-            }
             if (ViewModel.HandleEscape())
             {
                 e.Handled = true;
@@ -631,90 +624,23 @@ public partial class MainWindow : Window
         previewWindow.ShowDialog();
     }
 
-    private void RebuildRecentProjectsMenu()
+    private void UpdateSwitchProjectMenuHeader()
     {
-        RecentProjectsMenu.Items.Clear();
+        var count = _projectRegistry.GetMostRecentProjects(50).Count;
+        SwitchProjectMenu.Header = count > 0 ? $"Switch _Project ({count})" : "Switch _Project";
+    }
 
-        if (ViewModel.RecentFolders.Count == 0)
+    private void MenuItem_SwitchProject_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ProjectSwitchDialog(_projectRegistry, ViewModel.WorkingDirectory)
         {
-            RecentProjectsMenu.Items.Add(new MenuItem { Header = "(empty)", IsEnabled = false });
-            return;
-        }
+            Owner = this
+        };
 
-        foreach (var folder in ViewModel.RecentFolders)
+        if (dialog.ShowDialog() == true && dialog.SelectedProjectPath is not null)
         {
-            var folderName = Path.GetFileName(folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var textBlock = new TextBlock
-            {
-                Text = $"{folderName}  ({folder})",
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                VerticalAlignment = VerticalAlignment.Center,
-                MaxWidth = 500
-            };
-            Grid.SetColumn(textBlock, 0);
-            grid.Children.Add(textBlock);
-
-            var folderForNotes = folder;
-            var hasNotes = !string.IsNullOrEmpty(_projectRegistry.GetNotes(folder));
-            var notesBtn = new Button
-            {
-                Content = hasNotes ? "\U0001F4DD" : "\U0001F4C4",
-                FontSize = 10,
-                Padding = new Thickness(4, 0, 4, 0),
-                Margin = new Thickness(12, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-                Cursor = System.Windows.Input.Cursors.Hand,
-                Background = System.Windows.Media.Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Foreground = hasNotes
-                    ? (System.Windows.Media.Brush)FindResource("AccentBrush")
-                    : (System.Windows.Media.Brush)FindResource("TextSecondaryBrush"),
-                ToolTip = "Edit project notes"
-            };
-            notesBtn.Click += (_, e) =>
-            {
-                e.Handled = true;
-                var dlg = new ProjectNotesDialog(_projectRegistry, folderForNotes) { Owner = this };
-                if (dlg.ShowDialog() == true)
-                    RebuildRecentProjectsMenu();
-            };
-            Grid.SetColumn(notesBtn, 1);
-            grid.Children.Add(notesBtn);
-
-            var removeBtn = new Button
-            {
-                Content = "\u2715",
-                FontSize = 10,
-                Padding = new Thickness(4, 0, 4, 0),
-                Margin = new Thickness(4, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-                Cursor = System.Windows.Input.Cursors.Hand,
-                Background = System.Windows.Media.Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Foreground = (System.Windows.Media.Brush)FindResource("TextSecondaryBrush"),
-                ToolTip = "Remove from recent"
-            };
-            var folderForRemove = folder;
-            removeBtn.Click += (_, e) =>
-            {
-                e.Handled = true;
-                var result = MessageBox.Show($"Remove \"{folderForRemove}\" from recent projects?",
-                    "Confirm", MessageBoxButton.YesNo, MessageBoxImage.Question);
-                if (result == MessageBoxResult.Yes)
-                    ViewModel.RemoveRecentFolderCommand.Execute(folderForRemove);
-            };
-            Grid.SetColumn(removeBtn, 2);
-            grid.Children.Add(removeBtn);
-
-            var menuItem = new MenuItem { Header = grid };
-            var folderForOpen = folder;
-            menuItem.Click += (_, _) => ViewModel.OpenRecentFolderCommand.Execute(folderForOpen);
-            RecentProjectsMenu.Items.Add(menuItem);
+            ViewModel.SetWorkingDirectory(dialog.SelectedProjectPath);
+            UpdateSwitchProjectMenuHeader();
         }
     }
 

@@ -280,50 +280,15 @@ public partial class MainViewModel
         UpdateCta(CtaState.WaitingForUser);
     }
 
-    private void StartGeneralChat()
+    public void StartGeneralChat()
     {
         _cliService.StopSession();
         _cliService.WorkingDirectory = null;
         _settings.WorkingDirectory = null;
         _settingsService.Save(_settings);
 
-        ShowProjectPicker = false;
         ShowWelcome = false;
         ProjectPath = "";
         NewSessionCommand.Execute(null);
-    }
-
-    public void ShowProjectPickerIfNeeded()
-    {
-        var projects = _projectRegistry.GetMostRecentProjects(20);
-        if (projects.Count < 2) return;
-
-        // Filter out nested sub-projects (keep the topmost project root)
-        var sorted = projects.OrderBy(p => p.Path.Length).ToList();
-        var roots = new List<ProjectInfo>();
-        foreach (var p in sorted)
-        {
-            var normalizedPath = p.Path.TrimEnd('\\', '/') + "\\";
-            var isNested = roots.Any(r =>
-                normalizedPath.StartsWith(r.Path.TrimEnd('\\', '/') + "\\", StringComparison.OrdinalIgnoreCase));
-            if (!isNested)
-                roots.Add(p);
-        }
-
-        // Re-sort by LastOpened descending and take top 10
-        var filtered = roots.OrderByDescending(p => p.LastOpened).Take(10).ToList();
-        if (filtered.Count < 2) return;
-
-        // Mark the current project
-        var currentDir = WorkingDirectory?.TrimEnd('\\', '/');
-        foreach (var p in filtered)
-            p.IsCurrent = !string.IsNullOrEmpty(currentDir)
-                && string.Equals(p.Path.TrimEnd('\\', '/'), currentDir, StringComparison.OrdinalIgnoreCase);
-
-        PickerProjects.Clear();
-        foreach (var p in filtered)
-            PickerProjects.Add(p);
-
-        ShowProjectPicker = true;
     }
 }
