@@ -75,7 +75,7 @@
                 <MenuItem Header="S_cripts" x:Name="ScriptsMenu" Visibility="Collapsed"/>
                 <MenuItem Header="My _Scripts" x:Name="TasksMenu"
                           ToolTip="Shell commands: run predefined terminal commands in your project folder.&#x0a;Output appears in a separate window. Customize via tasks.json.&#x0a;Example: 'Git Status' runs 'git status' and displays the result."/>
-                <MenuItem Header="_Help"
+                <MenuItem Header="_App"
                           ToolTip="Updates and application information">
                     <MenuItem Header="Check for _Updates..." Command="{Binding CheckForUpdatesCommand}"
                               ToolTip="Check if a newer version is available on the update server.&#x0a;If found, download and install with one click. Also checks automatically every 4 hours."/>
