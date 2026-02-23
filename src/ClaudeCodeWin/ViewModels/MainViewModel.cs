@@ -99,6 +99,10 @@ public partial class MainViewModel : ViewModelBase
     private readonly HashSet<string> _registeredProjectRoots =
         new(StringComparer.OrdinalIgnoreCase);
 
+    // Preamble injection: set true whenever context may have been lost
+    // (new session, session restore, context compaction, chat history load)
+    private bool _needsPreambleInjection = true;
+
     // ExitPlanMode auto-confirm state
     private int _exitPlanModeAutoCount;
 
@@ -317,6 +321,7 @@ public partial class MainViewModel : ViewModelBase
     public RelayCommand ReduceContextCommand { get; }
     public RelayCommand DismissRateLimitCommand { get; }
     public RelayCommand UpgradeAccountCommand { get; }
+    public RelayCommand SendTaskOutputCommand { get; }
 
     /// <summary>
     /// Returns the built-in CCW system instruction text for display in the Instructions editor.
@@ -426,6 +431,16 @@ public partial class MainViewModel : ViewModelBase
         {
             try { Process.Start(new ProcessStartInfo("https://console.anthropic.com/settings/billing") { UseShellExecute = true }); }
             catch { }
+        });
+        SendTaskOutputCommand = new RelayCommand(p =>
+        {
+            if (p is MessageViewModel msg && msg.HasTaskOutput && !msg.IsTaskOutputSent)
+            {
+                msg.IsTaskOutputSent = true;
+                var fullOutput = msg.TaskOutputFull ?? msg.TaskOutputText;
+                var prompt = $"Console output from task \"{msg.Text}\":\n\n<task-output>\n{fullOutput}\n</task-output>";
+                _ = SendDirectAsync(prompt, null);
+            }
         });
         FinalizeActions = new FinalizeActionsViewModel(settingsService, settings, () => WorkingDirectory);
         FinalizeActions.OnCommitRequested += msg => _ = SendDirectAsync(msg, null);

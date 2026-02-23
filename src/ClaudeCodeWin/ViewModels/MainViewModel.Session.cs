@@ -66,6 +66,8 @@ public partial class MainViewModel
             StatusText = "";
 
             _cliService.RestoreSession(saved.SessionId);
+            _needsPreambleInjection = true;
+            ResetTaskOutputSentFlags();
 
             var folderName = Path.GetFileName(folder) ?? folder;
             var resumeTime = saved.CreatedAt.ToString("HH:mm");
@@ -76,7 +78,7 @@ public partial class MainViewModel
         else
         {
             // Start fresh session
-            StartNewSession();
+            StartNewSession(); // sets _needsPreambleInjection = true
 
             var folderName = Path.GetFileName(folder) ?? folder;
             Messages.Add(new MessageViewModel(MessageRole.System,
@@ -105,6 +107,7 @@ public partial class MainViewModel
         TodoProgressText = "";
         _contextWarningShown = false;
         _contextWindowSize = 0;
+        _needsPreambleInjection = true;
 
         // Reset finalize actions state
         FinalizeActions.ShowTaskSuggestion = false;
@@ -275,6 +278,8 @@ public partial class MainViewModel
             _cliService.RestoreSession(entry.SessionId);
         else
             _cliService.ResetSession();
+        _needsPreambleInjection = true;
+        ResetTaskOutputSentFlags();
 
         // Restore messages
         foreach (var msg in entry.Messages)

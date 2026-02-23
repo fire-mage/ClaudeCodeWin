@@ -135,12 +135,31 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            // Store full output for sending to Claude, truncated for UI display
+            var displayOutput = output.Length > 5000
+                ? output[..5000] + "\n... (truncated)"
+                : output;
+
             var msg = new MessageViewModel(MessageRole.System, $"Task \"{taskName}\" completed")
             {
-                TaskOutputText = output
+                TaskOutputFull = output,
+                TaskOutputText = displayOutput
             };
             Messages.Add(msg);
         });
+    }
+
+    /// <summary>
+    /// Resets task output "sent" flags so the user can re-send after context loss.
+    /// Called when preamble re-injection is triggered (compaction, session restore, etc.).
+    /// </summary>
+    private void ResetTaskOutputSentFlags()
+    {
+        foreach (var msg in Messages)
+        {
+            if (msg.HasTaskOutput && msg.IsTaskOutputSent)
+                msg.IsTaskOutputSent = false;
+        }
     }
 
     public void AddAttachment(FileAttachment attachment)

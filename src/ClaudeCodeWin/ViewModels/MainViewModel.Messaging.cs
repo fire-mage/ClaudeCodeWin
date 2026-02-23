@@ -62,10 +62,13 @@ public partial class MainViewModel
         StatusText = "Processing...";
         UpdateCta(CtaState.Processing);
 
-        // Auto-inject system instruction and context snapshot on first message of a new session
+        // Inject preamble whenever context may have been lost
+        // (new session, resumed session, after context compaction, chat history load)
         var finalPrompt = text;
-        if (_cliService.SessionId is null)
+        if (_needsPreambleInjection)
         {
+            _needsPreambleInjection = false;
+
             var preamble = SystemInstruction;
 
             if (_settings.ContextSnapshotEnabled)
@@ -286,6 +289,8 @@ public partial class MainViewModel
                     Messages.Add(new MessageViewModel(MessageRole.System, msg));
                     DiagnosticLogger.Log("COMPACTION_DETECTED", msg);
                     _contextWarningShown = false;
+                    _needsPreambleInjection = true;
+                    ResetTaskOutputSentFlags();
                 }
 
                 _previousInputTokens = totalInput;
@@ -367,32 +372,45 @@ public partial class MainViewModel
         if (_taskRunnerService is null || string.IsNullOrEmpty(WorkingDirectory))
             return;
 
-        // Check if dismissed for this project
-        var normalized = WorkingDirectory.NormalizePath();
-        if (_settings.TaskSuggestionDismissedProjects.Contains(normalized, StringComparer.OrdinalIgnoreCase))
-            return;
-
         // Check conditions: changed files + completion marker
         if (ChangedFiles.Count == 0 || !DetectCompletionMarker())
             return;
 
-        // Build suggestion list
+        // Determine effective projects from changed file paths (not just WorkingDirectory)
+        var effectiveProjects = GetEffectiveProjectPaths();
+
+        // Check if dismissed for ALL effective projects
+        if (effectiveProjects.Count > 0 && effectiveProjects.All(p =>
+                _settings.TaskSuggestionDismissedProjects.Contains(
+                    p.NormalizePath(), StringComparer.OrdinalIgnoreCase)))
+            return;
+
+        // Build suggestion list across all effective projects
         var suggestions = new List<TaskSuggestionItem>();
+        var addedTaskNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var hasGit = false;
 
-        // Get project-specific deploy tasks
-        var projectTasks = _taskRunnerService.GetTasksForProject(WorkingDirectory);
-        var deployTasks = projectTasks
-            .Where(t => t.Command.Contains("deploy", StringComparison.OrdinalIgnoreCase)
-                        || t.Command.Contains("publish", StringComparison.OrdinalIgnoreCase))
-            .Take(3)
-            .ToList();
+        foreach (var projectPath in effectiveProjects)
+        {
+            // Get project-specific deploy tasks
+            var projectTasks = _taskRunnerService.GetTasksForProject(projectPath);
+            var deployTasks = projectTasks
+                .Where(t => t.Command.Contains("deploy", StringComparison.OrdinalIgnoreCase)
+                            || t.Command.Contains("publish", StringComparison.OrdinalIgnoreCase))
+                .Take(3);
 
-        foreach (var dt in deployTasks)
-            suggestions.Add(new TaskSuggestionItem { Label = dt.Name, Task = dt });
+            foreach (var dt in deployTasks)
+            {
+                if (addedTaskNames.Add(dt.Name))
+                    suggestions.Add(new TaskSuggestionItem { Label = dt.Name, Task = dt });
+            }
 
-        // Check if project has git
-        var gitDir = Path.Combine(WorkingDirectory, ".git");
-        if (Directory.Exists(gitDir))
+            // Check if project has git
+            if (!hasGit && Directory.Exists(Path.Combine(projectPath, ".git")))
+                hasGit = true;
+        }
+
+        if (hasGit)
             suggestions.Add(new TaskSuggestionItem { Label = "Commit & Push", IsCommit = true });
 
         if (suggestions.Count == 0)
@@ -406,6 +424,51 @@ public partial class MainViewModel
         FinalizeActions.ShowFinalizeActionsLabel = false;
         FinalizeActions.ShowTaskSuggestion = true;
         FinalizeActions.StartAutoCollapseTimer();
+    }
+
+    /// <summary>
+    /// Determines which project(s) were actually modified by looking at ChangedFiles paths
+    /// and matching them against the project registry.
+    /// Falls back to WorkingDirectory if no registry match is found.
+    /// </summary>
+    private List<string> GetEffectiveProjectPaths()
+    {
+        var projectPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var filePath in ChangedFiles)
+        {
+            var match = FindProjectForFile(filePath);
+            if (match is not null)
+                projectPaths.Add(match);
+        }
+
+        // Fall back to working directory if no project matched any changed file
+        if (projectPaths.Count == 0 && !string.IsNullOrEmpty(WorkingDirectory))
+            projectPaths.Add(WorkingDirectory);
+
+        return projectPaths.ToList();
+    }
+
+    /// <summary>
+    /// Finds the most specific project from the registry that contains the given file path.
+    /// Returns null if no project matches.
+    /// </summary>
+    private string? FindProjectForFile(string filePath)
+    {
+        string? bestMatch = null;
+        var bestLength = 0;
+
+        foreach (var project in _projectRegistry.Projects)
+        {
+            var projectPath = project.Path.NormalizePath();
+            if (filePath.IsSubPathOf(projectPath) && projectPath.Length > bestLength)
+            {
+                bestMatch = project.Path;
+                bestLength = projectPath.Length;
+            }
+        }
+
+        return bestMatch;
     }
 
     private void HandleFileChanged(string filePath)

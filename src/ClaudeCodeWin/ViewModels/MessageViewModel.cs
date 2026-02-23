@@ -31,6 +31,7 @@ public class MessageViewModel : ViewModelBase
     private string _toolActivitySummary = string.Empty;
     private bool _isBookmarked;
     private string? _taskOutputText;
+    private bool _isTaskOutputSent;
     private string? _completionSummary;
 
     public MessageRole Role { get; }
@@ -124,7 +125,12 @@ public class MessageViewModel : ViewModelBase
     public bool HasQuestion => QuestionDisplay is not null;
 
     /// <summary>
-    /// Collapsible task console output attached to this message.
+    /// Full task console output (for sending to Claude).
+    /// </summary>
+    public string? TaskOutputFull { get; set; }
+
+    /// <summary>
+    /// Collapsible task console output attached to this message (truncated for UI display).
     /// </summary>
     public string? TaskOutputText
     {
@@ -137,6 +143,16 @@ public class MessageViewModel : ViewModelBase
         }
     }
     public bool HasTaskOutput => !string.IsNullOrEmpty(_taskOutputText);
+
+    /// <summary>
+    /// Whether this task output has already been sent to Claude in the current context.
+    /// Reset when context is lost (compaction, session restore).
+    /// </summary>
+    public bool IsTaskOutputSent
+    {
+        get => _isTaskOutputSent;
+        set => SetProperty(ref _isTaskOutputSent, value);
+    }
 
     /// <summary>
     /// Extracted completion summary text, displayed as a styled panel.

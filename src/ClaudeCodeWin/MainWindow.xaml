@@ -418,34 +418,55 @@
                                     <Border Background="{StaticResource ToolBubbleBrush}"
                                             CornerRadius="4" Padding="6,4" Margin="0,6,0,0"
                                             Visibility="{Binding HasTaskOutput, Converter={StaticResource BoolToVis}}">
-                                        <Expander IsExpanded="False"
-                                                  Foreground="{StaticResource TextSecondaryBrush}">
-                                            <Expander.Header>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="&#x25B6; " FontSize="10"
-                                                               Foreground="{StaticResource PrimaryBrush}"
-                                                               VerticalAlignment="Center"/>
-                                                    <TextBlock Text="Console output"
-                                                               FontSize="12"
-                                                               Foreground="{StaticResource PrimaryBrush}"
-                                                               VerticalAlignment="Center"/>
-                                                </StackPanel>
-                                            </Expander.Header>
-                                            <TextBox Text="{Binding TaskOutputText, Mode=OneWay}"
-                                                     IsReadOnly="True"
-                                                     TextWrapping="Wrap"
-                                                     FontFamily="Cascadia Code,Consolas,Courier New"
-                                                     FontSize="11"
-                                                     Background="Transparent"
-                                                     BorderThickness="0"
-                                                     Padding="4"
-                                                     Foreground="{StaticResource TextSecondaryBrush}"
-                                                     SelectionBrush="{StaticResource SelectionBrush}"
-                                                     IsTabStop="False"
-                                                     MaxHeight="400"
-                                                     VerticalScrollBarVisibility="Auto"
-                                                     Margin="4,3,0,2"/>
-                                        </Expander>
+                                        <StackPanel>
+                                            <Expander IsExpanded="False"
+                                                      Foreground="{StaticResource TextSecondaryBrush}">
+                                                <Expander.Header>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="&#x25B6; " FontSize="10"
+                                                                   Foreground="{StaticResource PrimaryBrush}"
+                                                                   VerticalAlignment="Center"/>
+                                                        <TextBlock Text="Console output"
+                                                                   FontSize="12"
+                                                                   Foreground="{StaticResource PrimaryBrush}"
+                                                                   VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Expander.Header>
+                                                <TextBox Text="{Binding TaskOutputText, Mode=OneWay}"
+                                                         IsReadOnly="True"
+                                                         TextWrapping="Wrap"
+                                                         FontFamily="Cascadia Code,Consolas,Courier New"
+                                                         FontSize="11"
+                                                         Background="Transparent"
+                                                         BorderThickness="0"
+                                                         Padding="4"
+                                                         Foreground="{StaticResource TextSecondaryBrush}"
+                                                         SelectionBrush="{StaticResource SelectionBrush}"
+                                                         IsTabStop="False"
+                                                         MaxHeight="400"
+                                                         VerticalScrollBarVisibility="Auto"
+                                                         Margin="4,3,0,2"/>
+                                            </Expander>
+                                            <!-- Send to Claude / Sent indicator -->
+                                            <Button Content="Send to Claude"
+                                                    FontSize="11" Padding="8,2"
+                                                    Margin="0,4,0,0"
+                                                    HorizontalAlignment="Left"
+                                                    Command="{Binding DataContext.SendTaskOutputCommand,
+                                                        RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}"
+                                                    Style="{StaticResource LinkButton}">
+                                                <Button.Visibility>
+                                                    <Binding Path="IsTaskOutputSent"
+                                                             Converter="{StaticResource BoolToVis}"
+                                                             ConverterParameter="Invert"/>
+                                                </Button.Visibility>
+                                            </Button>
+                                            <TextBlock Text="Sent to Claude"
+                                                       FontSize="11" Margin="0,4,0,0"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       Visibility="{Binding IsTaskOutputSent, Converter={StaticResource BoolToVis}}"/>
+                                        </StackPanel>
                                     </Border>
 
                                     <!-- AskUserQuestion buttons -->

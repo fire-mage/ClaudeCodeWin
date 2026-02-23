@@ -224,11 +224,8 @@ public partial class TaskOutputWindow : Window
             StatusText.Text = "Failed";
         }
 
-        // Fire completion event with plain text output (truncated to 5000 chars)
-        var output = _plainOutput.ToString();
-        if (output.Length > 5000)
-            output = output[..5000] + "\n... (truncated)";
-        OnTaskCompleted?.Invoke(Title, output);
+        // Fire completion event with full plain text output
+        OnTaskCompleted?.Invoke(Title, _plainOutput.ToString());
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)
