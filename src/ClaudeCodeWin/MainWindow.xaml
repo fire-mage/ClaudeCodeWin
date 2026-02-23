@@ -1094,17 +1094,6 @@
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
-                <!-- Update in progress overlay -->
-                <TextBlock Text="Please wait for the update to complete"
-                           IsHitTestVisible="False"
-                           Foreground="{StaticResource WarningBrush}"
-                           FontFamily="Nunito,Segoe UI,sans-serif"
-                           FontSize="13"
-                           FontWeight="SemiBold"
-                           Margin="12,10,0,0"
-                           VerticalAlignment="Top"
-                           Visibility="{Binding Update.IsUpdating, Converter={StaticResource BoolToVis}}"/>
-
                 <!-- Autocomplete popup -->
                 <Popup x:Name="AutocompletePopup"
                        PlacementTarget="{Binding ElementName=InputTextBox}"

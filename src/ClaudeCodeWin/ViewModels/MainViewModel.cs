@@ -537,11 +537,10 @@ public partial class MainViewModel : ViewModelBase
             _ = Task.Run(() => RefreshAutocompleteIndex());
             _ = Task.Run(() => _projectRegistry.RegisterProject(settings.WorkingDirectory, _gitService));
 
-            // Generate context snapshots for recent projects from registry (not just current dir)
+            // Generate context snapshot for current project only
             if (_settings.ContextSnapshotEnabled)
             {
-                var recentPaths = _projectRegistry.GetMostRecentProjects(5).Select(p => p.Path).ToList();
-                _contextSnapshotService.StartGenerationInBackground(recentPaths);
+                _contextSnapshotService.StartGenerationInBackground([settings.WorkingDirectory]);
             }
 
             if (settings.SavedSessions.TryGetValue(settings.WorkingDirectory, out var saved)

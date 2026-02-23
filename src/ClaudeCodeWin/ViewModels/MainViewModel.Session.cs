@@ -50,9 +50,12 @@ public partial class MainViewModel
         // Rebuild file index in background
         _ = Task.Run(() => RefreshAutocompleteIndex());
 
-        // Generate context snapshot in background
+        // Clear stale snapshots from previous project, then generate for new project only
         if (_settings.ContextSnapshotEnabled)
+        {
+            _contextSnapshotService.InvalidateAll();
             _contextSnapshotService.StartGenerationInBackground([folder]);
+        }
 
         // Try to restore saved session, otherwise start fresh
         if (_settings.SavedSessions.TryGetValue(folder, out var saved)
@@ -121,6 +124,13 @@ public partial class MainViewModel
             && _settings.SavedSessions.Remove(WorkingDirectory))
         {
             _settingsService.Save(_settings);
+        }
+
+        // Regenerate context snapshot fresh for current project (as if app just started)
+        if (_settings.ContextSnapshotEnabled && !string.IsNullOrEmpty(WorkingDirectory))
+        {
+            _contextSnapshotService.InvalidateAll();
+            _contextSnapshotService.StartGenerationInBackground([WorkingDirectory]);
         }
 
         UpdateCta(CtaState.Ready);

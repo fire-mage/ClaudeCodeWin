@@ -25,6 +25,11 @@ public class UpdateViewModel : ViewModelBase
     /// </summary>
     public event Action<string>? OnStatusTextChange;
 
+    /// <summary>
+    /// Raised when the user dismisses the update overlay (clicks "Later" or closes it after failure).
+    /// </summary>
+    public event Action? OnUpdateDismissed;
+
     public bool IsUpdating
     {
         get => _isUpdating;
@@ -139,8 +144,25 @@ public class UpdateViewModel : ViewModelBase
             });
         };
 
-        // Start periodic update checks
         _updateService.UpdateChannel = settings.UpdateChannel ?? "stable";
+    }
+
+    /// <summary>
+    /// Run a one-time update check (used at startup before showing WelcomeDialog).
+    /// Returns true if an update was found and the overlay is now visible.
+    /// </summary>
+    public async Task<bool> CheckOnStartupAsync()
+    {
+        var result = await _updateService.CheckForUpdateAsync();
+        return result is not null;
+    }
+
+    /// <summary>
+    /// Start the background periodic update check timer (every 4 hours).
+    /// Call this after the initial startup check is done.
+    /// </summary>
+    public void StartPeriodicCheck()
+    {
         _updateService.StartPeriodicCheck();
     }
 
@@ -164,5 +186,6 @@ public class UpdateViewModel : ViewModelBase
         UpdateFailed = false;
         UpdateDownloading = false;
         IsUpdating = false;
+        OnUpdateDismissed?.Invoke();
     }
 }

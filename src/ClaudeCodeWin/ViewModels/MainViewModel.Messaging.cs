@@ -76,9 +76,11 @@ public partial class MainViewModel
                 // Wait for background snapshot generation (max 10s)
                 await _contextSnapshotService.WaitForGenerationAsync(10000);
 
-                // Inject snapshots for recent projects from registry
-                var recentPaths = _projectRegistry.GetMostRecentProjects(5).Select(p => p.Path).ToList();
-                var (combined, snapshotCount) = _contextSnapshotService.GetCombinedSnapshot(recentPaths);
+                // Inject snapshot for current project only (cache is reset on project switch / new session)
+                var snapshotPaths = !string.IsNullOrEmpty(WorkingDirectory)
+                    ? new List<string> { WorkingDirectory }
+                    : _projectRegistry.GetMostRecentProjects(1).Select(p => p.Path).ToList();
+                var (combined, snapshotCount) = _contextSnapshotService.GetCombinedSnapshot(snapshotPaths);
                 if (!string.IsNullOrEmpty(combined))
                 {
                     preamble += $"\n\n<context-snapshot>\n{combined}\n</context-snapshot>";
@@ -405,8 +407,8 @@ public partial class MainViewModel
                     suggestions.Add(new TaskSuggestionItem { Label = dt.Name, Task = dt });
             }
 
-            // Check if project has git
-            if (!hasGit && Directory.Exists(Path.Combine(projectPath, ".git")))
+            // Check if project has git (walk up to find .git in parent dirs, e.g. monorepo)
+            if (!hasGit && IsInsideGitRepo(projectPath))
                 hasGit = true;
         }
 
@@ -499,5 +501,24 @@ public partial class MainViewModel
 
             _notificationService.NotifyIfInactive();
         });
+    }
+
+    /// <summary>
+    /// Walks up the directory tree from the given path to find a .git directory.
+    /// Handles cases where the project registry entry is a subfolder (e.g. src/ClaudeCodeWin)
+    /// but .git lives at the repo root (e.g. ClaudeCodeWin/).
+    /// </summary>
+    private static bool IsInsideGitRepo(string path)
+    {
+        var dir = path;
+        while (!string.IsNullOrEmpty(dir))
+        {
+            if (Directory.Exists(Path.Combine(dir, ".git")))
+                return true;
+            var parent = Directory.GetParent(dir)?.FullName;
+            if (parent == dir) break;
+            dir = parent;
+        }
+        return false;
     }
 }

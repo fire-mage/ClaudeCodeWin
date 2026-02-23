@@ -84,9 +84,6 @@ public partial class App : Application
             if (!EnsureAuthentication(depService, depStatus))
                 return;
 
-            // Welcome flow
-            RunWelcomeFlow(mainViewModel, mainWindow, chatHistoryService, projectRegistry, settings);
-
             // Instruction deduplication
             CheckInstructionDeduplication(settings.WorkingDirectory);
 
@@ -98,6 +95,22 @@ public partial class App : Application
             scriptService.PopulateMenu(mainWindow, mainViewModel, gitService, settings, projectRegistry);
             taskRunnerService.PopulateMenu(mainWindow, mainViewModel);
             mainViewModel.SetTaskRunner(taskRunnerService, mainWindow);
+
+            // Update check first, then welcome flow (to avoid overlapping popups)
+            var hasUpdate = await mainViewModel.Update.CheckOnStartupAsync();
+            if (hasUpdate)
+            {
+                // Update overlay is showing — defer welcome flow until user dismisses it
+                mainViewModel.Update.OnUpdateDismissed += () =>
+                    RunWelcomeFlow(mainViewModel, mainWindow, chatHistoryService, projectRegistry, settings);
+            }
+            else
+            {
+                RunWelcomeFlow(mainViewModel, mainWindow, chatHistoryService, projectRegistry, settings);
+            }
+
+            // Start periodic background checks (every 4 hours)
+            mainViewModel.Update.StartPeriodicCheck();
         }
         catch (Exception ex)
         {

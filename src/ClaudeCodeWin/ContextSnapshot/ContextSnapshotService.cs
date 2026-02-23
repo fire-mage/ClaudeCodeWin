@@ -100,6 +100,16 @@ public class ContextSnapshotService
             _cache.Remove(projectPath);
     }
 
+    /// <summary>
+    /// Clears all cached snapshots. Used when switching projects or starting a new session
+    /// to prevent stale snapshots from other projects leaking into the new context.
+    /// </summary>
+    public void InvalidateAll()
+    {
+        lock (_lock)
+            _cache.Clear();
+    }
+
     private static SnapshotConfig? LoadOrAutoDetect(string projectPath)
     {
         // 1. Try loading explicit snapshot-config.json
