@@ -1,10 +1,10 @@
 # build-msix.ps1 — Build MSIX package for Microsoft Store
-# Usage: .\build\build-msix.ps1 [-Runtime win-x64] [-Version 1.0.0]
+# Usage: .\build\build-msix.ps1 [-Runtime win-x64] [-Version 1.1.0]
 # Output: dist\ClaudeCodeWin-<version>-<arch>.msix
 
 param(
     [string]$Runtime = "win-x64",
-    [string]$Version = "1.0.0.0",
+    [string]$Version = "1.1.0.0",
     [string]$Configuration = "Release"
 )
 
