@@ -113,6 +113,7 @@ public partial class MainViewModel : ViewModelBase
     private string? _pendingControlToolUseId;
     private JsonElement? _pendingQuestionInput;
     private readonly List<(string question, string answer)> _pendingQuestionAnswers = [];
+    private readonly List<MessageViewModel> _pendingQuestionMessages = [];
 
     public ObservableCollection<MessageViewModel> Messages { get; } = [];
     public ObservableCollection<FileAttachment> Attachments { get; } = [];

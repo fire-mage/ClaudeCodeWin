@@ -88,6 +88,12 @@ public partial class MainViewModel
         _contextWarningShown = false;
         _contextWindowSize = 0;
         _needsPreambleInjection = true;
+        _pendingQuestionAnswers.Clear();
+        _pendingQuestionMessages.Clear();
+        _pendingQuestionCount = 0;
+        _pendingControlRequestId = null;
+        _pendingControlToolUseId = null;
+        _pendingQuestionInput = null;
 
         // Reset finalize actions state
         FinalizeActions.ShowTaskSuggestion = false;

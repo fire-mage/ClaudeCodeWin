@@ -58,7 +58,7 @@ New-Item -ItemType Directory -Path $assetsDir -Force | Out-Null
 Copy-Item (Join-Path $appxDir "Assets\*") $assetsDir
 
 # Copy and patch manifest
-$manifestTemplate = Get-Content (Join-Path $appxDir "AppxManifest.xml") -Raw
+$manifestTemplate = [System.IO.File]::ReadAllText((Join-Path $appxDir "AppxManifest.xml"), [System.Text.UTF8Encoding]::new($false))
 $manifestTemplate = $manifestTemplate -replace '__VERSION__', $Version
 $manifestTemplate = $manifestTemplate -replace '__ARCH__', $arch
 [System.IO.File]::WriteAllText((Join-Path $layoutDir "AppxManifest.xml"), $manifestTemplate, [System.Text.UTF8Encoding]::new($false))

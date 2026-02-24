@@ -116,6 +116,7 @@ public partial class MainViewModel
         _pendingControlToolUseId = toolUseId;
         _pendingQuestionInput = input.ValueKind != JsonValueKind.Undefined ? input : null;
         _pendingQuestionAnswers.Clear();
+        _pendingQuestionMessages.Clear();
 
         try
         {
@@ -153,10 +154,12 @@ public partial class MainViewModel
                         }
                     };
                     Messages.Add(questionMsg);
+                    _pendingQuestionMessages.Add(questionMsg);
                 }
                 else
                 {
                     Messages.Add(new MessageViewModel(MessageRole.System, $"Claude asked: {question}"));
+                    _pendingQuestionMessages.Add(null!); // placeholder to keep indices aligned
                 }
             }
 
@@ -170,12 +173,10 @@ public partial class MainViewModel
         var requestId = _pendingControlRequestId!;
         var toolUseId = _pendingControlToolUseId;
 
-        // Clear question buttons from all messages (they've been answered)
-        ClearQuestionDisplays();
-
         // ExitPlanMode — simple allow/deny/reset
         if (_pendingQuestionInput is null)
         {
+            ClearQuestionDisplays();
             _pendingControlRequestId = null;
             _pendingControlToolUseId = null;
 
@@ -226,6 +227,11 @@ public partial class MainViewModel
                     var questionText = questions[idx].TryGetProperty("question", out var qt)
                         ? qt.GetString() ?? "" : "";
                     _pendingQuestionAnswers.Add((questionText, answer));
+
+                    // Disable only this question's buttons
+                    if (idx < _pendingQuestionMessages.Count
+                        && _pendingQuestionMessages[idx]?.QuestionDisplay is { } answered)
+                        answered.IsAnswered = true;
                 }
                 else
                 {
@@ -236,6 +242,8 @@ public partial class MainViewModel
                             ? qt.GetString() ?? "" : "";
                         _pendingQuestionAnswers.Add((questionText, answer));
                     }
+                    // Disable all remaining question buttons
+                    ClearQuestionDisplays();
                 }
             }
         }
@@ -243,7 +251,9 @@ public partial class MainViewModel
 
         if (_pendingQuestionAnswers.Count >= _pendingQuestionCount)
         {
-            // All answers collected — send control_response
+            // All answers collected — disable any remaining buttons and send control_response
+            ClearQuestionDisplays();
+
             var answersDict = new Dictionary<string, string>();
             foreach (var (q, a) in _pendingQuestionAnswers)
                 answersDict[q] = a;
@@ -275,6 +285,7 @@ public partial class MainViewModel
             _pendingControlToolUseId = null;
             _pendingQuestionInput = null;
             _pendingQuestionAnswers.Clear();
+            _pendingQuestionMessages.Clear();
             _pendingQuestionCount = 0;
             UpdateCta(CtaState.Processing);
         }
