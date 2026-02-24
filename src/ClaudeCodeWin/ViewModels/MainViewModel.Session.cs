@@ -57,36 +57,13 @@ public partial class MainViewModel
             _contextSnapshotService.StartGenerationInBackground([folder]);
         }
 
-        // Try to restore saved session, otherwise start fresh
-        if (_settings.SavedSessions.TryGetValue(folder, out var saved)
-            && DateTime.Now - saved.CreatedAt < TimeSpan.FromHours(24))
-        {
-            // Restore previous session
-            if (IsProcessing)
-                CancelProcessing();
-            Messages.Clear();
-            ModelName = "";
-            StatusText = "";
+        // Always start fresh session when switching projects
+        // (Session restore at startup is handled by the constructor + WelcomeDialog "Continue Chat")
+        StartNewSession(); // sets _needsPreambleInjection = true
 
-            _cliService.RestoreSession(saved.SessionId);
-            _needsPreambleInjection = true;
-            ResetTaskOutputSentFlags();
-
-            var folderName = Path.GetFileName(folder) ?? folder;
-            var resumeTime = saved.CreatedAt.ToString("HH:mm");
-            Messages.Add(new MessageViewModel(MessageRole.System,
-                $"Project loaded: {folderName}\nResumed session from {resumeTime}. Type your message to continue."));
-            UpdateCta(CtaState.WaitingForUser);
-        }
-        else
-        {
-            // Start fresh session
-            StartNewSession(); // sets _needsPreambleInjection = true
-
-            var folderName = Path.GetFileName(folder) ?? folder;
-            Messages.Add(new MessageViewModel(MessageRole.System,
-                $"Project loaded: {folderName}\nType your message below to start working. Enter sends, Shift+Enter for newline."));
-        }
+        var folderName = Path.GetFileName(folder) ?? folder;
+        Messages.Add(new MessageViewModel(MessageRole.System,
+            $"Project loaded: {folderName}\nType your message below to start working. Enter sends, Shift+Enter for newline."));
     }
 
     private void StartNewSession()

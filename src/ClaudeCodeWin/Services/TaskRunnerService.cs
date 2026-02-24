@@ -85,6 +85,20 @@ public class TaskRunnerService
             .GroupBy(t => t.Project!)
             .OrderBy(g => g.Key);
 
+        if (grouped.Any())
+        {
+            var projectsHeader = new MenuItem
+            {
+                Header = "PROJECTS",
+                IsEnabled = false,
+                IsHitTestVisible = false,
+                Focusable = false,
+                FontSize = 10,
+                Padding = new Thickness(0, 2, 0, 2)
+            };
+            tasksMenu.Items.Add(projectsHeader);
+        }
+
         foreach (var group in grouped)
         {
             var projectMenu = new MenuItem

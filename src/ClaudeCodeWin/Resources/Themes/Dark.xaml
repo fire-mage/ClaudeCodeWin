@@ -185,6 +185,7 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <ContentPresenter Grid.Column="0"
                                                   ContentSource="Header"
@@ -196,6 +197,14 @@
                                            FontSize="11"
                                            Margin="24,0,0,0"
                                            VerticalAlignment="Center"/>
+                                <!-- Submenu arrow for SubmenuHeader items -->
+                                <Path x:Name="SubMenuArrow"
+                                      Grid.Column="2"
+                                      Data="M 0,0 L 4,3.5 L 0,7 Z"
+                                      Fill="{StaticResource TextSecondaryBrush}"
+                                      VerticalAlignment="Center"
+                                      Margin="12,0,0,0"
+                                      Visibility="Collapsed"/>
                             </Grid>
                         </Border>
 
@@ -230,6 +239,7 @@
                         </Trigger>
                         <Trigger Property="Role" Value="SubmenuHeader">
                             <Setter TargetName="PART_Popup" Property="Placement" Value="Right"/>
+                            <Setter TargetName="SubMenuArrow" Property="Visibility" Value="Visible"/>
                         </Trigger>
 
                         <!-- Hover highlight for top-level -->
