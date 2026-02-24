@@ -84,6 +84,11 @@
                     <MenuItem Header="_Settings..." Click="MenuItem_Settings_Click"
                               ToolTip="Application settings: update channel, preferences."/>
                     <Separator/>
+                    <MenuItem Header="_Feature Request..." Click="MenuItem_FeatureRequest_Click"
+                              ToolTip="Submit a feature request or enhancement idea for CCW."/>
+                    <MenuItem Header="Activation _Code..." Click="MenuItem_ActivationCode_Click"
+                              ToolTip="Enter an activation code to unlock extra features."/>
+                    <Separator/>
                     <MenuItem Header="_About" Click="MenuItem_About_Click"
                               ToolTip="Application version, build date, and support contacts."/>
                 </MenuItem>
@@ -749,7 +754,7 @@
                 </Border.Effect>
                 <StackPanel>
                     <!-- Header with timer and close button -->
-                    <Grid Margin="0,0,0,10">
+                    <Grid Margin="0,0,0,4">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
@@ -777,6 +782,10 @@
                                 Padding="4,0"
                                 ToolTip="Collapse"/>
                     </Grid>
+                    <TextBlock Text="{Binding FinalizeActions.ProjectName}"
+                               FontSize="11"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,0,0,8"/>
 
                     <!-- Dynamic action buttons -->
                     <ItemsControl ItemsSource="{Binding FinalizeActions.SuggestedTasks}">

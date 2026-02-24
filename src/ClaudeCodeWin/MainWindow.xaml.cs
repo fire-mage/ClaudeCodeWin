@@ -798,4 +798,14 @@ public partial class MainWindow : Window
     {
         new AboutWindow { Owner = this }.ShowDialog();
     }
+
+    private void MenuItem_FeatureRequest_Click(object sender, RoutedEventArgs e)
+    {
+        new FeatureRequestWindow(_settings, _settingsService) { Owner = this }.ShowDialog();
+    }
+
+    private void MenuItem_ActivationCode_Click(object sender, RoutedEventArgs e)
+    {
+        new ActivationCodeWindow(_settings, _settingsService) { Owner = this }.ShowDialog();
+    }
 }

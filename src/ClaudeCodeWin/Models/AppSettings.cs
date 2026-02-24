@@ -49,4 +49,11 @@ public class AppSettings
 
     // CLI versions that failed after update (blacklisted from re-offering)
     public List<string> FailedCliVersions { get; set; } = [];
+
+    // CCW Feature Request: remember user email
+    public string? UserEmail { get; set; }
+
+    // CCW Activation Code
+    public string? ActivationCode { get; set; }
+    public List<string> ActivatedFeatures { get; set; } = [];
 }

@@ -16,6 +16,7 @@ public class FinalizeActionsViewModel : ViewModelBase
     private bool _hasCompletedTask;
     private bool _finalizeLabelBlinking;
     private int _finalizeCountdown;
+    private string _projectName = "";
     private System.Windows.Threading.DispatcherTimer? _taskSuggestionTimer;
     private System.Windows.Threading.DispatcherTimer? _blinkTimer;
 
@@ -58,6 +59,12 @@ public class FinalizeActionsViewModel : ViewModelBase
     {
         get => _finalizeLabelBlinking;
         set => SetProperty(ref _finalizeLabelBlinking, value);
+    }
+
+    public string ProjectName
+    {
+        get => _projectName;
+        set => SetProperty(ref _projectName, value);
     }
 
     public RelayCommand RunSuggestedTaskCommand { get; }

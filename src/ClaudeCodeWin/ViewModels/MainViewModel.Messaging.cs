@@ -424,6 +424,9 @@ public partial class MainViewModel
         foreach (var s in suggestions)
             FinalizeActions.SuggestedTasks.Add(s);
 
+        FinalizeActions.ProjectName = effectiveProjects.Count == 1
+            ? Path.GetFileName(effectiveProjects[0])
+            : string.Join(", ", effectiveProjects.Select(Path.GetFileName));
         FinalizeActions.HasCompletedTask = true;
         FinalizeActions.ShowFinalizeActionsLabel = false;
         FinalizeActions.ShowTaskSuggestion = true;
