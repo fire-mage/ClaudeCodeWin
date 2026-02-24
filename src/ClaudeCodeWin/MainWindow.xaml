@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:converters="clr-namespace:ClaudeCodeWin.Converters"
         xmlns:vm="clr-namespace:ClaudeCodeWin.ViewModels"
-        Title="ClaudeCodeWin"
+        Title="Claude Code for Windows (CCW)"
         MinHeight="500" MinWidth="600"
         Background="{StaticResource BackgroundBrush}"
         AllowDrop="True"

@@ -1,7 +1,7 @@
 <Window x:Class="ClaudeCodeWin.AboutWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="About ClaudeCodeWin"
+        Title="About Claude Code for Windows (CCW)"
         Width="420" Height="280"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
