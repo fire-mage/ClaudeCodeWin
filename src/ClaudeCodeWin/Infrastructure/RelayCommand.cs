@@ -67,6 +67,10 @@ public class AsyncRelayCommand : ICommand
         {
             await _execute(parameter);
         }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AsyncRelayCommand] Unhandled: {ex}");
+        }
         finally
         {
             _isExecuting = false;

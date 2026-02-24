@@ -156,12 +156,17 @@ public class UpdateViewModel : ViewModelBase
             if (_cliUpdateService is null) return;
             OnStatusTextChange?.Invoke("Checking for CLI updates...");
             var update = await _cliUpdateService.CheckForUpdateAsync();
+            OnStatusTextChange?.Invoke("");
             if (update is null)
             {
-                OnStatusTextChange?.Invoke("");
                 MessageBox.Show(
                     $"Claude Code CLI is up to date ({_cliUpdateService.CurrentCliVersion ?? "unknown"}).",
                     "Check for CLI Updates", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                // User explicitly requested check — show the update overlay immediately
+                ShowCliUpdateOverlay = true;
             }
         });
 

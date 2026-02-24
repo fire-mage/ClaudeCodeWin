@@ -7,7 +7,7 @@ namespace ClaudeCodeWin.Services;
 
 public class CcwApiService
 {
-    private const string BaseUrl = "https://admin.qr4k.com/api/ccw";
+    private const string BaseUrl = "https://admin.main.fish/api/ccw";
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
 
     public async Task<(bool success, string? error)> SubmitFeatureRequestAsync(string email, string description, string appVersion)
