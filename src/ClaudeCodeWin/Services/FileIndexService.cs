@@ -41,8 +41,8 @@ public class FileIndexService
         AddUpTo(results, startsWithMatches, maxResults);
         AddUpTo(results, containsMatches, maxResults);
 
-        // Dismiss if single result equals query exactly
-        if (results.Count == 1 && string.Equals(results[0], query, StringComparison.OrdinalIgnoreCase))
+        // Dismiss if any result equals query exactly (user already typed a valid project name)
+        if (results.Exists(r => string.Equals(r, query, StringComparison.OrdinalIgnoreCase)))
             return [];
 
         return results;
