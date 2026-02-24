@@ -33,6 +33,13 @@ public class UpdateService
     private const string BaseUrl = "https://mainfish.s3.eu-central-1.amazonaws.com/admin/claudecodewin";
     private static readonly TimeSpan CheckInterval = TimeSpan.FromHours(4);
 
+    private static readonly string UpdatesDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "ClaudeCodeWin", "updates");
+
+    public static string SuccessMarkerPath => Path.Combine(UpdatesDir, "update-success.marker");
+    public static string RollbackMarkerPath => Path.Combine(UpdatesDir, "update-rollback.txt");
+
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
     private System.Threading.Timer? _timer;
 
@@ -45,6 +52,9 @@ public class UpdateService
 
     /// <summary>"stable" or "beta"</summary>
     public string UpdateChannel { get; set; } = "stable";
+
+    /// <summary>Versions that failed after update — skip these in update checks.</summary>
+    public HashSet<string> BlacklistedVersions { get; set; } = [];
 
     private string VersionUrl => UpdateChannel == "beta"
         ? $"{BaseUrl}/version-beta.json"
@@ -86,6 +96,9 @@ public class UpdateService
             if (manifest is null) return null;
 
             if (!IsNewerVersion(manifest.Version, CurrentVersion))
+                return null;
+
+            if (BlacklistedVersions.Contains(manifest.Version))
                 return null;
 
             var archKey = RuntimeInformation.ProcessArchitecture == Architecture.Arm64
@@ -172,7 +185,7 @@ public class UpdateService
         }
     }
 
-    public static void ApplyUpdate(string downloadedExePath)
+    public static void ApplyUpdate(string downloadedExePath, string? newVersion = null)
     {
         var currentExe = Environment.ProcessPath;
         if (string.IsNullOrEmpty(currentExe)) return;
@@ -180,8 +193,12 @@ public class UpdateService
         var pid = Environment.ProcessId;
         var updatesDir = Path.GetDirectoryName(downloadedExePath)!;
         var cmdPath = Path.Combine(updatesDir, "update.cmd");
+        var backupExe = currentExe + ".bak";
+        var markerPath = SuccessMarkerPath;
+        var rollbackPath = RollbackMarkerPath;
+        var versionLabel = newVersion ?? "unknown";
 
-        // Write update script
+        // Write update script with backup and rollback support
         var script = $"""
             @echo off
             :wait
@@ -190,12 +207,22 @@ public class UpdateService
                 timeout /t 1 /nobreak >nul
                 goto wait
             )
+
+            REM Backup current version before overwriting
+            copy /Y "{currentExe}" "{backupExe}" >nul
+            if errorlevel 1 (
+                echo Backup failed. Aborting update.
+                start "" "{currentExe}"
+                goto cleanup
+            )
+
+            REM Install new version
             copy /Y "{downloadedExePath}" "{currentExe}" >nul
             if errorlevel 1 (
-                echo Update failed. Press any key to exit.
-                pause >nul
-                exit /b 1
+                echo Install failed. Restoring backup.
+                goto rollback
             )
+
             REM Flush Windows icon cache so the new embedded icon appears immediately
             ie4uinit.exe -show >nul 2>nul
             REM Touch shortcut files to force Explorer to refresh cached icons
@@ -206,7 +233,39 @@ public class UpdateService
             ) do (
                 if exist %%s copy /b %%s+,, %%s >nul 2>nul
             )
+
+            REM Clear stale success marker
+            if exist "{markerPath}" del "{markerPath}" >nul
+
+            REM Launch new version with after-update flag
+            start "" "{currentExe}" --after-update
+
+            REM Health check: wait up to 20 seconds for success marker or process exit
+            set /a "countdown=20"
+            :healthcheck
+            if exist "{markerPath}" goto success
+            tasklist /FI "IMAGENAME eq ClaudeCodeWin.exe" 2>nul | find /i "ClaudeCodeWin.exe" >nul
+            if errorlevel 1 goto rollback
+            timeout /t 1 /nobreak >nul
+            set /a "countdown-=1"
+            if %countdown% gtr 0 goto healthcheck
+            REM Timeout — app is still running, assume success
+            goto success
+
+            :rollback
+            REM Restore previous version
+            copy /Y "{backupExe}" "{currentExe}" >nul
+            del "{backupExe}" >nul 2>nul
+            REM Write rollback marker so the restored app can notify the user
+            echo {versionLabel}> "{rollbackPath}"
             start "" "{currentExe}"
+            goto cleanup
+
+            :success
+            del "{backupExe}" >nul 2>nul
+            del "{markerPath}" >nul 2>nul
+
+            :cleanup
             del "{downloadedExePath}" >nul 2>nul
             del "%~f0" >nul 2>nul
             """;

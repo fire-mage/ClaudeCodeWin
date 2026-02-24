@@ -43,4 +43,10 @@ public class AppSettings
 
     // Projects where user dismissed task suggestion popup
     public List<string> TaskSuggestionDismissedProjects { get; set; } = [];
+
+    // Versions that failed to start after update (blacklisted from re-offering)
+    public List<string> FailedUpdateVersions { get; set; } = [];
+
+    // CLI versions that failed after update (blacklisted from re-offering)
+    public List<string> FailedCliVersions { get; set; } = [];
 }

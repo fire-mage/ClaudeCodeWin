@@ -43,6 +43,9 @@ public partial class App : Application
 
         try
         {
+            // Check if a previous update was rolled back
+            var rolledBackVersion = CheckUpdateRollback();
+
             // Create all services
             var cliService = new ClaudeCliService();
             var notificationService = new NotificationService();
@@ -60,6 +63,28 @@ public partial class App : Application
             if (!string.IsNullOrEmpty(settings.WorkingDirectory))
                 cliService.WorkingDirectory = settings.WorkingDirectory;
 
+            // Persist rolled-back version to blacklist and apply to update service
+            if (rolledBackVersion != null && !settings.FailedUpdateVersions.Contains(rolledBackVersion))
+            {
+                settings.FailedUpdateVersions.Add(rolledBackVersion);
+                settingsService.Save(settings);
+            }
+            updateService.BlacklistedVersions = new HashSet<string>(settings.FailedUpdateVersions);
+
+            var cliUpdateService = new CliUpdateService();
+
+            // CLI rollback check
+            var cliRolledBack = CliUpdateService.CheckCliRollbackMarker();
+            if (cliRolledBack != null && !settings.FailedCliVersions.Contains(cliRolledBack))
+            {
+                settings.FailedCliVersions.Add(cliRolledBack);
+                settingsService.Save(settings);
+                MessageBox.Show(
+                    $"Claude Code CLI update to v{cliRolledBack} failed — previous version restored.\n\n" +
+                    "This version has been blacklisted and will not be offered again.",
+                    "CLI Update Rolled Back", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            cliUpdateService.BlacklistedVersions = new HashSet<string>(settings.FailedCliVersions);
             var usageService = new UsageService();
             var contextSnapshotService = new ContextSnapshotService();
 
@@ -67,6 +92,17 @@ public partial class App : Application
             var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService, projectRegistry, contextSnapshotService, usageService);
             var mainWindow = new MainWindow(mainViewModel, notificationService, settingsService, settings, fileIndexService, chatHistoryService, projectRegistry);
             mainWindow.Show();
+
+            // Signal to update.cmd that the new version started successfully
+            if (e.Args.Contains("--after-update"))
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(UpdateService.SuccessMarkerPath)!);
+                    File.WriteAllText(UpdateService.SuccessMarkerPath, "ok");
+                }
+                catch { /* non-critical */ }
+            }
 
             // Dependency checks and installation
             if (!await EnsureDependencies(mainViewModel, mainWindow))
@@ -79,6 +115,10 @@ public partial class App : Application
                 cliService.ClaudeExePath = settings.ClaudeExePath;
             else if (depStatus.ExePath is not null)
                 cliService.ClaudeExePath = depStatus.ExePath;
+
+            // CLI update service: set exe path and get current version
+            cliUpdateService.ExePath = cliService.ClaudeExePath;
+            _ = cliUpdateService.GetCurrentVersionAsync();
 
             // Authentication
             if (!EnsureAuthentication(depService, depStatus))
@@ -111,6 +151,10 @@ public partial class App : Application
 
             // Start periodic background checks (every 4 hours)
             mainViewModel.Update.StartPeriodicCheck();
+
+            // CLI update checks
+            mainViewModel.Update.InitCliUpdate(cliUpdateService);
+            mainViewModel.Update.StartCliPeriodicCheck();
         }
         catch (Exception ex)
         {
@@ -316,6 +360,29 @@ public partial class App : Application
 
         vm.DependencySetup.ShowDependencyOverlay = false;
         return true;
+    }
+
+    /// <summary>
+    /// Check if a previous update was rolled back. Returns the failed version string, or null.
+    /// </summary>
+    private static string? CheckUpdateRollback()
+    {
+        try
+        {
+            var rollbackPath = UpdateService.RollbackMarkerPath;
+            if (!File.Exists(rollbackPath)) return null;
+
+            var failedVersion = File.ReadAllText(rollbackPath).Trim();
+            File.Delete(rollbackPath);
+
+            MessageBox.Show(
+                $"Update to v{failedVersion} failed — the previous version has been restored.\n\n" +
+                "This version has been blacklisted and will not be offered again.",
+                "Update Rolled Back", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+            return failedVersion;
+        }
+        catch { return null; }
     }
 
     private static void CheckInstructionDeduplication(string? workingDir)

@@ -79,6 +79,8 @@
                           ToolTip="Updates and application information">
                     <MenuItem Header="Check for _Updates..." Command="{Binding Update.CheckForUpdatesCommand}"
                               ToolTip="Check if a newer version is available on the update server.&#x0a;If found, download and install with one click. Also checks automatically every 4 hours."/>
+                    <MenuItem Header="Check for CLI Updates..." Command="{Binding Update.CheckCliUpdatesCommand}"
+                              ToolTip="Check if a newer version of Claude Code CLI is available.&#x0a;CLI is the backend engine that powers this application."/>
                     <MenuItem Header="_Settings..." Click="MenuItem_Settings_Click"
                               ToolTip="Application settings: update channel, preferences."/>
                     <Separator/>
@@ -1232,6 +1234,7 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <TextBlock Grid.Column="0" Text="{Binding StatusText}"
@@ -1329,6 +1332,15 @@
                                       ToolTip="Start a new session with claude-opus model."/>
                         </ContextMenu>
                     </Border.ContextMenu>
+                </Border>
+                <!-- CLI update badge -->
+                <Border Grid.Column="8" VerticalAlignment="Center" Margin="12,0,0,0"
+                        Cursor="Hand" Background="Transparent"
+                        MouseLeftButtonUp="CliUpdateBadge_Click"
+                        ToolTip="A new version of Claude Code CLI is available. Click to update."
+                        Visibility="{Binding Update.ShowCliUpdateBadge, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="&#x2B06; CLI update" FontSize="11" FontWeight="SemiBold"
+                               Foreground="{StaticResource PrimaryBrush}"/>
                 </Border>
             </Grid>
         </Border>
@@ -1532,6 +1544,225 @@
                             Margin="0,4,0,0"
                             Click="UpdateClose_Click"
                             Visibility="{Binding Update.UpdateFailed, Converter={StaticResource BoolToVis}}">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                                <Setter Property="FontSize" Value="13"/>
+                                <Setter Property="Cursor" Value="Hand"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                    CornerRadius="6"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center"
+                                                                  VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background"
+                                                            Value="{StaticResource PrimaryBrush}"/>
+                                                    <Setter Property="Foreground"
+                                                            Value="{StaticResource BackgroundBrush}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- CLI Update overlay -->
+        <Border Grid.Row="0" Grid.RowSpan="8"
+                Background="#DD1e1e2e"
+                Panel.ZIndex="102"
+                Visibility="{Binding Update.ShowCliUpdateOverlay, Converter={StaticResource BoolToVis}}">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="{StaticResource SurfaceBrush}"
+                    CornerRadius="12" Padding="32"
+                    Width="520"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1">
+                <StackPanel>
+                    <!-- Title -->
+                    <TextBlock Text="CLI Update Available"
+                               FontSize="18" FontWeight="Bold"
+                               Foreground="{StaticResource PrimaryBrush}"
+                               Margin="0,0,0,6">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Update.CliUpdating}" Value="True">
+                                        <Setter Property="Text" Value="Updating CLI..."/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Update.CliUpdateFailed}" Value="True">
+                                        <Setter Property="Text" Value="CLI Update Failed"/>
+                                        <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <!-- Version transition -->
+                    <TextBlock Text="{Binding Update.CliUpdateTitle}"
+                               FontSize="14"
+                               Foreground="{StaticResource TextBrush}"
+                               Margin="0,0,0,10"/>
+
+                    <!-- Log viewer (visible during update or after failure) -->
+                    <Border Background="{StaticResource BackgroundBrush}"
+                            CornerRadius="6" BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1" Padding="10"
+                            MaxHeight="200"
+                            Margin="0,0,0,14"
+                            Visibility="{Binding Update.CliUpdateLog, Converter={StaticResource StringToVis}}">
+                        <ScrollViewer x:Name="CliUpdateLogScroller" VerticalScrollBarVisibility="Auto">
+                            <TextBlock Text="{Binding Update.CliUpdateLog}"
+                                       FontFamily="Consolas"
+                                       FontSize="11"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       TextWrapping="Wrap"/>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- Status indicator -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <TextBlock x:Name="CliUpdateStatusDot" Text="&#x25CF; " FontSize="16"
+                                   Foreground="{StaticResource PrimaryBrush}"
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Update.CliUpdating}" Value="True">
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard x:Name="CliUpdatePulse">
+                                                    <Storyboard RepeatBehavior="Forever">
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                         From="1.0" To="0.3"
+                                                                         Duration="0:0:0.8"
+                                                                         AutoReverse="True"/>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                            <DataTrigger.ExitActions>
+                                                <StopStoryboard BeginStoryboardName="CliUpdatePulse"/>
+                                            </DataTrigger.ExitActions>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Update.CliUpdateFailed}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                            <Setter Property="Opacity" Value="1.0"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding Update.CliUpdateStatusText}"
+                                   FontSize="13"
+                                   Foreground="{StaticResource TextBrush}"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <!-- Buttons: Update Now / Later (before update starts) -->
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Center"
+                                Margin="0,4,0,0"
+                                Visibility="{Binding Update.CliUpdating, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Update.CliUpdateFailed}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <Button Content="Update Now"
+                                Padding="24,8" Margin="0,0,12,0"
+                                Click="CliUpdateInstall_Click">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                                    <Setter Property="Foreground" Value="{StaticResource BackgroundBrush}"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="FontSize" Value="13"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                    <Setter Property="Cursor" Value="Hand"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="6"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#5CBF64"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Content="Later"
+                                Padding="24,8"
+                                Click="CliUpdateLater_Click">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
+                                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                    <Setter Property="FontSize" Value="13"/>
+                                    <Setter Property="Cursor" Value="Hand"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                        CornerRadius="6"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background"
+                                                                Value="{StaticResource PrimaryBrush}"/>
+                                                        <Setter Property="Foreground"
+                                                                Value="{StaticResource BackgroundBrush}"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Close button (only visible on failure) -->
+                    <Button Content="Close"
+                            Padding="24,8"
+                            HorizontalAlignment="Center"
+                            Margin="0,4,0,0"
+                            Click="CliUpdateClose_Click"
+                            Visibility="{Binding Update.CliUpdateFailed, Converter={StaticResource BoolToVis}}">
                         <Button.Style>
                             <Style TargetType="Button">
                                 <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>

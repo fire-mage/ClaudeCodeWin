@@ -195,6 +195,26 @@ public partial class MainWindow : Window
         ViewModel.Update.DismissUpdate();
     }
 
+    private void CliUpdateBadge_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        ViewModel.Update.ShowCliUpdatePrompt();
+    }
+
+    private void CliUpdateInstall_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.Update.StartCliUpdate();
+    }
+
+    private void CliUpdateLater_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.Update.DismissCliUpdate();
+    }
+
+    private void CliUpdateClose_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.Update.DismissCliUpdate();
+    }
+
     public void ScrollDependencyLog()
     {
         DepLogScroller?.ScrollToEnd();

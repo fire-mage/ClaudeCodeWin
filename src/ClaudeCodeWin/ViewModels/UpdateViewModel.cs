@@ -20,6 +20,17 @@ public class UpdateViewModel : ViewModelBase
     private bool _updateDownloading;
     private string _updateReleaseNotes = "";
 
+    // CLI update state
+    private CliUpdateService? _cliUpdateService;
+    private CliVersionInfo? _pendingCliUpdate;
+    private bool _showCliUpdateBadge;
+    private bool _showCliUpdateOverlay;
+    private bool _cliUpdating;
+    private bool _cliUpdateFailed;
+    private string _cliUpdateTitle = "";
+    private string _cliUpdateStatusText = "";
+    private string _cliUpdateLog = "";
+
     /// <summary>
     /// Raised when the update check wants to set status text on the main status bar.
     /// </summary>
@@ -78,6 +89,50 @@ public class UpdateViewModel : ViewModelBase
         set => SetProperty(ref _updateReleaseNotes, value);
     }
 
+    // CLI update properties
+    public bool ShowCliUpdateBadge
+    {
+        get => _showCliUpdateBadge;
+        set => SetProperty(ref _showCliUpdateBadge, value);
+    }
+
+    public bool ShowCliUpdateOverlay
+    {
+        get => _showCliUpdateOverlay;
+        set => SetProperty(ref _showCliUpdateOverlay, value);
+    }
+
+    public bool CliUpdating
+    {
+        get => _cliUpdating;
+        set => SetProperty(ref _cliUpdating, value);
+    }
+
+    public bool CliUpdateFailed
+    {
+        get => _cliUpdateFailed;
+        set => SetProperty(ref _cliUpdateFailed, value);
+    }
+
+    public string CliUpdateTitle
+    {
+        get => _cliUpdateTitle;
+        set => SetProperty(ref _cliUpdateTitle, value);
+    }
+
+    public string CliUpdateStatusText
+    {
+        get => _cliUpdateStatusText;
+        set => SetProperty(ref _cliUpdateStatusText, value);
+    }
+
+    public string CliUpdateLog
+    {
+        get => _cliUpdateLog;
+        set => SetProperty(ref _cliUpdateLog, value);
+    }
+
+    public AsyncRelayCommand CheckCliUpdatesCommand { get; }
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
     public UpdateViewModel(UpdateService updateService, AppSettings settings)
@@ -94,7 +149,20 @@ public class UpdateViewModel : ViewModelBase
                 MessageBox.Show($"You are on the latest version ({_updateService.CurrentVersion}).",
                     "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Information);
             }
-            // If update found, OnUpdateAvailable handler will show overlay
+        });
+
+        CheckCliUpdatesCommand = new AsyncRelayCommand(async () =>
+        {
+            if (_cliUpdateService is null) return;
+            OnStatusTextChange?.Invoke("Checking for CLI updates...");
+            var update = await _cliUpdateService.CheckForUpdateAsync();
+            if (update is null)
+            {
+                OnStatusTextChange?.Invoke("");
+                MessageBox.Show(
+                    $"Claude Code CLI is up to date ({_cliUpdateService.CurrentCliVersion ?? "unknown"}).",
+                    "Check for CLI Updates", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
         });
 
         // Subscribe to update events
@@ -129,7 +197,7 @@ public class UpdateViewModel : ViewModelBase
                 _downloadedUpdatePath = path;
                 UpdateStatusText = "Update ready — restarting...";
                 UpdateProgressPercent = 100;
-                UpdateService.ApplyUpdate(path);
+                UpdateService.ApplyUpdate(path, _pendingUpdate?.Version);
             });
         };
 
@@ -187,5 +255,88 @@ public class UpdateViewModel : ViewModelBase
         UpdateDownloading = false;
         IsUpdating = false;
         OnUpdateDismissed?.Invoke();
+    }
+
+    // --- CLI update methods ---
+
+    public void InitCliUpdate(CliUpdateService svc)
+    {
+        _cliUpdateService = svc;
+
+        svc.OnCliUpdateAvailable += info =>
+        {
+            RunOnUI(() =>
+            {
+                _pendingCliUpdate = info;
+                CliUpdateTitle = $"v{info.CurrentVersion}  →  v{info.LatestVersion}";
+                CliUpdateStatusText = "A new CLI version is available.";
+                CliUpdateFailed = false;
+                CliUpdating = false;
+                CliUpdateLog = "";
+                ShowCliUpdateBadge = true;
+                OnStatusTextChange?.Invoke($"CLI update available: v{info.LatestVersion}");
+            });
+        };
+
+        svc.OnCliUpdateProgress += text =>
+        {
+            RunOnUI(() =>
+            {
+                CliUpdateStatusText = text;
+                if (_cliUpdateLog.Length > 0)
+                    CliUpdateLog += "\n";
+                CliUpdateLog += text;
+            });
+        };
+
+        svc.OnCliUpdateCompleted += newVersion =>
+        {
+            RunOnUI(() =>
+            {
+                ShowCliUpdateOverlay = false;
+                ShowCliUpdateBadge = false;
+                CliUpdating = false;
+                _pendingCliUpdate = null;
+                OnStatusTextChange?.Invoke($"CLI updated to v{newVersion}");
+            });
+        };
+
+        svc.OnCliUpdateFailed += error =>
+        {
+            RunOnUI(() =>
+            {
+                CliUpdating = false;
+                CliUpdateFailed = true;
+                CliUpdateStatusText = error;
+            });
+        };
+    }
+
+    public void StartCliPeriodicCheck()
+    {
+        _cliUpdateService?.StartPeriodicCheck();
+    }
+
+    public void ShowCliUpdatePrompt()
+    {
+        if (_pendingCliUpdate is null) return;
+        ShowCliUpdateOverlay = true;
+    }
+
+    public void StartCliUpdate()
+    {
+        if (_pendingCliUpdate is null || _cliUpdateService is null) return;
+        CliUpdating = true;
+        CliUpdateFailed = false;
+        CliUpdateLog = "";
+        CliUpdateStatusText = "Starting update...";
+        _ = _cliUpdateService.UpdateCliAsync(_pendingCliUpdate.LatestVersion);
+    }
+
+    public void DismissCliUpdate()
+    {
+        ShowCliUpdateOverlay = false;
+        CliUpdateFailed = false;
+        CliUpdating = false;
     }
 }
