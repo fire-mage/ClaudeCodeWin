@@ -75,6 +75,7 @@ public partial class MainViewModel : ViewModelBase
     private string? _lastSentText;
     private List<FileAttachment>? _lastSentAttachments;
     private string _projectPath = "";
+    private string _effectiveProjectName = "";
     private string _gitStatusText = "";
     private string _gitDirtyText = "";
     private bool _hasGitRepo;
@@ -204,6 +205,12 @@ public partial class MainViewModel : ViewModelBase
             var lastSep = trimmed.LastIndexOfAny(['\\', '/']);
             return lastSep >= 0 ? trimmed[(lastSep + 1)..] : trimmed;
         }
+    }
+
+    public string EffectiveProjectName
+    {
+        get => _effectiveProjectName;
+        set => SetProperty(ref _effectiveProjectName, value);
     }
 
     public string GitStatusText

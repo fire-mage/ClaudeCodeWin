@@ -52,6 +52,45 @@ public partial class MainViewModel
         _ = Task.Run(() => _projectRegistry.RegisterProject(projectRoot, _gitService));
     }
 
+    private void UpdateEffectiveProject(string toolName, string inputJson)
+    {
+        string? filePath = null;
+        try
+        {
+            if (string.IsNullOrEmpty(inputJson) || !inputJson.StartsWith('{'))
+                return;
+
+            using var doc = JsonDocument.Parse(inputJson);
+            var root = doc.RootElement;
+
+            filePath = toolName switch
+            {
+                "Read" or "Write" or "Edit" =>
+                    root.TryGetProperty("file_path", out var fp) ? fp.GetString() : null,
+                "NotebookEdit" =>
+                    root.TryGetProperty("notebook_path", out var np) ? np.GetString() : null,
+                "Glob" or "Grep" =>
+                    root.TryGetProperty("path", out var p) ? p.GetString() : null,
+                _ => null
+            };
+        }
+        catch { return; }
+
+        if (string.IsNullOrEmpty(filePath) || !Path.IsPathRooted(filePath))
+            return;
+
+        var projectPath = FindProjectForFile(filePath);
+        if (projectPath is null)
+            return;
+
+        var projectName = Path.GetFileName(projectPath.TrimEnd('\\', '/'));
+        var workingName = Path.GetFileName(WorkingDirectory?.TrimEnd('\\', '/') ?? "");
+
+        EffectiveProjectName = string.Equals(projectName, workingName, StringComparison.OrdinalIgnoreCase)
+            ? ""
+            : projectName;
+    }
+
     /// <summary>
     /// Recalls the last sent message back to the input box if Claude hasn't started responding yet.
     /// Returns true if the message was recalled.

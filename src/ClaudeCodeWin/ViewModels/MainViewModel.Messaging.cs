@@ -56,6 +56,7 @@ public partial class MainViewModel
         _hasResponseStarted = false;
 
         ChangedFiles.Clear();
+        EffectiveProjectName = "";
         _cliService.ClearFileSnapshots();
         InputText = string.Empty;
         IsProcessing = true;
@@ -184,6 +185,7 @@ public partial class MainViewModel
             }
 
             TryRegisterProjectFromToolUse(toolName, input);
+            UpdateEffectiveProject(toolName, input);
         });
     }
 

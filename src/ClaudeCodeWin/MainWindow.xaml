@@ -1248,6 +1248,11 @@
                     <TextBlock Text="{Binding ProjectFolderName}"
                                FontSize="11" FontWeight="SemiBold"
                                Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Text="{Binding EffectiveProjectName, StringFormat=' → {0}'}"
+                               FontSize="11" FontWeight="SemiBold"
+                               Foreground="{StaticResource AccentBrush}"
+                               Visibility="{Binding EffectiveProjectName, Converter={StaticResource StringToVis}}"
+                               ToolTip="Project being actively modified (detected from file paths)"/>
                 </StackPanel>
                 <!-- Git block — project name (gold) + git status: (grey) + dirty info (colored) -->
                 <StackPanel Grid.Column="3" Orientation="Horizontal"
