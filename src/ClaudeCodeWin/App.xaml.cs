@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using ClaudeCodeWin.ContextSnapshot;
+using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 using ClaudeCodeWin.Services;
 using ClaudeCodeWin.ViewModels;
@@ -9,6 +10,19 @@ namespace ClaudeCodeWin;
 
 public partial class App : Application
 {
+    public App()
+    {
+        // Apply dark title bar to all windows automatically
+        EventManager.RegisterClassHandler(
+            typeof(Window),
+            FrameworkElement.LoadedEvent,
+            new RoutedEventHandler((sender, _) =>
+            {
+                if (sender is Window w)
+                    Win32Interop.EnableDarkTitleBar(w);
+            }));
+    }
+
     private static readonly string CrashLogPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "ClaudeCodeWin", "crash.log");
