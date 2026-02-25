@@ -89,6 +89,11 @@ public partial class MainWindow : Window
     {
         SubscribeToActiveTab();
         _isUserNearBottom = true;
+
+        // Show welcome screen for new/blank tabs
+        if (TabHost.ActiveTab?.ShowWelcome == true)
+            ShowWelcomeScreen();
+
         Dispatcher.BeginInvoke(() =>
         {
             ChatScrollViewer.ScrollToEnd();

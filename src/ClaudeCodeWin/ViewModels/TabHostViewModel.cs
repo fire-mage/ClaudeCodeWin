@@ -178,6 +178,10 @@ public class TabHostViewModel : ViewModelBase
 
         Tabs.Add(tab);
         ActiveTab = tab;
+
+        // New tabs always show the welcome screen so the user can pick a project/session
+        tab.ShowWelcome = true;
+
         return tab;
     }
 

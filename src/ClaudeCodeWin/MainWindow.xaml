@@ -112,12 +112,11 @@
             </Border>
         </StackPanel>
 
-        <!-- Tab strip (hidden when only 1 tab) -->
+        <!-- Tab strip -->
         <Border Grid.Row="1"
                 Background="{StaticResource SurfaceBrush}"
                 BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="0,0,0,1"
-                Visibility="{Binding ShowTabStrip, Converter={StaticResource BoolToVis}}">
+                BorderThickness="0,0,0,1">
             <DockPanel Margin="4,0">
                 <Button DockPanel.Dock="Right" Content="+" FontSize="14"
                         Padding="10,2" Margin="2,3"
