@@ -150,6 +150,10 @@ public partial class App : Application
             taskRunnerService.PopulateMenu(mainWindow, mainViewModel);
             mainViewModel.SetTaskRunner(taskRunnerService, mainWindow);
 
+            // Knowledge Base
+            var knowledgeBaseService = new KnowledgeBaseService();
+            mainWindow.SetKnowledgeBaseService(knowledgeBaseService);
+
             // Update check first, then welcome flow (to avoid overlapping popups)
             var hasUpdate = await mainViewModel.Update.CheckOnStartupAsync();
             if (hasUpdate)
