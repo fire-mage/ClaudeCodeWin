@@ -87,7 +87,14 @@ public class MessageViewModel : ViewModelBase
     public bool IsStreaming
     {
         get => _isStreaming;
-        set => SetProperty(ref _isStreaming, value);
+        set
+        {
+            if (SetProperty(ref _isStreaming, value))
+            {
+                if (!value)
+                    StopThinkingTimer();
+            }
+        }
     }
 
     public bool IsThinking
@@ -99,8 +106,7 @@ public class MessageViewModel : ViewModelBase
             {
                 if (value)
                     StartThinkingTimer();
-                else
-                    StopThinkingTimer();
+                // Timer keeps running while IsStreaming is true
             }
         }
     }
