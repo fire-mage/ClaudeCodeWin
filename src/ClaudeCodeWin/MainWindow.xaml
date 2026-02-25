@@ -96,6 +96,8 @@
                     <MenuItem Header="Activation _Code..." Click="MenuItem_ActivationCode_Click"
                               ToolTip="Enter an activation code to unlock extra features."/>
                     <Separator/>
+                    <MenuItem Header="_Health Check..." Click="MenuItem_HealthCheck_Click"
+                              ToolTip="Run system diagnostics: check CLI, authentication, Git, internet connectivity and more."/>
                     <MenuItem Header="_About" Click="MenuItem_About_Click"
                               ToolTip="Application version, build date, and support contacts."/>
                 </MenuItem>

@@ -120,6 +120,15 @@ public class MessageViewModel : ViewModelBase
         _thinkingTimer.Start();
     }
 
+    /// <summary>
+    /// Reset the thinking timer to 0 (called when new text/activity arrives on screen).
+    /// </summary>
+    public void ResetThinkingTimer()
+    {
+        _thinkingStartTime = DateTime.UtcNow;
+        ThinkingDurationText = "0s";
+    }
+
     private void StopThinkingTimer()
     {
         if (_thinkingTimer is not null)

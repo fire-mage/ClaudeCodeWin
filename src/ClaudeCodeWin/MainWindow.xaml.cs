@@ -809,6 +809,13 @@ public partial class MainWindow : Window
         dlg.ShowDialog();
     }
 
+    private void MenuItem_HealthCheck_Click(object sender, RoutedEventArgs e)
+    {
+        var depService = new Services.ClaudeCodeDependencyService();
+        var healthService = new Services.HealthCheckService(depService);
+        new HealthCheckWindow(healthService, ViewModel.WorkingDirectory) { Owner = this }.ShowDialog();
+    }
+
     private void MenuItem_About_Click(object sender, RoutedEventArgs e)
     {
         new AboutWindow { Owner = this }.ShowDialog();

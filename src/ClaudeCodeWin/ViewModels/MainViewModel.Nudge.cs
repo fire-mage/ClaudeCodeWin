@@ -34,6 +34,9 @@ public partial class MainViewModel
         _lastActivityTime = DateTime.UtcNow;
         if (_showNudgeButton)
             ShowNudgeButton = false;
+
+        // Reset thinking duration timer to show time since last screen activity
+        _currentAssistantMessage?.ResetThinkingTimer();
     }
 
     private void StartNudgeTimer()
@@ -75,8 +78,10 @@ public partial class MainViewModel
         ShowNudgeButton = false;
         _lastActivityTime = DateTime.UtcNow;
 
-        MessageQueue.Insert(0, new QueuedMessage(NudgeMessageText));
+        // Send nudge immediately via CLI stdin (don't queue — CLI is already running)
+        Messages.Add(new MessageViewModel(MessageRole.User, NudgeMessageText));
+        _cliService.SendMessage(NudgeMessageText);
 
-        DiagnosticLogger.Log("NUDGE", $"Nudge #{_nudgeCount} queued after inactivity");
+        DiagnosticLogger.Log("NUDGE", $"Nudge #{_nudgeCount} sent immediately");
     }
 }

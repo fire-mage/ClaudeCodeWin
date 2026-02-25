@@ -171,6 +171,7 @@ public partial class MainViewModel
         }
     }
 
+
     public void AddTaskOutput(string taskName, string output)
     {
         RunOnUI(() =>

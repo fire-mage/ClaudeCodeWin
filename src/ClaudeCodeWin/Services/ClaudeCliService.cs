@@ -18,6 +18,13 @@ public class ClaudeCliService
     private string _lastStderr = string.Empty;
     private readonly StreamJsonParser _parser = new();
 
+    // Stream stall detection
+    private DateTime _lastStdoutActivity = DateTime.UtcNow;
+    private bool _streamStalled;
+    private System.Timers.Timer? _stallTimer;
+    private const int StallCheckIntervalMs = 5_000;
+    private const int StallThresholdSeconds = 30;
+
     public string? SessionId => _sessionId;
     public bool IsProcessRunning
     {
@@ -42,6 +49,8 @@ public class ClaudeCliService
     public event Action<string>? OnCompactionDetected; // message about context compaction
     public event Action<string>? OnSystemNotification; // human-readable system message from CLI
     public event Action<string, int, int, int>? OnMessageStarted; // model, inputTokens, cacheReadTokens, cacheCreationTokens
+    public event Action<int>? OnStreamStalled; // seconds since last activity
+    public event Action? OnStreamResumed;
 
     public string ClaudeExePath { get; set; } = "claude";
     public string? WorkingDirectory { get; set; }
@@ -155,6 +164,9 @@ public class ClaudeCliService
                 }
 
                 _isSessionActive = true;
+                _lastStdoutActivity = DateTime.UtcNow;
+                _streamStalled = false;
+                StartStallTimer();
                 DiagnosticLogger.Log("PROCESS_START", $"pid={_process.Id} exe={startInfo.FileName} args={startInfo.Arguments}");
 
                 // Start background reading loops
@@ -294,6 +306,7 @@ public class ClaudeCliService
     /// </summary>
     public void StopSession()
     {
+        StopStallTimer();
         lock (_processLock)
         {
             _isSessionActive = false;
@@ -365,6 +378,8 @@ public class ClaudeCliService
                     break;
                 }
 
+                _lastStdoutActivity = DateTime.UtcNow;
+
                 if (string.IsNullOrWhiteSpace(line))
                     continue;
 
@@ -406,6 +421,52 @@ public class ClaudeCliService
         }
         catch (OperationCanceledException) { }
         catch { }
+    }
+
+    private void StartStallTimer()
+    {
+        StopStallTimer();
+        _stallTimer = new System.Timers.Timer(StallCheckIntervalMs);
+        _stallTimer.Elapsed += (_, _) => CheckForStall();
+        _stallTimer.AutoReset = true;
+        _stallTimer.Start();
+    }
+
+    private void StopStallTimer()
+    {
+        _stallTimer?.Stop();
+        _stallTimer?.Dispose();
+        _stallTimer = null;
+        if (_streamStalled)
+        {
+            _streamStalled = false;
+            OnStreamResumed?.Invoke();
+        }
+    }
+
+    private void CheckForStall()
+    {
+        if (!_isSessionActive) return;
+
+        var elapsed = (int)(DateTime.UtcNow - _lastStdoutActivity).TotalSeconds;
+
+        if (elapsed >= StallThresholdSeconds && !_streamStalled)
+        {
+            _streamStalled = true;
+            DiagnosticLogger.Log("STREAM_STALL", $"No stdout data for {elapsed}s");
+            OnStreamStalled?.Invoke(elapsed);
+        }
+        else if (elapsed < StallThresholdSeconds && _streamStalled)
+        {
+            _streamStalled = false;
+            DiagnosticLogger.Log("STREAM_RESUMED", "Stdout data flowing again");
+            OnStreamResumed?.Invoke();
+        }
+        else if (_streamStalled)
+        {
+            // Update elapsed time while stalled
+            OnStreamStalled?.Invoke(elapsed);
+        }
     }
 
     private void HandleProcessExited()
