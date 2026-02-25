@@ -78,6 +78,7 @@ public partial class MainViewModel
         Messages.Clear();
         MessageQueue.Clear();
         ChangedFiles.Clear();
+        ClearBackgroundTasks();
         _cliService.ClearFileSnapshots();
         _cliService.ResetSession();
         ModelName = "";

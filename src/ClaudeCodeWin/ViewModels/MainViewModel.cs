@@ -341,6 +341,8 @@ public partial class MainViewModel : ViewModelBase
     public RelayCommand UpgradeAccountCommand { get; }
     public RelayCommand SendTaskOutputCommand { get; }
     public RelayCommand NudgeCommand { get; }
+    public RelayCommand SendBgTaskOutputCommand { get; }
+    public RelayCommand DismissBgTaskCommand { get; }
 
     /// <summary>
     /// Returns the built-in CCW system instruction text for display in the Instructions editor.
@@ -462,7 +464,10 @@ public partial class MainViewModel : ViewModelBase
             }
         });
         NudgeCommand = new RelayCommand(ExecuteNudge);
+        SendBgTaskOutputCommand = new RelayCommand(ExecuteSendBgTaskOutput);
+        DismissBgTaskCommand = new RelayCommand(ExecuteDismissBgTask);
         InitializeNudge();
+        InitializeBackgroundTaskTimer();
 
         FinalizeActions = new FinalizeActionsViewModel(settingsService, settings, () => WorkingDirectory);
         FinalizeActions.OnCommitRequested += msg => _ = SendDirectAsync(msg, null);

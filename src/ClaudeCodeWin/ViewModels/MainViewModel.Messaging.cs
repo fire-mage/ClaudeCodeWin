@@ -190,6 +190,7 @@ public partial class MainViewModel
 
             TryRegisterProjectFromToolUse(toolName, input);
             UpdateEffectiveProject(toolName, input);
+            TryTrackBackgroundTask(toolName, toolUseId, input);
         });
     }
 
@@ -212,6 +213,8 @@ public partial class MainViewModel
                     ? content[..5000] + $"\n\n... ({content.Length:N0} chars total)"
                     : content;
             }
+
+            TryUpdateBackgroundTask(toolName, toolUseId, content);
         });
     }
 

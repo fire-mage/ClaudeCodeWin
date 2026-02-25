@@ -37,6 +37,7 @@
             <RowDefinition Height="Auto"/>     <!-- Attachments -->
             <RowDefinition Height="Auto"/>     <!-- CTA hint -->
             <RowDefinition Height="Auto"/>     <!-- Input -->
+            <RowDefinition Height="Auto"/>     <!-- Background tasks -->
             <RowDefinition Height="Auto"/>     <!-- Changed files -->
             <RowDefinition Height="Auto"/>     <!-- Status bar -->
         </Grid.RowDefinitions>
@@ -899,7 +900,7 @@
         </Border>
 
         <!-- Welcome overlay (full window) -->
-        <Border Grid.Row="0" Grid.RowSpan="8"
+        <Border Grid.Row="0" Grid.RowSpan="9"
                 Background="{StaticResource BackgroundBrush}"
                 Visibility="{Binding ShowWelcome, Converter={StaticResource BoolToVis}}"
                 Panel.ZIndex="50">
@@ -1541,8 +1542,109 @@
             </StackPanel>
         </Grid>
 
-        <!-- Changed files indicator -->
+        <!-- Background tasks panel -->
         <Border Grid.Row="6"
+                Background="{StaticResource SurfaceBrush}"
+                Padding="8,3"
+                Visibility="{Binding HasBackgroundTasks, Converter={StaticResource BoolToVis}}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,1,0,0">
+            <Expander IsExpanded="True" Foreground="{StaticResource TextSecondaryBrush}">
+                <Expander.Header>
+                    <TextBlock Text="{Binding BackgroundTasksHeaderText}" FontSize="11"
+                               Foreground="{StaticResource AccentBrush}"/>
+                </Expander.Header>
+                <ItemsControl ItemsSource="{Binding BackgroundTasks}" Margin="4,2,0,2">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:BackgroundTaskViewModel}">
+                            <Border Margin="0,1" Padding="4,3"
+                                    Background="Transparent">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Status icon -->
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding StatusIcon}"
+                                               FontSize="12" Margin="0,0,6,0"
+                                               VerticalAlignment="Center"/>
+
+                                    <!-- Description -->
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding Description}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource TextBrush}"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center"/>
+
+                                    <!-- Elapsed time -->
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding ElapsedText}"
+                                               FontSize="11" Margin="8,0"
+                                               FontFamily="Cascadia Code,Consolas,Courier New"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               VerticalAlignment="Center"/>
+
+                                    <!-- Send to Claude / Sent indicator -->
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal"
+                                                Visibility="{Binding HasOutput, Converter={StaticResource BoolToVis}}"
+                                                VerticalAlignment="Center">
+                                        <Button Content="Send to Claude"
+                                                FontSize="10" Padding="6,1"
+                                                Margin="0,0,4,0"
+                                                Style="{StaticResource LinkButton}"
+                                                Command="{Binding DataContext.SendBgTaskOutputCommand,
+                                                    RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}">
+                                            <Button.Visibility>
+                                                <Binding Path="IsSent"
+                                                         Converter="{StaticResource BoolToVis}"
+                                                         ConverterParameter="Invert"/>
+                                            </Button.Visibility>
+                                        </Button>
+                                        <TextBlock Text="Sent" FontSize="10"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding IsSent, Converter={StaticResource BoolToVis}}"/>
+                                    </StackPanel>
+
+                                    <!-- Dismiss button (for completed tasks) -->
+                                    <Button Grid.Column="4"
+                                            Content="&#x2715;" FontSize="10"
+                                            Padding="4,0" Margin="0"
+                                            ToolTip="Dismiss"
+                                            Foreground="{StaticResource TextSecondaryBrush}"
+                                            Background="Transparent" BorderThickness="0"
+                                            Cursor="Hand"
+                                            Visibility="{Binding IsCompleted, Converter={StaticResource BoolToVis}}"
+                                            Command="{Binding DataContext.DismissBgTaskCommand,
+                                                RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"/>
+                                </Grid>
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background"
+                                                        Value="{StaticResource SurfaceLightBrush}"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Expander>
+        </Border>
+
+        <!-- Changed files indicator -->
+        <Border Grid.Row="7"
                 Background="{StaticResource SurfaceBrush}"
                 Padding="8,3"
                 Visibility="{Binding HasChangedFiles, Converter={StaticResource BoolToVis}}"
@@ -1587,7 +1689,7 @@
         </Border>
 
         <!-- Status bar -->
-        <Border Grid.Row="7" Style="{StaticResource StatusBarStyle}">
+        <Border Grid.Row="8" Style="{StaticResource StatusBarStyle}">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -1711,7 +1813,7 @@
             </Grid>
         </Border>
         <!-- Update overlay (covers entire window during update) -->
-        <Border Grid.Row="0" Grid.RowSpan="8"
+        <Border Grid.Row="0" Grid.RowSpan="9"
                 Background="#DD1e1e2e"
                 Panel.ZIndex="101"
                 Visibility="{Binding Update.ShowUpdateOverlay, Converter={StaticResource BoolToVis}}">
@@ -1948,7 +2050,7 @@
         </Border>
 
         <!-- CLI Update overlay -->
-        <Border Grid.Row="0" Grid.RowSpan="8"
+        <Border Grid.Row="0" Grid.RowSpan="9"
                 Background="#DD1e1e2e"
                 Panel.ZIndex="102"
                 Visibility="{Binding Update.ShowCliUpdateOverlay, Converter={StaticResource BoolToVis}}">
@@ -2167,7 +2269,7 @@
         </Border>
 
         <!-- Dependency install overlay (covers entire window during setup) -->
-        <Border Grid.Row="0" Grid.RowSpan="8"
+        <Border Grid.Row="0" Grid.RowSpan="9"
                 Background="#DD1e1e2e"
                 Panel.ZIndex="100"
                 Visibility="{Binding DependencySetup.ShowDependencyOverlay, Converter={StaticResource BoolToVis}}">
@@ -2312,7 +2414,7 @@
 
         <!-- Drag & drop overlay -->
         <Border x:Name="DragDropOverlay"
-                Grid.Row="0" Grid.RowSpan="8"
+                Grid.Row="0" Grid.RowSpan="9"
                 Background="#CC1e1e2e"
                 Panel.ZIndex="200"
                 Visibility="Collapsed"
