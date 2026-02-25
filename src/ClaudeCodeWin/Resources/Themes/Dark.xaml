@@ -40,6 +40,7 @@
     <SolidColorBrush x:Key="SystemBubbleBrush" Color="{StaticResource SystemBubbleColor}"/>
     <SolidColorBrush x:Key="ThinkingBubbleBrush" Color="{StaticResource ThinkingBubbleColor}"/>
     <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}"/>
+    <SolidColorBrush x:Key="MutedTextBrush" Color="{StaticResource TextSecondaryColor}"/>
 
     <!-- Global TextBlock style -->
     <Style TargetType="TextBlock">
