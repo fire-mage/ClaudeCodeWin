@@ -61,6 +61,7 @@ public partial class MainViewModel
         InputText = string.Empty;
         IsProcessing = true;
         StatusText = "Processing...";
+        StartNudgeTimer();
         UpdateCta(CtaState.Processing);
 
         // Inject preamble whenever context may have been lost
@@ -115,6 +116,7 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            ResetNudgeActivity();
             if (_currentAssistantMessage is null) return;
 
             // If tools were used since the last text block, start a new message bubble
@@ -133,6 +135,7 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            ResetNudgeActivity();
             if (_currentAssistantMessage is not null)
             {
                 if (_isFirstDelta)
@@ -154,6 +157,7 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            ResetNudgeActivity();
             if (_currentAssistantMessage is not null)
             {
                 _hadToolsSinceLastText = true;
@@ -193,6 +197,7 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            ResetNudgeActivity();
             if (_currentAssistantMessage is null) return;
 
             // Find the tool use by ID and set its result
@@ -214,6 +219,7 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            ResetNudgeActivity();
             // Show model name immediately when the first API call starts
             if (!string.IsNullOrEmpty(model) && string.IsNullOrEmpty(ModelName))
                 ModelName = model;
@@ -242,6 +248,7 @@ public partial class MainViewModel
             _currentAssistantMessage = null;
             _hadToolsSinceLastText = false;
             IsProcessing = false;
+            StopNudgeTimer();
             StatusText = "";
             UpdateCta(CtaState.WaitingForUser);
 
@@ -501,6 +508,7 @@ public partial class MainViewModel
 
             _currentAssistantMessage = null;
             IsProcessing = false;
+            StopNudgeTimer();
             StatusText = "Error";
             UpdateCta(CtaState.WaitingForUser);
 

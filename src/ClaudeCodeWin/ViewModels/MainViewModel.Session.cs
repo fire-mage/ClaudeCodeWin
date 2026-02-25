@@ -101,6 +101,7 @@ public partial class MainViewModel
         FinalizeActions.HasCompletedTask = false;
         FinalizeActions.SuggestedTasks.Clear();
         FinalizeActions.StopTaskSuggestionTimer();
+        StopNudgeTimer();
 
         // Clear saved session for current project
         if (!string.IsNullOrEmpty(WorkingDirectory)

@@ -159,6 +159,7 @@ public partial class MainViewModel
     {
         _cliService.Cancel();
         IsProcessing = false;
+        StopNudgeTimer();
         StatusText = "Cancelled";
         UpdateCta(CtaState.WaitingForUser);
 

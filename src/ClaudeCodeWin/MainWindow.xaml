@@ -1246,10 +1246,49 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0" Text="{Binding StatusText}"
-                           FontSize="12"
-                           Foreground="{Binding StatusText, Converter={StaticResource StatusTextBrush}}"
-                           VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusText}"
+                               FontSize="12"
+                               Foreground="{Binding StatusText, Converter={StaticResource StatusTextBrush}}"
+                               VerticalAlignment="Center"/>
+                    <Button Content="Are You OK?"
+                            Margin="12,0,0,0"
+                            Padding="8,2"
+                            FontSize="11"
+                            Cursor="Hand"
+                            Command="{Binding NudgeCommand}"
+                            ToolTip="Claude seems stuck. Click to send a nudge message."
+                            Visibility="{Binding ShowNudgeButton, Converter={StaticResource BoolToVis}}">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
+                                <Setter Property="BorderBrush" Value="{StaticResource WarningBrush}"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                    CornerRadius="4"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center"
+                                                                  VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background"
+                                                            Value="{StaticResource SurfaceLightBrush}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </StackPanel>
                 <!-- Folder block — all grey -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal"
                             VerticalAlignment="Center" Margin="0,0,16,0">
