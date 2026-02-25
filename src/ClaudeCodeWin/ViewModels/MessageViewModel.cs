@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Windows.Threading;
 using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 
@@ -28,6 +29,9 @@ public class MessageViewModel : ViewModelBase
     private string _text = string.Empty;
     private bool _isStreaming;
     private bool _isThinking;
+    private string _thinkingDurationText = "0s";
+    private DispatcherTimer? _thinkingTimer;
+    private DateTime _thinkingStartTime;
     private string _toolActivitySummary = string.Empty;
     private bool _isBookmarked;
     private string? _taskOutputText;
@@ -89,7 +93,48 @@ public class MessageViewModel : ViewModelBase
     public bool IsThinking
     {
         get => _isThinking;
-        set => SetProperty(ref _isThinking, value);
+        set
+        {
+            if (SetProperty(ref _isThinking, value))
+            {
+                if (value)
+                    StartThinkingTimer();
+                else
+                    StopThinkingTimer();
+            }
+        }
+    }
+
+    public string ThinkingDurationText
+    {
+        get => _thinkingDurationText;
+        private set => SetProperty(ref _thinkingDurationText, value);
+    }
+
+    private void StartThinkingTimer()
+    {
+        _thinkingStartTime = DateTime.UtcNow;
+        ThinkingDurationText = "0s";
+        _thinkingTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _thinkingTimer.Tick += ThinkingTimer_Tick;
+        _thinkingTimer.Start();
+    }
+
+    private void StopThinkingTimer()
+    {
+        if (_thinkingTimer is not null)
+        {
+            _thinkingTimer.Stop();
+            _thinkingTimer.Tick -= ThinkingTimer_Tick;
+        }
+    }
+
+    private void ThinkingTimer_Tick(object? sender, EventArgs e)
+    {
+        var elapsed = DateTime.UtcNow - _thinkingStartTime;
+        ThinkingDurationText = elapsed.TotalSeconds < 60
+            ? $"{(int)elapsed.TotalSeconds}s"
+            : $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:D2}s";
     }
 
     public ObservableCollection<ToolUseViewModel> ToolUses { get; } = [];
