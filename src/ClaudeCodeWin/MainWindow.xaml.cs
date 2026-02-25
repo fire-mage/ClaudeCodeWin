@@ -20,6 +20,8 @@ public partial class MainWindow : Window
     private readonly ProjectRegistryService _projectRegistry;
     private KnowledgeBaseService? _knowledgeBaseService;
     private CancellationTokenSource? _autocompleteCts;
+    private bool _isAtMentionMode;
+    private int _atMentionStart; // index of '@' in the text
     private int _dragEnterCount;
 
     private MainViewModel ViewModel => (MainViewModel)DataContext;
@@ -425,8 +427,32 @@ public partial class MainWindow : Window
 
         var text = InputTextBox.Text;
         var caret = InputTextBox.CaretIndex;
-        var word = ExtractCurrentWord(text, caret);
 
+        // Check for @-mention first
+        var (isAt, atQuery, atStart) = ExtractAtMention(text, caret);
+        if (isAt)
+        {
+            var fileResults = _fileIndexService.SearchFiles(atQuery);
+            if (fileResults.Count == 0)
+            {
+                AutocompletePopup.IsOpen = false;
+                _isAtMentionMode = false;
+                return;
+            }
+
+            _isAtMentionMode = true;
+            _atMentionStart = atStart;
+            AutocompleteList.ItemsSource = fileResults;
+            AutocompleteList.SelectedIndex = 0;
+            PositionAutocompletePopup(caret);
+            AutocompletePopup.IsOpen = true;
+            return;
+        }
+
+        _isAtMentionMode = false;
+
+        // Fallback: project name autocomplete
+        var word = ExtractCurrentWord(text, caret);
         if (word.Length < 2)
         {
             AutocompletePopup.IsOpen = false;
@@ -442,8 +468,6 @@ public partial class MainWindow : Window
 
         AutocompleteList.ItemsSource = results;
         AutocompleteList.SelectedIndex = 0;
-
-        // Position popup near the caret
         PositionAutocompletePopup(caret);
         AutocompletePopup.IsOpen = true;
     }
@@ -479,6 +503,30 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Check if the caret is inside an @-mention. Returns (isAtMention, query after @, index of @).
+    /// </summary>
+    private static (bool isAt, string query, int atIndex) ExtractAtMention(string text, int caretIndex)
+    {
+        if (caretIndex <= 0 || caretIndex > text.Length)
+            return (false, "", 0);
+
+        // Scan left from caret to find @
+        var pos = caretIndex - 1;
+        while (pos >= 0 && !char.IsWhiteSpace(text[pos]) && text[pos] != '@')
+            pos--;
+
+        if (pos < 0 || text[pos] != '@')
+            return (false, "", 0);
+
+        // @ must be at start of text or preceded by whitespace
+        if (pos > 0 && !char.IsWhiteSpace(text[pos - 1]))
+            return (false, "", 0);
+
+        var query = text[(pos + 1)..caretIndex];
+        return (true, query, pos);
+    }
+
     private static string ExtractCurrentWord(string text, int caretIndex)
     {
         if (caretIndex <= 0 || caretIndex > text.Length) return "";
@@ -496,14 +544,28 @@ public partial class MainWindow : Window
         var text = InputTextBox.Text;
         var caret = InputTextBox.CaretIndex;
 
-        var start = caret - 1;
-        while (start >= 0 && !char.IsWhiteSpace(text[start]))
-            start--;
-        start++;
+        if (_isAtMentionMode)
+        {
+            // Replace from @ to caret with @selected + space
+            var insertion = "@" + selected + " ";
+            var newText = text[.._atMentionStart] + insertion + text[caret..];
+            InputTextBox.Text = newText;
+            InputTextBox.CaretIndex = _atMentionStart + insertion.Length;
+        }
+        else
+        {
+            // Project name autocomplete — replace current word
+            var start = caret - 1;
+            while (start >= 0 && !char.IsWhiteSpace(text[start]))
+                start--;
+            start++;
 
-        var newText = text[..start] + selected + text[caret..];
-        InputTextBox.Text = newText;
-        InputTextBox.CaretIndex = start + selected.Length;
+            var newText = text[..start] + selected + text[caret..];
+            InputTextBox.Text = newText;
+            InputTextBox.CaretIndex = start + selected.Length;
+        }
+
+        _isAtMentionMode = false;
         AutocompletePopup.IsOpen = false;
     }
 

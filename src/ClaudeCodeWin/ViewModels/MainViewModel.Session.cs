@@ -211,6 +211,10 @@ public partial class MainViewModel
     {
         var names = _projectRegistry.Projects.Select(p => p.Name).ToList();
         _fileIndexService.SetProjectNames(names);
+
+        // Build file index for @-mention autocomplete
+        if (!string.IsNullOrEmpty(WorkingDirectory))
+            _fileIndexService.BuildFileIndex(WorkingDirectory);
     }
 
     private void SaveChatHistory()
