@@ -89,10 +89,6 @@ public partial class MainViewModel : ViewModelBase
     private string _gitStatusText = "";
     private string _gitDirtyText = "";
     private bool _hasGitRepo;
-    private string _usageText = "";
-    private string _sessionPctText = "";
-    private string _sessionExtraText = "";
-    private string _weekPctText = "";
     private string _contextUsageText = "";
     private string _contextPctText = "";
     private string? _currentChatId;
@@ -143,7 +139,6 @@ public partial class MainViewModel : ViewModelBase
         set => SetProperty(ref _isProcessing, value);
     }
 
-    public UpdateViewModel Update { get; }
     public DependencySetupViewModel DependencySetup { get; } = new();
 
     public bool HasAttachments => Attachments.Count > 0;
@@ -192,6 +187,7 @@ public partial class MainViewModel : ViewModelBase
             {
                 OnPropertyChanged(nameof(ProjectParentPath));
                 OnPropertyChanged(nameof(ProjectFolderName));
+                OnPropertyChanged(nameof(TabTitle));
             }
         }
     }
@@ -240,30 +236,6 @@ public partial class MainViewModel : ViewModelBase
     {
         get => _hasGitRepo;
         set => SetProperty(ref _hasGitRepo, value);
-    }
-
-    public string UsageText
-    {
-        get => _usageText;
-        set => SetProperty(ref _usageText, value);
-    }
-
-    public string SessionPctText
-    {
-        get => _sessionPctText;
-        set => SetProperty(ref _sessionPctText, value);
-    }
-
-    public string SessionExtraText
-    {
-        get => _sessionExtraText;
-        set => SetProperty(ref _sessionExtraText, value);
-    }
-
-    public string WeekPctText
-    {
-        get => _weekPctText;
-        set => SetProperty(ref _weekPctText, value);
     }
 
     public string ContextUsageText
@@ -321,6 +293,25 @@ public partial class MainViewModel : ViewModelBase
 
     public string? WorkingDirectory => _cliService.WorkingDirectory;
 
+    /// <summary>Display name for the tab header.</summary>
+    public string TabTitle => string.IsNullOrEmpty(ProjectFolderName) ? "New Tab" : ProjectFolderName;
+
+    /// <summary>Raises PropertyChanged for TabTitle (called by TabHostViewModel after project lock).</summary>
+    public void RaiseTabTitleChanged() => OnPropertyChanged(nameof(TabTitle));
+
+    private bool _isActiveTab;
+    /// <summary>Whether this tab is currently active (set by TabHostViewModel).</summary>
+    public bool IsActiveTab
+    {
+        get => _isActiveTab;
+        set => SetProperty(ref _isActiveTab, value);
+    }
+
+    // Project locking callbacks (set by TabHostViewModel)
+    public Func<string, bool>? IsProjectLockedByOtherTab { get; set; }
+    public Action<string>? LockProject { get; set; }
+    public Action? UnlockCurrentProject { get; set; }
+
     public RelayCommand SendCommand { get; }
     public RelayCommand CancelCommand { get; }
     public RelayCommand NewSessionCommand { get; }
@@ -357,7 +348,7 @@ public partial class MainViewModel : ViewModelBase
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
         SettingsService settingsService, AppSettings settings, GitService gitService,
-        UpdateService updateService, FileIndexService fileIndexService,
+        FileIndexService fileIndexService,
         ChatHistoryService chatHistoryService, ProjectRegistryService projectRegistry,
         ContextSnapshotService contextSnapshotService, UsageService usageService)
     {
@@ -401,9 +392,6 @@ public partial class MainViewModel : ViewModelBase
                 _settingsService.Save(_settings);
             }
         });
-        Update = new UpdateViewModel(updateService, settings);
-        Update.OnStatusTextChange += text => StatusText = text;
-
         RemoveQueuedMessageCommand = new RelayCommand(p =>
         {
             if (p is QueuedMessage qm)
@@ -579,6 +567,17 @@ public partial class MainViewModel : ViewModelBase
                     $"Resumed session from {resumeTime}. Type your message to continue."));
             }
         }
+    }
+
+    /// <summary>
+    /// Releases resources when the tab is closed: stops CLI process and timers.
+    /// </summary>
+    public void Dispose()
+    {
+        _cliService.StopSession();
+        StopNudgeTimer();
+        _bgTaskTimer?.Stop();
+        FinalizeActions.StopTaskSuggestionTimer();
     }
 }
 

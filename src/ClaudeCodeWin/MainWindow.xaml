@@ -32,13 +32,8 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>     <!-- Menu -->
-            <RowDefinition Height="*"/>        <!-- Chat -->
-            <RowDefinition Height="Auto"/>     <!-- Message queue -->
-            <RowDefinition Height="Auto"/>     <!-- Attachments -->
-            <RowDefinition Height="Auto"/>     <!-- CTA hint -->
-            <RowDefinition Height="Auto"/>     <!-- Input -->
-            <RowDefinition Height="Auto"/>     <!-- Background tasks -->
-            <RowDefinition Height="Auto"/>     <!-- Changed files -->
+            <RowDefinition Height="Auto"/>     <!-- Tab strip -->
+            <RowDefinition Height="*"/>        <!-- Tab content area -->
             <RowDefinition Height="Auto"/>     <!-- Status bar -->
         </Grid.RowDefinitions>
 
@@ -47,7 +42,7 @@
             <Menu Background="{StaticResource SurfaceBrush}">
                 <MenuItem Header="_Chats"
                           ToolTip="Chat management: start new conversations, switch projects, browse history">
-                    <MenuItem Header="New _Chat" Command="{Binding NewSessionCommand}"
+                    <MenuItem Header="New _Chat" Command="{Binding ActiveTab.NewSessionCommand}"
                               InputGestureText="Ctrl+N"
                               ToolTip="Start a fresh conversation in the current project."/>
                     <MenuItem Header="Switch _Project" x:Name="SwitchProjectMenu"
@@ -56,13 +51,13 @@
                     <MenuItem Header="Chat _History..." Click="MenuItem_ChatHistory_Click"
                               ToolTip="Browse and reopen previous conversations."/>
                     <Separator/>
-                    <MenuItem Header="{Binding ExpandContextMenuHeader}"
-                              Command="{Binding ExpandContextCommand}"
+                    <MenuItem Header="{Binding ActiveTab.ExpandContextMenuHeader}"
+                              Command="{Binding ActiveTab.ExpandContextCommand}"
                               ToolTip="Toggle between standard (200K) and extended (1M) context window. Starts a new session.">
                         <MenuItem.Style>
                             <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsContextExpanded}" Value="True">
+                                    <DataTrigger Binding="{Binding ActiveTab.IsContextExpanded}" Value="True">
                                         <Setter Property="Foreground" Value="#f38ba8"/>
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -117,8 +112,70 @@
             </Border>
         </StackPanel>
 
+        <!-- Tab strip (hidden when only 1 tab) -->
+        <Border Grid.Row="1"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Visibility="{Binding ShowTabStrip, Converter={StaticResource BoolToVis}}">
+            <DockPanel Margin="4,0">
+                <Button DockPanel.Dock="Right" Content="+" FontSize="14"
+                        Padding="10,2" Margin="2,3"
+                        Command="{Binding NewTabCommand}"
+                        ToolTip="New tab (Ctrl+T)"
+                        Style="{StaticResource TabAddButton}"/>
+                <ItemsControl ItemsSource="{Binding Tabs}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:MainViewModel}">
+                            <Border x:Name="TabBorder" Padding="10,4" Margin="2,3" CornerRadius="4"
+                                    Cursor="Hand" Background="{StaticResource SurfaceBrush}"
+                                    MouseLeftButtonUp="TabHeader_Click" Tag="{Binding}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Ellipse Width="6" Height="6" Margin="0,0,6,0"
+                                             Fill="{StaticResource PrimaryBrush}"
+                                             Visibility="{Binding IsProcessing, Converter={StaticResource BoolToVis}}"/>
+                                    <TextBlock Text="{Binding TabTitle}" FontSize="12"
+                                               Foreground="{StaticResource TextBrush}"
+                                               VerticalAlignment="Center"/>
+                                    <Border Padding="4,0,0,0" Cursor="Hand" Background="Transparent"
+                                            MouseLeftButtonUp="TabClose_Click" Tag="{Binding}"
+                                            VerticalAlignment="Center">
+                                        <TextBlock Text="x" FontSize="10"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   VerticalAlignment="Center"/>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding IsActiveTab}" Value="True">
+                                    <Setter TargetName="TabBorder" Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </DockPanel>
+        </Border>
+
+        <!-- Tab content area — bound to the active tab's ViewModel -->
+        <Grid Grid.Row="2" DataContext="{Binding ActiveTab}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>        <!-- Chat -->
+                <RowDefinition Height="Auto"/>     <!-- Message queue -->
+                <RowDefinition Height="Auto"/>     <!-- Attachments -->
+                <RowDefinition Height="Auto"/>     <!-- CTA hint -->
+                <RowDefinition Height="Auto"/>     <!-- Input -->
+                <RowDefinition Height="Auto"/>     <!-- Background tasks -->
+                <RowDefinition Height="Auto"/>     <!-- Changed files -->
+            </Grid.RowDefinitions>
+
         <!-- Chat area -->
-        <ScrollViewer Grid.Row="1" x:Name="ChatScrollViewer"
+        <ScrollViewer Grid.Row="0" x:Name="ChatScrollViewer"
                       VerticalScrollBarVisibility="Auto"
                       Padding="12">
             <ItemsControl ItemsSource="{Binding Messages}" x:Name="MessagesControl">
@@ -168,9 +225,9 @@
                                             Padding="8,2"
                                             FontSize="11"
                                             Cursor="Hand"
-                                            Command="{Binding DataContext.NudgeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            Command="{Binding DataContext.ActiveTab.NudgeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                             ToolTip="Claude seems stuck. Click to send a nudge message."
-                                            Visibility="{Binding DataContext.ShowNudgeButton, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
+                                            Visibility="{Binding DataContext.ActiveTab.ShowNudgeButton, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
                                         <Button.Style>
                                             <Style TargetType="Button">
                                                 <Setter Property="Background" Value="Transparent"/>
@@ -514,7 +571,7 @@
                                                     FontSize="11" Padding="8,2"
                                                     Margin="0,4,0,0"
                                                     HorizontalAlignment="Left"
-                                                    Command="{Binding DataContext.SendTaskOutputCommand,
+                                                    Command="{Binding DataContext.ActiveTab.SendTaskOutputCommand,
                                                         RelativeSource={RelativeSource AncestorType=Window}}"
                                                     CommandParameter="{Binding}"
                                                     Style="{StaticResource LinkButton}">
@@ -548,7 +605,7 @@
                                                         IsEnabled="{Binding DataContext.QuestionDisplay.IsAnswered,
                                                             RelativeSource={RelativeSource AncestorType=ItemsControl},
                                                             Converter={StaticResource InverseBool}}"
-                                                        Command="{Binding DataContext.AnswerQuestionCommand,
+                                                        Command="{Binding DataContext.ActiveTab.AnswerQuestionCommand,
                                                             RelativeSource={RelativeSource AncestorType=Window}}"
                                                         CommandParameter="{Binding Label}"
                                                         ToolTip="{Binding Description}">
@@ -626,9 +683,9 @@
                                                 Padding="8,2"
                                                 FontSize="11"
                                                 Cursor="Hand"
-                                                Command="{Binding DataContext.NudgeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                Command="{Binding DataContext.ActiveTab.NudgeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 ToolTip="Claude seems stuck. Click to send a nudge message."
-                                                Visibility="{Binding DataContext.ShowNudgeButton, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
+                                                Visibility="{Binding DataContext.ActiveTab.ShowNudgeButton, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
                                             <Button.Style>
                                                 <Style TargetType="Button">
                                                     <Setter Property="Background" Value="Transparent"/>
@@ -668,7 +725,7 @@
         </ScrollViewer>
 
         <!-- Rate limit banner -->
-        <Border Grid.Row="1"
+        <Border Grid.Row="0"
                 VerticalAlignment="Top"
                 HorizontalAlignment="Stretch"
                 Panel.ZIndex="15"
@@ -765,7 +822,7 @@
 
         <!-- Bookmarks button -->
         <Border x:Name="BookmarksButton"
-                Grid.Row="1"
+                Grid.Row="0"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
                 Margin="0,0,24,48"
@@ -792,7 +849,7 @@
 
         <!-- Scroll to bottom button -->
         <Button x:Name="ScrollToBottomButton"
-                Grid.Row="1"
+                Grid.Row="0"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
                 Margin="0,0,24,12"
@@ -834,7 +891,7 @@
 
         <!-- Finalize Actions popup -->
         <Border x:Name="FinalizePopupBorder"
-                Grid.Row="1"
+                Grid.Row="0"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
                 Margin="0,0,24,12"
@@ -892,7 +949,7 @@
                     <ItemsControl ItemsSource="{Binding FinalizeActions.SuggestedTasks}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Button Command="{Binding DataContext.FinalizeActions.RunSuggestedTaskCommand,
+                                <Button Command="{Binding DataContext.ActiveTab.FinalizeActions.RunSuggestedTaskCommand,
                                             RelativeSource={RelativeSource AncestorType=Window}}"
                                         CommandParameter="{Binding}"
                                         HorizontalAlignment="Stretch"
@@ -945,8 +1002,8 @@
             </Border>
         </Border>
 
-        <!-- Welcome overlay (full window) -->
-        <Border Grid.Row="0" Grid.RowSpan="9"
+        <!-- Welcome overlay (covers tab content area) -->
+        <Border Grid.Row="0" Grid.RowSpan="7"
                 Background="{StaticResource BackgroundBrush}"
                 Visibility="{Binding ShowWelcome, Converter={StaticResource BoolToVis}}"
                 Panel.ZIndex="50">
@@ -1002,7 +1059,7 @@
 
                                             <Button Grid.Column="1"
                                                     Style="{StaticResource ChipCloseButton}"
-                                                    Command="{Binding DataContext.RemoveRecentFolderCommand,
+                                                    Command="{Binding DataContext.ActiveTab.RemoveRecentFolderCommand,
                                                         RelativeSource={RelativeSource AncestorType=Window}}"
                                                     CommandParameter="{Binding}"
                                                     Margin="8,0,0,0"/>
@@ -1010,7 +1067,7 @@
 
                                         <Border.InputBindings>
                                             <MouseBinding Gesture="LeftClick"
-                                                          Command="{Binding DataContext.OpenRecentFolderCommand,
+                                                          Command="{Binding DataContext.ActiveTab.OpenRecentFolderCommand,
                                                               RelativeSource={RelativeSource AncestorType=Window}}"
                                                           CommandParameter="{Binding}"/>
                                         </Border.InputBindings>
@@ -1330,7 +1387,7 @@
 
 
         <!-- Message queue -->
-        <Border Grid.Row="2"
+        <Border Grid.Row="1"
                 Background="{StaticResource SurfaceBrush}"
                 Padding="8,4"
                 Visibility="{Binding HasQueuedMessages, Converter={StaticResource BoolToVis}}"
@@ -1364,7 +1421,7 @@
                                             Margin="4,0,0,0" ToolTip="Send now (cancel current task)">
                                         <Border.InputBindings>
                                             <MouseBinding Gesture="LeftClick"
-                                                          Command="{Binding DataContext.SendQueuedNowCommand,
+                                                          Command="{Binding DataContext.ActiveTab.SendQueuedNowCommand,
                                                               RelativeSource={RelativeSource AncestorType=Window}}"
                                                           CommandParameter="{Binding}"/>
                                         </Border.InputBindings>
@@ -1377,7 +1434,7 @@
                                             Margin="4,0,0,0" ToolTip="Return to input (edit message)">
                                         <Border.InputBindings>
                                             <MouseBinding Gesture="LeftClick"
-                                                          Command="{Binding DataContext.ReturnQueuedToInputCommand,
+                                                          Command="{Binding DataContext.ActiveTab.ReturnQueuedToInputCommand,
                                                               RelativeSource={RelativeSource AncestorType=Window}}"
                                                           CommandParameter="{Binding}"/>
                                         </Border.InputBindings>
@@ -1387,7 +1444,7 @@
                                     </Border>
                                     <!-- Delete from queue -->
                                     <Button Grid.Column="4" Style="{StaticResource ChipCloseButton}"
-                                            Command="{Binding DataContext.RemoveQueuedMessageCommand,
+                                            Command="{Binding DataContext.ActiveTab.RemoveQueuedMessageCommand,
                                                 RelativeSource={RelativeSource AncestorType=Window}}"
                                             CommandParameter="{Binding}"
                                             ToolTip="Remove from queue"/>
@@ -1400,7 +1457,7 @@
         </Border>
 
         <!-- Attachments bar -->
-        <Border Grid.Row="3"
+        <Border Grid.Row="2"
                 Background="{StaticResource SurfaceBrush}"
                 Padding="8,4"
                 Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVis}}"
@@ -1426,7 +1483,7 @@
                                         Margin="4,0,0,0" Cursor="Hand"
                                         VerticalAlignment="Center"
                                         Visibility="{Binding IsImage, Converter={StaticResource BoolToVis}}"
-                                        Command="{Binding DataContext.PreviewAttachmentCommand,
+                                        Command="{Binding DataContext.ActiveTab.PreviewAttachmentCommand,
                                             RelativeSource={RelativeSource AncestorType=Window}}"
                                         CommandParameter="{Binding}"
                                         ToolTip="Preview image">
@@ -1447,7 +1504,7 @@
                                     </Button.Style>
                                 </Button>
                                 <Button Style="{StaticResource ChipCloseButton}"
-                                        Command="{Binding DataContext.RemoveAttachmentCommand,
+                                        Command="{Binding DataContext.ActiveTab.RemoveAttachmentCommand,
                                             RelativeSource={RelativeSource AncestorType=Window}}"
                                         CommandParameter="{Binding}"/>
                             </StackPanel>
@@ -1458,7 +1515,7 @@
         </Border>
 
         <!-- CTA hint -->
-        <Border Grid.Row="4"
+        <Border Grid.Row="3"
                 Padding="12,6"
                 Visibility="{Binding HasCta, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="{Binding CtaText}"
@@ -1470,7 +1527,7 @@
         </Border>
 
         <!-- Input area -->
-        <Grid Grid.Row="5" Margin="8">
+        <Grid Grid.Row="4" Margin="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -1589,7 +1646,7 @@
         </Grid>
 
         <!-- Background tasks panel -->
-        <Border Grid.Row="6"
+        <Border Grid.Row="5"
                 Background="{StaticResource SurfaceBrush}"
                 Padding="8,3"
                 Visibility="{Binding HasBackgroundTasks, Converter={StaticResource BoolToVis}}"
@@ -1644,7 +1701,7 @@
                                                 FontSize="10" Padding="6,1"
                                                 Margin="0,0,4,0"
                                                 Style="{StaticResource LinkButton}"
-                                                Command="{Binding DataContext.SendBgTaskOutputCommand,
+                                                Command="{Binding DataContext.ActiveTab.SendBgTaskOutputCommand,
                                                     RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}">
                                             <Button.Visibility>
@@ -1668,7 +1725,7 @@
                                             Background="Transparent" BorderThickness="0"
                                             Cursor="Hand"
                                             Visibility="{Binding IsCompleted, Converter={StaticResource BoolToVis}}"
-                                            Command="{Binding DataContext.DismissBgTaskCommand,
+                                            Command="{Binding DataContext.ActiveTab.DismissBgTaskCommand,
                                                 RelativeSource={RelativeSource AncestorType=Window}}"
                                             CommandParameter="{Binding}"/>
                                 </Grid>
@@ -1690,7 +1747,7 @@
         </Border>
 
         <!-- Changed files indicator -->
-        <Border Grid.Row="7"
+        <Border Grid.Row="6"
                 Background="{StaticResource SurfaceBrush}"
                 Padding="8,3"
                 Visibility="{Binding HasChangedFiles, Converter={StaticResource BoolToVis}}"
@@ -1709,7 +1766,7 @@
                                     ToolTip="Click to view changes">
                                 <Border.InputBindings>
                                     <MouseBinding Gesture="LeftClick"
-                                                  Command="{Binding DataContext.ViewChangedFileCommand,
+                                                  Command="{Binding DataContext.ActiveTab.ViewChangedFileCommand,
                                                       RelativeSource={RelativeSource AncestorType=Window}}"
                                                   CommandParameter="{Binding}"/>
                                 </Border.InputBindings>
@@ -1734,8 +1791,10 @@
             </Expander>
         </Border>
 
-        <!-- Status bar -->
-        <Border Grid.Row="8" Style="{StaticResource StatusBarStyle}">
+        </Grid> <!-- End of tab content area -->
+
+        <!-- Status bar (outer grid, binds through ActiveTab) -->
+        <Border Grid.Row="3" Style="{StaticResource StatusBarStyle}" DataContext="{Binding ActiveTab}">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -1799,10 +1858,11 @@
                                FontSize="11"
                                Foreground="{StaticResource AccentBrush}"/>
                 </StackPanel>
-                <!-- Session block — labels grey, percentages gold -->
+                <!-- Session block — labels grey, percentages gold (global usage, bound to TabHost) -->
                 <Border Grid.Column="5" VerticalAlignment="Center" Margin="0,0,16,0"
                         Cursor="Hand" Background="Transparent"
                         MouseLeftButtonUp="MemoryIndicator_Click"
+                        DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
                         ToolTip="Usage limits from your Anthropic subscription.&#x0a;Session resets every 5 hours, weekly every 7 days.&#x0a;Click for session menu."
                         Visibility="{Binding SessionPctText, Converter={StaticResource StringToVis}}">
                     <StackPanel Orientation="Horizontal">
@@ -1819,7 +1879,7 @@
                     </StackPanel>
                     <Border.ContextMenu>
                         <ContextMenu x:Name="MemoryContextMenu">
-                            <MenuItem Header="New Session" Command="{Binding NewSessionCommand}"
+                            <MenuItem Header="New Session" Command="{Binding ActiveTab.NewSessionCommand}"
                                       InputGestureText="Ctrl+N"
                                       ToolTip="Start a fresh conversation. Clears history and resets memory usage."/>
                         </ContextMenu>
@@ -1852,14 +1912,14 @@
                         Cursor="Hand" Background="Transparent"
                         MouseLeftButtonUp="CliUpdateBadge_Click"
                         ToolTip="A new version of Claude Code CLI is available. Click to update."
-                        Visibility="{Binding Update.ShowCliUpdateBadge, Converter={StaticResource BoolToVis}}">
+                        Visibility="{Binding DataContext.Update.ShowCliUpdateBadge, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="&#x2B06; CLI update" FontSize="11" FontWeight="SemiBold"
                                Foreground="{StaticResource PrimaryBrush}"/>
                 </Border>
             </Grid>
         </Border>
         <!-- Update overlay (covers entire window during update) -->
-        <Border Grid.Row="0" Grid.RowSpan="9"
+        <Border Grid.Row="0" Grid.RowSpan="4"
                 Background="#DD1e1e2e"
                 Panel.ZIndex="101"
                 Visibility="{Binding Update.ShowUpdateOverlay, Converter={StaticResource BoolToVis}}">
@@ -2096,7 +2156,7 @@
         </Border>
 
         <!-- CLI Update overlay -->
-        <Border Grid.Row="0" Grid.RowSpan="9"
+        <Border Grid.Row="0" Grid.RowSpan="4"
                 Background="#DD1e1e2e"
                 Panel.ZIndex="102"
                 Visibility="{Binding Update.ShowCliUpdateOverlay, Converter={StaticResource BoolToVis}}">
@@ -2315,10 +2375,10 @@
         </Border>
 
         <!-- Dependency install overlay (covers entire window during setup) -->
-        <Border Grid.Row="0" Grid.RowSpan="9"
+        <Border Grid.Row="0" Grid.RowSpan="4"
                 Background="#DD1e1e2e"
                 Panel.ZIndex="100"
-                Visibility="{Binding DependencySetup.ShowDependencyOverlay, Converter={StaticResource BoolToVis}}">
+                Visibility="{Binding ActiveTab.DependencySetup.ShowDependencyOverlay, Converter={StaticResource BoolToVis}}">
             <Border HorizontalAlignment="Center" VerticalAlignment="Center"
                     Background="{StaticResource SurfaceBrush}"
                     CornerRadius="12" Padding="32"
@@ -2327,19 +2387,19 @@
                     BorderThickness="1">
                 <StackPanel>
                     <!-- Step counter -->
-                    <TextBlock Text="{Binding DependencySetup.DependencyStep}"
+                    <TextBlock Text="{Binding ActiveTab.DependencySetup.DependencyStep}"
                                FontSize="11" FontWeight="SemiBold"
                                Foreground="{StaticResource TextSecondaryBrush}"
                                Margin="0,0,0,4"/>
 
                     <!-- Title -->
-                    <TextBlock Text="{Binding DependencySetup.DependencyTitle}"
+                    <TextBlock Text="{Binding ActiveTab.DependencySetup.DependencyTitle}"
                                FontSize="18" FontWeight="Bold"
                                Foreground="{StaticResource PrimaryBrush}"
                                Margin="0,0,0,6"/>
 
                     <!-- Subtitle / description -->
-                    <TextBlock Text="{Binding DependencySetup.DependencySubtitle}"
+                    <TextBlock Text="{Binding ActiveTab.DependencySetup.DependencySubtitle}"
                                FontSize="12"
                                Foreground="{StaticResource TextSecondaryBrush}"
                                TextWrapping="Wrap"
@@ -2353,7 +2413,7 @@
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding DependencySetup.ShowDependencyOverlay}" Value="True">
+                                        <DataTrigger Binding="{Binding ActiveTab.DependencySetup.ShowDependencyOverlay}" Value="True">
                                             <DataTrigger.EnterActions>
                                                 <BeginStoryboard x:Name="DepPulse">
                                                     <Storyboard RepeatBehavior="Forever">
@@ -2368,7 +2428,7 @@
                                                 <StopStoryboard BeginStoryboardName="DepPulse"/>
                                             </DataTrigger.ExitActions>
                                         </DataTrigger>
-                                        <DataTrigger Binding="{Binding DependencySetup.DependencyFailed}" Value="True">
+                                        <DataTrigger Binding="{Binding ActiveTab.DependencySetup.DependencyFailed}" Value="True">
                                             <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
                                             <Setter Property="Opacity" Value="1.0"/>
                                         </DataTrigger>
@@ -2376,7 +2436,7 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                        <TextBlock Text="{Binding DependencySetup.DependencyStatus}"
+                        <TextBlock Text="{Binding ActiveTab.DependencySetup.DependencyStatus}"
                                    FontSize="13"
                                    Foreground="{StaticResource TextBrush}"
                                    VerticalAlignment="Center"/>
@@ -2389,7 +2449,7 @@
                             Height="200">
                         <ScrollViewer x:Name="DepLogScroller" VerticalScrollBarVisibility="Auto">
                             <TextBlock x:Name="DepLogText"
-                                       Text="{Binding DependencySetup.DependencyLog}"
+                                       Text="{Binding ActiveTab.DependencySetup.DependencyLog}"
                                        FontFamily="Cascadia Code,Consolas,Courier New"
                                        FontSize="11"
                                        Foreground="{StaticResource TextSecondaryBrush}"
@@ -2406,7 +2466,7 @@
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding DependencySetup.DependencyFailed}" Value="True">
+                                    <DataTrigger Binding="{Binding ActiveTab.DependencySetup.DependencyFailed}" Value="True">
                                         <Setter Property="Visibility" Value="Collapsed"/>
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -2420,7 +2480,7 @@
                             HorizontalAlignment="Center"
                             Margin="0,16,0,0"
                             Click="DepCloseButton_Click"
-                            Visibility="{Binding DependencySetup.DependencyFailed, Converter={StaticResource BoolToVis}}">
+                            Visibility="{Binding ActiveTab.DependencySetup.DependencyFailed, Converter={StaticResource BoolToVis}}">
                         <Button.Style>
                             <Style TargetType="Button">
                                 <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
@@ -2460,7 +2520,7 @@
 
         <!-- Drag & drop overlay -->
         <Border x:Name="DragDropOverlay"
-                Grid.Row="0" Grid.RowSpan="9"
+                Grid.Row="0" Grid.RowSpan="4"
                 Background="#CC1e1e2e"
                 Panel.ZIndex="200"
                 Visibility="Collapsed"

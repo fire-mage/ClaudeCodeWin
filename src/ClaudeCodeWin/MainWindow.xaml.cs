@@ -24,14 +24,18 @@ public partial class MainWindow : Window
     private int _atMentionStart; // index of '@' in the text
     private int _dragEnterCount;
 
-    private MainViewModel ViewModel => (MainViewModel)DataContext;
+    private TabHostViewModel TabHost => (TabHostViewModel)DataContext;
+    private MainViewModel ViewModel => TabHost.ActiveTab!;
 
-    public MainWindow(MainViewModel viewModel, NotificationService notificationService,
+    // Track subscriptions for active tab re-wiring
+    private MainViewModel? _subscribedTab;
+
+    public MainWindow(TabHostViewModel tabHost, NotificationService notificationService,
         SettingsService settingsService, AppSettings settings, FileIndexService fileIndexService,
         ChatHistoryService chatHistoryService, ProjectRegistryService projectRegistry)
     {
         InitializeComponent();
-        DataContext = viewModel;
+        DataContext = tabHost;
 
         _settingsService = settingsService;
         _settings = settings;
@@ -47,13 +51,11 @@ public partial class MainWindow : Window
         // Update Switch Project menu header with project count
         UpdateSwitchProjectMenuHeader();
 
-        // Finalize Actions: blink animation + collapse animation
-        viewModel.FinalizeActions.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(FinalizeActionsViewModel.FinalizeLabelBlinking) && viewModel.FinalizeActions.FinalizeLabelBlinking)
-                Dispatcher.BeginInvoke(StartFinalizeLabelBlink);
-        };
-        viewModel.FinalizeActions.OnFinalizeCollapse = () => Dispatcher.BeginInvoke(AnimateFinalizeCollapse);
+        // Subscribe to tab changes
+        tabHost.OnActiveTabChanged += OnActiveTabChanged;
+
+        // Wire up initial tab
+        SubscribeToActiveTab();
 
         // Set window icon from embedded resource
         try
@@ -75,39 +77,92 @@ public partial class MainWindow : Window
         // Track scroll position for "scroll to bottom" button
         ChatScrollViewer.ScrollChanged += ChatScrollViewer_ScrollChanged;
 
-        // Auto-scroll when messages change or text streams in (only if user is at bottom)
-        if (viewModel.Messages is INotifyCollectionChanged ncc)
+        // Auto-scroll is handled per-tab via SubscribeToActiveTab()
+
+        Loaded += MainWindow_Loaded;
+        Closing += MainWindow_Closing;
+    }
+
+    // --- Tab management ---
+
+    private void OnActiveTabChanged()
+    {
+        SubscribeToActiveTab();
+        _isUserNearBottom = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            ChatScrollViewer.ScrollToEnd();
+            InputTextBox.Focus();
+        });
+    }
+
+    private void SubscribeToActiveTab()
+    {
+        var tab = TabHost.ActiveTab;
+        if (tab is null || tab == _subscribedTab) return;
+
+        _subscribedTab = tab;
+
+        // Finalize Actions: blink animation + collapse animation
+        tab.FinalizeActions.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(FinalizeActionsViewModel.FinalizeLabelBlinking) && tab.FinalizeActions.FinalizeLabelBlinking)
+                Dispatcher.BeginInvoke(StartFinalizeLabelBlink);
+        };
+        tab.FinalizeActions.OnFinalizeCollapse = () => Dispatcher.BeginInvoke(AnimateFinalizeCollapse);
+
+        // Auto-scroll when messages change or text streams in
+        if (tab.Messages is INotifyCollectionChanged ncc)
         {
             ncc.CollectionChanged += (_, args) =>
             {
+                if (tab != TabHost.ActiveTab) return; // only scroll for active tab
+
                 ScrollToBottomIfAtBottom();
 
-                // Subscribe to changes on new messages
                 if (args.NewItems is not null)
                 {
                     foreach (MessageViewModel msg in args.NewItems)
                     {
-                        // Text streaming
                         msg.PropertyChanged += (_, pe) =>
                         {
+                            if (tab != TabHost.ActiveTab) return;
                             if (pe.PropertyName is nameof(MessageViewModel.Text)
                                 or nameof(MessageViewModel.IsThinking)
                                 or nameof(MessageViewModel.HasToolUses))
                                 ScrollToBottomIfAtBottom();
                         };
 
-                        // Tool uses being added (expands the bubble)
                         if (msg.ToolUses is INotifyCollectionChanged toolNcc)
                         {
-                            toolNcc.CollectionChanged += (_, _) => ScrollToBottomIfAtBottom();
+                            toolNcc.CollectionChanged += (_, _) =>
+                            {
+                                if (tab != TabHost.ActiveTab) return;
+                                ScrollToBottomIfAtBottom();
+                            };
                         }
                     }
                 }
             };
         }
+    }
 
-        Loaded += MainWindow_Loaded;
-        Closing += MainWindow_Closing;
+    private void TabHeader_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.Tag is MainViewModel tab)
+        {
+            TabHost.ActiveTab = tab;
+            e.Handled = true;
+        }
+    }
+
+    private void TabClose_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.Tag is MainViewModel tab)
+        {
+            TabHost.CloseTab(tab);
+            e.Handled = true;
+        }
     }
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -164,6 +219,9 @@ public partial class MainWindow : Window
 
         _settings.WindowState = WindowState == WindowState.Maximized ? 2 : 0;
         _settingsService.Save(_settings);
+
+        // Dispose all tabs (kill CLI processes)
+        TabHost.DisposeAll();
     }
 
     private static bool IsPositionOnScreen(double left, double top, double width, double height)
@@ -185,37 +243,37 @@ public partial class MainWindow : Window
 
     private void UpdateInstall_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.Update.StartUpdate();
+        TabHost.Update.StartUpdate();
     }
 
     private void UpdateLater_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.Update.DismissUpdate();
+        TabHost.Update.DismissUpdate();
     }
 
     private void UpdateClose_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.Update.DismissUpdate();
+        TabHost.Update.DismissUpdate();
     }
 
     private void CliUpdateBadge_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        ViewModel.Update.ShowCliUpdatePrompt();
+        TabHost.Update.ShowCliUpdatePrompt();
     }
 
     private void CliUpdateInstall_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.Update.StartCliUpdate();
+        TabHost.Update.StartCliUpdate();
     }
 
     private void CliUpdateLater_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.Update.DismissCliUpdate();
+        TabHost.Update.DismissCliUpdate();
     }
 
     private void CliUpdateClose_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.Update.DismissCliUpdate();
+        TabHost.Update.DismissCliUpdate();
     }
 
     public void ScrollDependencyLog()
@@ -319,6 +377,34 @@ public partial class MainWindow : Window
                     return;
                 }
             }
+        }
+
+        // Ctrl+T = New tab
+        if (e.Key == Key.T && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            TabHost.CreateTab();
+            e.Handled = true;
+            return;
+        }
+
+        // Ctrl+W = Close current tab
+        if (e.Key == Key.W && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (TabHost.ActiveTab is not null)
+                TabHost.CloseTab(TabHost.ActiveTab);
+            e.Handled = true;
+            return;
+        }
+
+        // Ctrl+Tab / Ctrl+Shift+Tab = Switch tabs
+        if (e.Key == Key.Tab && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        {
+            if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)
+                TabHost.SwitchToPreviousTab();
+            else
+                TabHost.SwitchToNextTab();
+            e.Handled = true;
+            return;
         }
 
         // Ctrl+N = New session
@@ -867,7 +953,7 @@ public partial class MainWindow : Window
 
     private void MenuItem_Settings_Click(object sender, RoutedEventArgs e)
     {
-        var dlg = new SettingsWindow(_settings, _settingsService, ViewModel, ViewModel.WorkingDirectory) { Owner = this };
+        var dlg = new SettingsWindow(_settings, _settingsService, ViewModel, TabHost.Update, ViewModel.WorkingDirectory) { Owner = this };
         dlg.ShowDialog();
     }
 

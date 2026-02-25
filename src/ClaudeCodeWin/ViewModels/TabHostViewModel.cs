@@ -1,0 +1,282 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using ClaudeCodeWin.ContextSnapshot;
+using ClaudeCodeWin.Infrastructure;
+using ClaudeCodeWin.Models;
+using ClaudeCodeWin.Services;
+
+namespace ClaudeCodeWin.ViewModels;
+
+/// <summary>
+/// Manages multiple MainViewModel tabs for parallel project work.
+/// Each tab runs an independent Claude CLI session.
+/// </summary>
+public class TabHostViewModel : ViewModelBase
+{
+    private readonly NotificationService _notificationService;
+    private readonly SettingsService _settingsService;
+    private readonly AppSettings _settings;
+    private readonly GitService _gitService;
+    private readonly UpdateService _updateService;
+    private readonly FileIndexService _fileIndexService;
+    private readonly ChatHistoryService _chatHistoryService;
+    private readonly ProjectRegistryService _projectRegistry;
+    private readonly ContextSnapshotService _contextSnapshotService;
+    private readonly UsageService _usageService;
+
+    // Project uniqueness: prevent the same project from being open in two tabs
+    private readonly HashSet<string> _openProjects = new(StringComparer.OrdinalIgnoreCase);
+
+    private MainViewModel? _activeTab;
+    private string _sessionPctText = "";
+    private string _sessionExtraText = "";
+    private string _weekPctText = "";
+    private string _usageText = "";
+
+    // CLI executable path (shared across all tabs)
+    public string ClaudeExePath { get; set; } = "claude";
+
+    public ObservableCollection<MainViewModel> Tabs { get; } = [];
+
+    public MainViewModel? ActiveTab
+    {
+        get => _activeTab;
+        set
+        {
+            if (_activeTab == value) return;
+
+            // Unsubscribe from old tab and mark inactive
+            if (_activeTab is not null)
+            {
+                _activeTab.PropertyChanged -= ActiveTab_PropertyChanged;
+                _activeTab.IsActiveTab = false;
+            }
+
+            _activeTab = value;
+
+            // Subscribe to new tab and mark active
+            if (_activeTab is not null)
+            {
+                _activeTab.PropertyChanged += ActiveTab_PropertyChanged;
+                _activeTab.IsActiveTab = true;
+            }
+
+            OnPropertyChanged();
+            RaiseAllStatusBarProperties();
+        }
+    }
+
+    public bool ShowTabStrip => Tabs.Count > 1;
+
+    // Global usage properties (same for all tabs — API-level, not per-session)
+    public string SessionPctText
+    {
+        get => _sessionPctText;
+        set => SetProperty(ref _sessionPctText, value);
+    }
+
+    public string SessionExtraText
+    {
+        get => _sessionExtraText;
+        set => SetProperty(ref _sessionExtraText, value);
+    }
+
+    public string WeekPctText
+    {
+        get => _weekPctText;
+        set => SetProperty(ref _weekPctText, value);
+    }
+
+    public string UsageText
+    {
+        get => _usageText;
+        set => SetProperty(ref _usageText, value);
+    }
+
+    // UpdateViewModel is global (app updates apply to the whole app, not per-tab)
+    public UpdateViewModel Update { get; }
+
+    public RelayCommand NewTabCommand { get; }
+    public RelayCommand CloseTabCommand { get; }
+
+    /// <summary>
+    /// Raised when the active tab changes, so MainWindow can re-subscribe to per-tab events.
+    /// </summary>
+    public event Action? OnActiveTabChanged;
+
+    public TabHostViewModel(
+        NotificationService notificationService,
+        SettingsService settingsService,
+        AppSettings settings,
+        GitService gitService,
+        UpdateService updateService,
+        FileIndexService fileIndexService,
+        ChatHistoryService chatHistoryService,
+        ProjectRegistryService projectRegistry,
+        ContextSnapshotService contextSnapshotService,
+        UsageService usageService)
+    {
+        _notificationService = notificationService;
+        _settingsService = settingsService;
+        _settings = settings;
+        _gitService = gitService;
+        _updateService = updateService;
+        _fileIndexService = fileIndexService;
+        _chatHistoryService = chatHistoryService;
+        _projectRegistry = projectRegistry;
+        _contextSnapshotService = contextSnapshotService;
+        _usageService = usageService;
+
+        Update = new UpdateViewModel(updateService, settings);
+        Update.OnStatusTextChange += text =>
+        {
+            if (_activeTab is not null)
+                _activeTab.StatusText = text;
+        };
+
+        NewTabCommand = new RelayCommand(() => CreateTab());
+        CloseTabCommand = new RelayCommand(p =>
+        {
+            if (p is MainViewModel tab)
+                CloseTab(tab);
+            else if (ActiveTab is not null)
+                CloseTab(ActiveTab);
+        });
+
+        Tabs.CollectionChanged += (_, _) => OnPropertyChanged(nameof(ShowTabStrip));
+    }
+
+    public MainViewModel CreateTab()
+    {
+        var cliService = new ClaudeCliService();
+        cliService.ClaudeExePath = ClaudeExePath;
+
+        var tab = new MainViewModel(
+            cliService, _notificationService, _settingsService, _settings,
+            _gitService, _fileIndexService, _chatHistoryService,
+            _projectRegistry, _contextSnapshotService, _usageService);
+
+        // Wire project locking callbacks
+        tab.IsProjectLockedByOtherTab = path =>
+        {
+            var normalized = System.IO.Path.GetFullPath(path);
+            return _openProjects.Contains(normalized) &&
+                   !string.Equals(tab.WorkingDirectory, path, StringComparison.OrdinalIgnoreCase);
+        };
+        tab.LockProject = path =>
+        {
+            var normalized = System.IO.Path.GetFullPath(path);
+            _openProjects.Add(normalized);
+            // Raise TabTitle changed on this tab
+            tab.RaiseTabTitleChanged();
+        };
+        tab.UnlockCurrentProject = () =>
+        {
+            if (!string.IsNullOrEmpty(tab.WorkingDirectory))
+                _openProjects.Remove(System.IO.Path.GetFullPath(tab.WorkingDirectory));
+        };
+
+        Tabs.Add(tab);
+        ActiveTab = tab;
+        return tab;
+    }
+
+    public void CloseTab(MainViewModel tab)
+    {
+        // Cancel processing if active
+        if (tab.IsProcessing)
+            tab.CancelCommand.Execute(null);
+
+        // Unlock project
+        if (!string.IsNullOrEmpty(tab.WorkingDirectory))
+            _openProjects.Remove(System.IO.Path.GetFullPath(tab.WorkingDirectory));
+
+        // Clean up resources
+        tab.Dispose();
+
+        var index = Tabs.IndexOf(tab);
+        Tabs.Remove(tab);
+
+        if (Tabs.Count == 0)
+        {
+            // Cannot have zero tabs — create a fresh one
+            CreateTab();
+        }
+        else if (ActiveTab == tab || ActiveTab is null)
+        {
+            // Switch to adjacent tab
+            ActiveTab = Tabs[Math.Min(index, Tabs.Count - 1)];
+        }
+    }
+
+    public void SwitchToNextTab()
+    {
+        if (Tabs.Count < 2 || ActiveTab is null) return;
+        var index = Tabs.IndexOf(ActiveTab);
+        ActiveTab = Tabs[(index + 1) % Tabs.Count];
+    }
+
+    public void SwitchToPreviousTab()
+    {
+        if (Tabs.Count < 2 || ActiveTab is null) return;
+        var index = Tabs.IndexOf(ActiveTab);
+        ActiveTab = Tabs[(index - 1 + Tabs.Count) % Tabs.Count];
+    }
+
+    public void SwitchToTab(int index)
+    {
+        if (index >= 0 && index < Tabs.Count)
+            ActiveTab = Tabs[index];
+    }
+
+    /// <summary>
+    /// Disposes all tabs (called when the application is closing).
+    /// </summary>
+    public void DisposeAll()
+    {
+        foreach (var tab in Tabs)
+            tab.Dispose();
+    }
+
+    /// <summary>
+    /// Check if a project path is already open in any tab.
+    /// </summary>
+    public bool IsProjectOpen(string path)
+    {
+        var normalized = System.IO.Path.GetFullPath(path);
+        return _openProjects.Contains(normalized);
+    }
+
+    private void ActiveTab_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender != _activeTab) return;
+
+        // Forward status-bar-relevant property changes
+        switch (e.PropertyName)
+        {
+            case nameof(MainViewModel.StatusText):
+            case nameof(MainViewModel.ModelName):
+            case nameof(MainViewModel.ProjectPath):
+            case nameof(MainViewModel.ProjectParentPath):
+            case nameof(MainViewModel.ProjectFolderName):
+            case nameof(MainViewModel.EffectiveProjectName):
+            case nameof(MainViewModel.GitDirtyText):
+            case nameof(MainViewModel.HasGitRepo):
+            case nameof(MainViewModel.ContextPctText):
+            case nameof(MainViewModel.IsContextExpanded):
+            case nameof(MainViewModel.ShowRateLimitBanner):
+            case nameof(MainViewModel.RateLimitCountdown):
+            case nameof(MainViewModel.TabTitle):
+                // These are read via {Binding ActiveTab.PropertyName} in XAML
+                // but we also fire our own change to update any direct bindings
+                OnPropertyChanged($"ActiveTab.{e.PropertyName}");
+                break;
+        }
+    }
+
+    private void RaiseAllStatusBarProperties()
+    {
+        OnPropertyChanged(nameof(ActiveTab));
+        OnActiveTabChanged?.Invoke();
+    }
+}

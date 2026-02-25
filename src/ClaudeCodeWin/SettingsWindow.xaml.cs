@@ -10,16 +10,19 @@ public partial class SettingsWindow : Window
     private readonly AppSettings _settings;
     private readonly SettingsService _settingsService;
     private readonly MainViewModel _viewModel;
+    private readonly UpdateViewModel _updateViewModel;
     private readonly string? _workingDir;
     private readonly InstructionsService _instructions = new();
     private bool _initialized;
 
-    public SettingsWindow(AppSettings settings, SettingsService settingsService, MainViewModel viewModel, string? workingDir)
+    public SettingsWindow(AppSettings settings, SettingsService settingsService, MainViewModel viewModel,
+        UpdateViewModel updateViewModel, string? workingDir)
     {
         InitializeComponent();
         _settings = settings;
         _settingsService = settingsService;
         _viewModel = viewModel;
+        _updateViewModel = updateViewModel;
         _workingDir = workingDir;
 
         // Set current state
@@ -44,7 +47,7 @@ public partial class SettingsWindow : Window
         var channel = BetaRadio.IsChecked == true ? "beta" : "stable";
         _settings.UpdateChannel = channel;
         _settingsService.Save(_settings);
-        _viewModel.Update.SetUpdateChannel(channel);
+        _updateViewModel.SetUpdateChannel(channel);
     }
 
     private void AutoConfirm_Changed(object sender, RoutedEventArgs e)

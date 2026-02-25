@@ -17,6 +17,10 @@ public class TaskRunnerService
 
     private static readonly string TasksPath = Path.Combine(TasksDir, "tasks.json");
 
+    // Stored references for SetTaskRunner wiring
+    private Func<MainViewModel>? _getActiveTab;
+    private MainWindow? _mainWindow;
+
     public List<TaskDefinition> LoadTasks()
     {
         if (!File.Exists(TasksPath))
@@ -72,8 +76,11 @@ public class TaskRunnerService
         }).ToList();
     }
 
-    public void PopulateMenu(MainWindow mainWindow, MainViewModel viewModel)
+    public void PopulateMenu(MainWindow mainWindow, Func<MainViewModel> getActiveTab)
     {
+        _getActiveTab = getActiveTab;
+        _mainWindow = mainWindow;
+
         var tasks = LoadTasks();
         var tasksMenu = mainWindow.TasksMenu;
         tasksMenu.Items.Clear();
@@ -116,7 +123,7 @@ public class TaskRunnerService
                     InputGestureText = task.HotKey ?? "",
                     ToolTip = $"Runs shell command:\n{taskDef.Command}"
                 };
-                menuItem.Click += (_, _) => RunTask(taskDef, viewModel, mainWindow);
+                menuItem.Click += (_, _) => RunTask(taskDef, getActiveTab(), mainWindow);
                 projectMenu.Items.Add(menuItem);
             }
 
@@ -136,7 +143,7 @@ public class TaskRunnerService
                 ToolTip = $"Runs shell command:\n{taskDef.Command}"
             };
 
-            menuItem.Click += (_, _) => RunTask(taskDef, viewModel, mainWindow);
+            menuItem.Click += (_, _) => RunTask(taskDef, getActiveTab(), mainWindow);
             tasksMenu.Items.Add(menuItem);
         }
 
@@ -148,7 +155,7 @@ public class TaskRunnerService
             Header = "Edit Scripts...",
             ToolTip = "Open the built-in editor to modify tasks.json."
         };
-        editTasks.Click += (_, _) => EditTasksJson(mainWindow, viewModel);
+        editTasks.Click += (_, _) => EditTasksJson(mainWindow, getActiveTab);
         tasksMenu.Items.Add(editTasks);
 
         var howTo = new MenuItem
@@ -184,7 +191,7 @@ public class TaskRunnerService
         tasksMenu.Items.Add(howTo);
     }
 
-    private void EditTasksJson(MainWindow mainWindow, MainViewModel viewModel)
+    private void EditTasksJson(MainWindow mainWindow, Func<MainViewModel> getActiveTab)
     {
         Directory.CreateDirectory(TasksDir);
 
@@ -278,7 +285,7 @@ public class TaskRunnerService
                 }
 
                 File.WriteAllText(TasksPath, textBox.Text);
-                PopulateMenu(mainWindow, viewModel);
+                PopulateMenu(mainWindow, getActiveTab);
                 editorWindow.Close();
             }
             catch (JsonException ex)

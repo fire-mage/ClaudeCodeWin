@@ -60,8 +60,7 @@ public partial class App : Application
             // Check if a previous update was rolled back
             var rolledBackVersion = CheckUpdateRollback();
 
-            // Create all services
-            var cliService = new ClaudeCliService();
+            // Create shared services
             var notificationService = new NotificationService();
             var scriptService = new ScriptService();
             var settingsService = new SettingsService();
@@ -74,8 +73,6 @@ public partial class App : Application
             projectRegistry.Load();
 
             var settings = settingsService.Load();
-            if (!string.IsNullOrEmpty(settings.WorkingDirectory))
-                cliService.WorkingDirectory = settings.WorkingDirectory;
 
             // Persist rolled-back version to blacklist and apply to update service
             if (rolledBackVersion != null && !settings.FailedUpdateVersions.Contains(rolledBackVersion))
@@ -102,9 +99,20 @@ public partial class App : Application
             var usageService = new UsageService();
             var contextSnapshotService = new ContextSnapshotService();
 
-            // Create and show main window
-            var mainViewModel = new MainViewModel(cliService, notificationService, settingsService, settings, gitService, updateService, fileIndexService, chatHistoryService, projectRegistry, contextSnapshotService, usageService);
-            var mainWindow = new MainWindow(mainViewModel, notificationService, settingsService, settings, fileIndexService, chatHistoryService, projectRegistry);
+            // Create TabHostViewModel (manages multiple tabs)
+            var tabHost = new TabHostViewModel(
+                notificationService, settingsService, settings, gitService,
+                updateService, fileIndexService, chatHistoryService,
+                projectRegistry, contextSnapshotService, usageService);
+
+            // Create initial tab
+            var initialTab = tabHost.CreateTab();
+
+            // Apply saved working directory to initial tab
+            if (!string.IsNullOrEmpty(settings.WorkingDirectory))
+                initialTab.SetWorkingDirectoryOnStartup(settings.WorkingDirectory);
+
+            var mainWindow = new MainWindow(tabHost, notificationService, settingsService, settings, fileIndexService, chatHistoryService, projectRegistry);
             mainWindow.Show();
 
             // Signal to update.cmd that the new version started successfully
@@ -119,19 +127,21 @@ public partial class App : Application
             }
 
             // Dependency checks and installation
-            if (!await EnsureDependencies(mainViewModel, mainWindow))
+            if (!await EnsureDependencies(initialTab, mainWindow))
                 return;
 
-            // Apply CLI path
+            // Apply CLI path (shared for all tabs)
             var depService = new ClaudeCodeDependencyService();
             var depStatus = await depService.CheckAsync();
+            string claudeExePath = "claude";
             if (!string.IsNullOrEmpty(settings.ClaudeExePath))
-                cliService.ClaudeExePath = settings.ClaudeExePath;
+                claudeExePath = settings.ClaudeExePath;
             else if (depStatus.ExePath is not null)
-                cliService.ClaudeExePath = depStatus.ExePath;
+                claudeExePath = depStatus.ExePath;
+            tabHost.ClaudeExePath = claudeExePath;
 
             // CLI update service: set exe path and get current version
-            cliUpdateService.ExePath = cliService.ClaudeExePath;
+            cliUpdateService.ExePath = claudeExePath;
             _ = cliUpdateService.GetCurrentVersionAsync();
 
             // Authentication
@@ -141,38 +151,45 @@ public partial class App : Application
             // Instruction deduplication
             CheckInstructionDeduplication(settings.WorkingDirectory);
 
-            // Usage service wiring
-            ConfigureUsageService(mainViewModel, usageService);
+            // Usage service wiring (global — same for all tabs)
+            ConfigureUsageService(tabHost, usageService);
             usageService.Start();
 
-            // Menus
-            scriptService.PopulateMenu(mainWindow, mainViewModel, gitService, settings, projectRegistry);
-            taskRunnerService.PopulateMenu(mainWindow, mainViewModel);
-            mainViewModel.SetTaskRunner(taskRunnerService, mainWindow);
+            // Menus (resolve active tab at click time)
+            scriptService.PopulateMenu(mainWindow, () => tabHost.ActiveTab!, gitService, settings, projectRegistry);
+            taskRunnerService.PopulateMenu(mainWindow, () => tabHost.ActiveTab!);
+            initialTab.SetTaskRunner(taskRunnerService, mainWindow);
+
+            // Wire SetTaskRunner for future tabs
+            tabHost.OnActiveTabChanged += () =>
+            {
+                if (tabHost.ActiveTab is not null)
+                    tabHost.ActiveTab.SetTaskRunner(taskRunnerService, mainWindow);
+            };
 
             // Knowledge Base
             var knowledgeBaseService = new KnowledgeBaseService();
             mainWindow.SetKnowledgeBaseService(knowledgeBaseService);
 
             // Update check first, then welcome flow (to avoid overlapping popups)
-            var hasUpdate = await mainViewModel.Update.CheckOnStartupAsync();
+            var hasUpdate = await tabHost.Update.CheckOnStartupAsync();
             if (hasUpdate)
             {
                 // Update overlay is showing — defer welcome flow until user dismisses it
-                mainViewModel.Update.OnUpdateDismissed += () =>
-                    RunWelcomeFlow(mainViewModel, mainWindow, chatHistoryService, projectRegistry, settings);
+                tabHost.Update.OnUpdateDismissed += () =>
+                    RunWelcomeFlow(initialTab, mainWindow, chatHistoryService, projectRegistry, settings);
             }
             else
             {
-                RunWelcomeFlow(mainViewModel, mainWindow, chatHistoryService, projectRegistry, settings);
+                RunWelcomeFlow(initialTab, mainWindow, chatHistoryService, projectRegistry, settings);
             }
 
             // Start periodic background checks (every 4 hours)
-            mainViewModel.Update.StartPeriodicCheck();
+            tabHost.Update.StartPeriodicCheck();
 
             // CLI update checks
-            mainViewModel.Update.InitCliUpdate(cliUpdateService);
-            mainViewModel.Update.StartCliPeriodicCheck();
+            tabHost.Update.InitCliUpdate(cliUpdateService);
+            tabHost.Update.StartCliPeriodicCheck();
         }
         catch (Exception ex)
         {
@@ -254,18 +271,21 @@ public partial class App : Application
         window.ShowWelcomeScreen();
     }
 
-    private static void ConfigureUsageService(MainViewModel vm, UsageService usageService)
+    private static void ConfigureUsageService(TabHostViewModel tabHost, UsageService usageService)
     {
         usageService.OnUsageUpdated += () =>
         {
+            var activeTab = tabHost.ActiveTab;
+
             if (!usageService.IsOnline)
             {
-                vm.StatusText = "NO INTERNET";
+                if (activeTab is not null)
+                    activeTab.StatusText = "NO INTERNET";
                 return;
             }
 
-            if (vm.StatusText == "NO INTERNET")
-                vm.StatusText = vm.IsProcessing ? "Processing..." : "Ready";
+            if (activeTab is not null && activeTab.StatusText == "NO INTERNET")
+                activeTab.StatusText = activeTab.IsProcessing ? "Processing..." : "Ready";
 
             if (!usageService.IsLoaded) return;
             var sessionPct = $"{usageService.SessionUtilization:F0}%";
@@ -274,10 +294,11 @@ public partial class App : Application
                 ? " | " : $" ({sessionCountdown}) | ";
             var weekPct = $"{usageService.WeeklyUtilization:F0}%";
 
-            vm.SessionPctText = sessionPct;
-            vm.SessionExtraText = sessionExtra;
-            vm.WeekPctText = weekPct;
-            vm.UsageText = $"Session: {sessionPct}{sessionExtra}Week: {weekPct}";
+            // Usage is global (API-level), update TabHost-level properties
+            tabHost.SessionPctText = sessionPct;
+            tabHost.SessionExtraText = sessionExtra;
+            tabHost.WeekPctText = weekPct;
+            tabHost.UsageText = $"Session: {sessionPct}{sessionExtra}Week: {weekPct}";
         };
     }
 

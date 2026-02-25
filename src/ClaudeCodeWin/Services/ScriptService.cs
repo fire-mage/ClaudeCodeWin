@@ -48,7 +48,7 @@ public partial class ScriptService
         File.WriteAllText(ScriptsPath, json);
     }
 
-    public void PopulateMenu(MainWindow mainWindow, MainViewModel viewModel, GitService gitService,
+    public void PopulateMenu(MainWindow mainWindow, Func<MainViewModel> getActiveTab, GitService gitService,
         AppSettings? settings = null, ProjectRegistryService? projectRegistry = null)
     {
         var scripts = LoadScripts();
@@ -67,11 +67,12 @@ public partial class ScriptService
 
             menuItem.Click += (_, _) =>
             {
-                var resolved = ResolveVariables(prompt, viewModel.WorkingDirectory, gitService, settings, projectRegistry);
-                viewModel.InputText = resolved;
+                var vm = getActiveTab();
+                var resolved = ResolveVariables(prompt, vm.WorkingDirectory, gitService, settings, projectRegistry);
+                vm.InputText = resolved;
 
-                if (viewModel.SendCommand.CanExecute(null))
-                    viewModel.SendCommand.Execute(null);
+                if (vm.SendCommand.CanExecute(null))
+                    vm.SendCommand.Execute(null);
             };
 
             scriptsMenu.Items.Add(menuItem);
@@ -97,11 +98,11 @@ public partial class ScriptService
             Header = "Reload Scripts",
             ToolTip = "Re-read scripts.json and refresh this menu after manual edits."
         };
-        reload.Click += (_, _) => PopulateMenu(mainWindow, viewModel, gitService, settings, projectRegistry);
+        reload.Click += (_, _) => PopulateMenu(mainWindow, getActiveTab, gitService, settings, projectRegistry);
         scriptsMenu.Items.Add(reload);
 
         // Register hotkeys
-        RegisterHotkeys(mainWindow, scripts, viewModel, gitService, settings, projectRegistry);
+        RegisterHotkeys(mainWindow, scripts, getActiveTab, gitService, settings, projectRegistry);
     }
 
     private string ResolveVariables(string prompt, string? workingDir, GitService gitService,
@@ -179,7 +180,7 @@ public partial class ScriptService
     }
 
     private void RegisterHotkeys(Window window, List<ScriptDefinition> scripts,
-        MainViewModel viewModel, GitService gitService,
+        Func<MainViewModel> getActiveTab, GitService gitService,
         AppSettings? settings, ProjectRegistryService? projectRegistry)
     {
         foreach (var script in scripts.Where(s => !string.IsNullOrEmpty(s.HotKey)))
@@ -209,11 +210,12 @@ public partial class ScriptService
                 var binding = new KeyBinding(
                     new Infrastructure.RelayCommand(() =>
                     {
-                        var resolved = ResolveVariables(prompt, viewModel.WorkingDirectory, gitService, settings, projectRegistry);
-                        viewModel.InputText = resolved;
+                        var vm = getActiveTab();
+                        var resolved = ResolveVariables(prompt, vm.WorkingDirectory, gitService, settings, projectRegistry);
+                        vm.InputText = resolved;
 
-                        if (viewModel.SendCommand.CanExecute(null))
-                            viewModel.SendCommand.Execute(null);
+                        if (vm.SendCommand.CanExecute(null))
+                            vm.SendCommand.Execute(null);
                     }),
                     key,
                     modifiers);

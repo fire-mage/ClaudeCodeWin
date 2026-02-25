@@ -6,6 +6,17 @@ namespace ClaudeCodeWin.ViewModels;
 
 public partial class MainViewModel
 {
+    /// <summary>
+    /// Sets the working directory on startup (before the CLI process starts).
+    /// Unlike SetWorkingDirectory, this doesn't stop/start sessions or show messages.
+    /// </summary>
+    public void SetWorkingDirectoryOnStartup(string folder)
+    {
+        _cliService.WorkingDirectory = folder;
+        // Lock this project in the tab system
+        LockProject?.Invoke(folder);
+    }
+
     private void SelectFolder()
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog
@@ -19,6 +30,17 @@ public partial class MainViewModel
 
     public void SetWorkingDirectory(string folder)
     {
+        // Check if this project is already open in another tab
+        if (IsProjectLockedByOtherTab?.Invoke(folder) == true)
+        {
+            Messages.Add(new MessageViewModel(MessageRole.System,
+                $"Project \"{Path.GetFileName(folder)}\" is already open in another tab."));
+            return;
+        }
+
+        // Unlock previous project before switching
+        UnlockCurrentProject?.Invoke();
+
         // Stop existing process when switching projects
         _cliService.StopSession();
 
@@ -42,6 +64,9 @@ public partial class MainViewModel
         ShowWelcome = false;
         ProjectPath = folder;
         _registeredProjectRoots.Add(Path.GetFullPath(folder));
+
+        // Lock this project in the tab system
+        LockProject?.Invoke(folder);
         RefreshGitStatus();
 
         // Register project in registry
