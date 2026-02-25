@@ -109,10 +109,17 @@ public class ClaudeCliService
             _readCts = new CancellationTokenSource();
 
             var args = BuildArguments();
+
+            // .cmd/.bat files cannot be launched directly by CreateProcessW;
+            // wrap them in cmd.exe /c so that redirected I/O still works.
+            var exePath = ClaudeExePath;
+            var isCmdFile = exePath.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
+                         || exePath.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
+
             var startInfo = new ProcessStartInfo
             {
-                FileName = ClaudeExePath,
-                Arguments = args,
+                FileName = isCmdFile ? "cmd.exe" : exePath,
+                Arguments = isCmdFile ? $"/c \"\"{exePath}\" {args}\"" : args,
                 UseShellExecute = false,
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
@@ -148,6 +155,7 @@ public class ClaudeCliService
                 }
 
                 _isSessionActive = true;
+                DiagnosticLogger.Log("PROCESS_START", $"pid={_process.Id} exe={startInfo.FileName} args={startInfo.Arguments}");
 
                 // Start background reading loops
                 var ct = _readCts.Token;
@@ -196,6 +204,7 @@ public class ClaudeCliService
                     }
                 });
 
+                DiagnosticLogger.Log("STDIN_MSG", $"len={messageJson.Length} text_len={fullText.Length}");
                 _process.StandardInput.WriteLine(messageJson);
                 _process.StandardInput.Flush();
             }
@@ -241,6 +250,7 @@ public class ClaudeCliService
                          + "\"error\":\"" + err + "\"}}";
                 }
 
+                DiagnosticLogger.Log("STDIN_CTRL", $"behavior={behavior} requestId={requestId} len={json.Length}");
                 _process.StandardInput.WriteLine(json);
                 _process.StandardInput.Flush();
             }
@@ -350,7 +360,10 @@ public class ClaudeCliService
             {
                 var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
                 if (line is null)
-                    break; // EOF
+                {
+                    DiagnosticLogger.Log("STDOUT_EOF", "CLI stdout stream ended");
+                    break;
+                }
 
                 if (string.IsNullOrWhiteSpace(line))
                     continue;
@@ -397,6 +410,7 @@ public class ClaudeCliService
 
     private void HandleProcessExited()
     {
+        DiagnosticLogger.Log("PROCESS_EXIT", $"expected={!_isSessionActive}");
         if (!_isSessionActive) return; // Expected stop
 
         // Unexpected process death — include stderr if available

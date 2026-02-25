@@ -283,13 +283,23 @@ public class ClaudeCodeDependencyService
     }
 
     /// <summary>
+    /// npm-installed claude wrapper (fallback when native binary is absent).
+    /// </summary>
+    private static readonly string NpmCmdPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "npm", "claude.cmd");
+
+    /// <summary>
     /// Resolve the full path to the claude executable.
+    /// Priority: native binary → npm .cmd wrapper → null (will use "claude" from PATH).
     /// </summary>
     public string? ResolveExePath()
     {
         if (File.Exists(NativePath))
             return NativePath;
-        return null; // Will use "claude" from PATH
+        if (File.Exists(NpmCmdPath))
+            return NpmCmdPath;
+        return null;
     }
 
     private static readonly string CredentialsPath = Path.Combine(

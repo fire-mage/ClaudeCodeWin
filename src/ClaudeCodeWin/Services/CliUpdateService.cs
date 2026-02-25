@@ -45,10 +45,12 @@ public class CliUpdateService
         exePath ??= ExePath ?? "claude";
         try
         {
+            var isCmdFile = exePath.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
+                         || exePath.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
             var psi = new ProcessStartInfo
             {
-                FileName = exePath,
-                Arguments = "--version",
+                FileName = isCmdFile ? "cmd.exe" : exePath,
+                Arguments = isCmdFile ? $"/c \"\"{exePath}\" --version\"" : "--version",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
