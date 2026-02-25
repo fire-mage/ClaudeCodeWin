@@ -247,29 +247,7 @@ public partial class App : Application
         if (history.Count == 0 && projectCount < 2)
             return;
 
-        var welcomeDialog = new WelcomeDialog(chatHistory, projectRegistry, settings.WorkingDirectory)
-        {
-            Owner = window
-        };
-
-        if (welcomeDialog.ShowDialog() != true)
-            return;
-
-        switch (welcomeDialog.ChosenAction)
-        {
-            case WelcomeDialogResult.NewChat:
-                vm.NewSessionCommand.Execute(null);
-                break;
-            case WelcomeDialogResult.SwitchProject:
-                vm.SetWorkingDirectory(welcomeDialog.SelectedProjectPath!);
-                break;
-            case WelcomeDialogResult.ContinueChat:
-                vm.LoadChatFromHistory(welcomeDialog.SelectedChatEntry!);
-                break;
-            case WelcomeDialogResult.GeneralChat:
-                vm.StartGeneralChat();
-                break;
-        }
+        window.ShowWelcomeScreen();
     }
 
     private static void ConfigureUsageService(MainViewModel vm, UsageService usageService)

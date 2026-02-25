@@ -222,6 +222,20 @@ public partial class MainWindow : Window
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // Welcome back screen: Enter = New Chat (when nothing selected)
+        if (ReturningPanel.Visibility == Visibility.Visible && ViewModel.ShowWelcome)
+        {
+            if (e.Key == Key.Enter
+                && WbProjectList.SelectedItem is null
+                && WbRecentChatsList.SelectedItem is null)
+            {
+                DismissWelcomeScreen();
+                ViewModel.NewSessionCommand.Execute(null);
+                e.Handled = true;
+                return;
+            }
+        }
+
         // Autocomplete navigation
         if (AutocompletePopup.IsOpen)
         {
@@ -807,5 +821,162 @@ public partial class MainWindow : Window
     private void MenuItem_ActivationCode_Click(object sender, RoutedEventArgs e)
     {
         new ActivationCodeWindow(_settings, _settingsService) { Owner = this }.ShowDialog();
+    }
+
+    // ===== Welcome Back Screen (inline) =====
+
+    public void ShowWelcomeScreen()
+    {
+        // Populate project name in subtitle
+        var projectName = ExtractProjectName(_settings.WorkingDirectory);
+        WbNewChatSubtitle.Text = string.IsNullOrEmpty(projectName)
+            ? "Start a fresh conversation"
+            : $"Start a fresh conversation in {projectName}";
+
+        // Load projects
+        var projects = _projectRegistry.GetFilteredProjects(50, _settings.WorkingDirectory);
+        if (projects.Count < 2)
+        {
+            WbSwitchProjectSection.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            WbSwitchProjectSection.Visibility = Visibility.Visible;
+            WbSwitchProjectHeader.Text = $"Switch Project ({projects.Count})";
+            WbProjectList.ItemsSource = projects;
+        }
+
+        // Load recent chats
+        var summaries = _chatHistoryService.ListAll();
+        var recentChats = summaries
+            .Take(5)
+            .Select(s => new SessionDisplayItem
+            {
+                Id = s.Id,
+                Title = s.Title,
+                ProjectPath = s.ProjectPath,
+                ProjectName = ExtractProjectName(s.ProjectPath),
+                UpdatedAt = s.UpdatedAt,
+                MessageCount = s.MessageCount
+            })
+            .ToList();
+
+        if (recentChats.Count == 0)
+            WbContinueChatSection.Visibility = Visibility.Collapsed;
+        else
+        {
+            WbContinueChatSection.Visibility = Visibility.Visible;
+            WbRecentChatsList.ItemsSource = recentChats;
+        }
+
+        // Switch to returning-user mode
+        FirstTimePanel.Visibility = Visibility.Collapsed;
+        ReturningPanel.Visibility = Visibility.Visible;
+        ViewModel.ShowWelcome = true;
+    }
+
+    private void DismissWelcomeScreen()
+    {
+        ViewModel.ShowWelcome = false;
+        FirstTimePanel.Visibility = Visibility.Visible;
+        ReturningPanel.Visibility = Visibility.Collapsed;
+        InputTextBox.Focus();
+    }
+
+    private static string ExtractProjectName(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return "";
+        return Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+               ?? path;
+    }
+
+    // --- Section 1: New Chat ---
+
+    private void WbNewChat_Click(object sender, MouseButtonEventArgs e)
+    {
+        DismissWelcomeScreen();
+        ViewModel.NewSessionCommand.Execute(null);
+    }
+
+    // --- Section 2: Switch Project ---
+
+    private void WbProjectList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        WbStartWithProjectBtn.IsEnabled = WbProjectList.SelectedItem is ProjectInfo;
+        if (WbProjectList.SelectedItem is not null)
+            WbRecentChatsList.SelectedItem = null;
+    }
+
+    private void WbProjectList_DoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (WbProjectList.SelectedItem is ProjectInfo project)
+        {
+            DismissWelcomeScreen();
+            ViewModel.SetWorkingDirectory(project.Path);
+            UpdateSwitchProjectMenuHeader();
+        }
+    }
+
+    private void WbStartWithProject_Click(object sender, RoutedEventArgs e)
+    {
+        if (WbProjectList.SelectedItem is ProjectInfo project)
+        {
+            DismissWelcomeScreen();
+            ViewModel.SetWorkingDirectory(project.Path);
+            UpdateSwitchProjectMenuHeader();
+        }
+    }
+
+    private void WbBrowseProject_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Select Project Folder"
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            DismissWelcomeScreen();
+            ViewModel.SetWorkingDirectory(dialog.FolderName);
+            UpdateSwitchProjectMenuHeader();
+        }
+    }
+
+    // --- Section 3: Continue Previous Chat ---
+
+    private void WbRecentChats_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        WbContinueChatBtn.IsEnabled = WbRecentChatsList.SelectedItem is SessionDisplayItem;
+        if (WbRecentChatsList.SelectedItem is not null)
+            WbProjectList.SelectedItem = null;
+    }
+
+    private void WbRecentChats_DoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (WbRecentChatsList.SelectedItem is SessionDisplayItem item)
+            WbAcceptChat(item);
+    }
+
+    private void WbContinueChat_Click(object sender, RoutedEventArgs e)
+    {
+        if (WbRecentChatsList.SelectedItem is SessionDisplayItem item)
+            WbAcceptChat(item);
+    }
+
+    private void WbAcceptChat(SessionDisplayItem item)
+    {
+        var entry = _chatHistoryService.Load(item.Id);
+        if (entry is null) return;
+
+        DismissWelcomeScreen();
+        ViewModel.LoadChatFromHistory(entry);
+    }
+
+    // --- Section 4: General Chat ---
+
+    private void WbGeneralChat_Click(object sender, MouseButtonEventArgs e)
+    {
+        DismissWelcomeScreen();
+        ViewModel.StartGeneralChat();
     }
 }

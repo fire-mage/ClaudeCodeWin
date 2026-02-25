@@ -58,7 +58,7 @@ public partial class MainViewModel
         }
 
         // Always start fresh session when switching projects
-        // (Session restore at startup is handled by the constructor + WelcomeDialog "Continue Chat")
+        // (Session restore at startup is handled by the constructor + Welcome screen "Continue Chat")
         StartNewSession(); // sets _needsPreambleInjection = true
 
         var folderName = Path.GetFileName(folder) ?? folder;

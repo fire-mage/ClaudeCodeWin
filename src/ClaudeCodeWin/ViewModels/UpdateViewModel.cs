@@ -221,7 +221,7 @@ public class UpdateViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Run a one-time update check (used at startup before showing WelcomeDialog).
+    /// Run a one-time update check (used at startup before showing the welcome screen).
     /// Returns true if an update was found and the overlay is now visible.
     /// </summary>
     public async Task<bool> CheckOnStartupAsync()
