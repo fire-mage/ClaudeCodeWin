@@ -169,6 +169,22 @@ public partial class MainViewModel
             _currentAssistantMessage.IsThinking = false;
             _currentAssistantMessage = null;
         }
+
+        ClearAllThinking();
+    }
+
+    /// <summary>
+    /// Defensive cleanup: clear IsThinking on ALL messages in the collection.
+    /// Prevents stale "thinking" indicators when _currentAssistantMessage was reassigned
+    /// (e.g. by HandleTextBlockStart) and the old message wasn't properly cleared.
+    /// </summary>
+    private void ClearAllThinking()
+    {
+        foreach (var msg in Messages)
+        {
+            if (msg.IsThinking)
+                msg.IsThinking = false;
+        }
     }
 
 

@@ -249,6 +249,7 @@ public partial class MainViewModel
             _hadToolsSinceLastText = false;
             IsProcessing = false;
             StopNudgeTimer();
+            ClearAllThinking();
             StatusText = "";
             UpdateCta(CtaState.WaitingForUser);
 
@@ -509,6 +510,7 @@ public partial class MainViewModel
             _currentAssistantMessage = null;
             IsProcessing = false;
             StopNudgeTimer();
+            ClearAllThinking();
             StatusText = "Error";
             UpdateCta(CtaState.WaitingForUser);
 
