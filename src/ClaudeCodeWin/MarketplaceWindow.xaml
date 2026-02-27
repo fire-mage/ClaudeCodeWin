@@ -171,6 +171,7 @@
                                             VerticalAlignment="Center"
                                             Padding="16,6" Margin="8,0,0,0" Cursor="Hand"
                                             Click="McpInstallButton_Click"
+                                            Loaded="McpInstallButton_Loaded"
                                             Tag="{Binding Name}">
                                         <Button.Style>
                                             <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
@@ -312,6 +313,7 @@
                                             VerticalAlignment="Center"
                                             Padding="16,6" Margin="8,0,0,0" Cursor="Hand"
                                             Click="InstallButton_Click"
+                                            Loaded="PluginInstallButton_Loaded"
                                             Tag="{Binding Id}">
                                         <Button.Style>
                                             <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">

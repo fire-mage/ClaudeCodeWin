@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -398,6 +399,13 @@ public partial class MarketplaceWindow : Window
         var kbTag = Services.McpRegistryService.GetKbTag(server);
         if (_installedIds.Contains(kbTag))
         {
+            // HTTP servers may need OAuth — offer to launch interactive CLI for authorization
+            if (server.Remotes.Count > 0 || server.TransportDisplay == "http")
+            {
+                LaunchMcpAuthorization(server);
+                return;
+            }
+
             MessageBox.Show($"'{server.DisplayName}' is already installed and documented in your Knowledge Base.",
                 "Already Installed", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
@@ -406,6 +414,98 @@ public partial class MarketplaceWindow : Window
         SelectedMcpServer = server;
         IsMcpInstall = true;
         DialogResult = true;
+    }
+
+    private void LaunchMcpAuthorization(McpRegistryServer server)
+    {
+        try
+        {
+            // Launch interactive CLI in a visible terminal window.
+            // CLAUDECODE env var must be cleared — otherwise nested CLI refuses to start.
+            var psi = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = "/c \"set CLAUDECODE= && claude\"",
+                UseShellExecute = true,  // opens a new console window
+            };
+            Process.Start(psi);
+
+            MessageBox.Show(
+                $"An interactive Claude CLI window has been opened.\n\n" +
+                $"When prompted about '{server.DisplayName}', follow the OAuth flow in your browser to authorize access.\n\n" +
+                $"After authorization is complete, you can close the CLI window.",
+                "MCP Authorization",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Failed to launch Claude CLI: {ex.Message}",
+                "Authorization Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private void McpInstallButton_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string serverName) return;
+        var server = _mcpServers.FirstOrDefault(s => s.Name == serverName);
+        if (server is not null && _installedIds.Contains(Services.McpRegistryService.GetKbTag(server)))
+        {
+            // HTTP servers need OAuth — show "Authorize" button instead of static "Installed"
+            if (server.Remotes.Count > 0 || server.TransportDisplay == "http")
+                MarkButtonAsAuthorize(btn);
+            else
+                MarkButtonAsInstalled(btn);
+        }
+        else
+        {
+            ResetButtonToInstall(btn);
+        }
+    }
+
+    private void PluginInstallButton_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string pluginId) return;
+        if (_installedIds.Contains(pluginId))
+            MarkButtonAsInstalled(btn);
+        else
+            ResetButtonToInstall(btn);
+    }
+
+    private static void MarkButtonAsInstalled(Button btn)
+    {
+        btn.Content = "Installed";
+        btn.IsHitTestVisible = false;
+        btn.Opacity = 0.6;
+        btn.Background = System.Windows.Media.Brushes.Transparent;
+        btn.BorderBrush = (System.Windows.Media.Brush)Application.Current.FindResource("PrimaryBrush");
+        btn.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("PrimaryBrush");
+        btn.BorderThickness = new Thickness(1);
+    }
+
+    private static void MarkButtonAsAuthorize(Button btn)
+    {
+        btn.Content = "Authorize";
+        btn.IsHitTestVisible = true;
+        btn.Opacity = 1.0;
+        btn.Background = System.Windows.Media.Brushes.Transparent;
+        btn.BorderBrush = (System.Windows.Media.Brush)Application.Current.FindResource("AccentBrush");
+        btn.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("AccentBrush");
+        btn.BorderThickness = new Thickness(1);
+    }
+
+    private static void ResetButtonToInstall(Button btn)
+    {
+        btn.ClearValue(ContentControl.ContentProperty);
+        btn.ClearValue(UIElement.IsHitTestVisibleProperty);
+        btn.ClearValue(UIElement.OpacityProperty);
+        btn.ClearValue(Control.BackgroundProperty);
+        btn.ClearValue(Control.BorderBrushProperty);
+        btn.ClearValue(Control.ForegroundProperty);
+        btn.ClearValue(Control.BorderThicknessProperty);
     }
 
     // ===== Ask Claude recommendation =====
@@ -443,7 +543,11 @@ public partial class MarketplaceWindow : Window
     {
         if (MainTabs.SelectedIndex == 0)
         {
-            StatusText.Text = $"{_mcpServers.Count} MCP servers";
+            var mcpInstalled = _mcpServers.Count(s =>
+                _installedIds.Contains(Services.McpRegistryService.GetKbTag(s)));
+            StatusText.Text = mcpInstalled > 0
+                ? $"{_mcpServers.Count} MCP servers, {mcpInstalled} installed"
+                : $"{_mcpServers.Count} MCP servers";
         }
         else
         {
