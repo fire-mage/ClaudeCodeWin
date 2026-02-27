@@ -29,7 +29,7 @@ public class MessageViewModel : ViewModelBase
     private string _text = string.Empty;
     private bool _isStreaming;
     private bool _isThinking;
-    private string _thinkingDurationText = "0s";
+    private string _thinkingDurationText = ActivelyWorkingLabel;
     private DispatcherTimer? _thinkingTimer;
     private DateTime _thinkingStartTime;
     private string _toolActivitySummary = string.Empty;
@@ -120,7 +120,7 @@ public class MessageViewModel : ViewModelBase
     private void StartThinkingTimer()
     {
         _thinkingStartTime = DateTime.UtcNow;
-        ThinkingDurationText = "0s";
+        ThinkingDurationText = ActivelyWorkingLabel;
         _thinkingTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _thinkingTimer.Tick += ThinkingTimer_Tick;
         _thinkingTimer.Start();
@@ -132,7 +132,7 @@ public class MessageViewModel : ViewModelBase
     public void ResetThinkingTimer()
     {
         _thinkingStartTime = DateTime.UtcNow;
-        ThinkingDurationText = "0s";
+        ThinkingDurationText = ActivelyWorkingLabel;
     }
 
     private void StopThinkingTimer()
@@ -144,9 +144,16 @@ public class MessageViewModel : ViewModelBase
         }
     }
 
+    private const string ActivelyWorkingLabel = "Actively working";
+
     private void ThinkingTimer_Tick(object? sender, EventArgs e)
     {
         var elapsed = DateTime.UtcNow - _thinkingStartTime;
+        if (elapsed.TotalSeconds <= 2)
+        {
+            ThinkingDurationText = ActivelyWorkingLabel;
+            return;
+        }
         ThinkingDurationText = elapsed.TotalSeconds < 60
             ? $"{(int)elapsed.TotalSeconds}s"
             : $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:D2}s";
