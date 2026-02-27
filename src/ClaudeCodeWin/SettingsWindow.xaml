@@ -116,6 +116,22 @@
                 </StackPanel>
             </CheckBox>
 
+            <!-- Extreme Code section -->
+            <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,20,0,16"/>
+
+            <TextBlock Text="Extreme Code" FontSize="16" FontWeight="Bold"
+                       Foreground="{StaticResource AccentBrush}" Margin="0,0,0,12"/>
+
+            <CheckBox x:Name="ExtremeCodeCheck" Style="{StaticResource SettingsCheckBox}"
+                      Margin="0,0,0,10"
+                      Checked="ExtremeCode_Changed" Unchecked="ExtremeCode_Changed">
+                <StackPanel>
+                    <TextBlock Text="Enable Extreme Code Review" FontWeight="SemiBold"/>
+                    <TextBlock Text="Experimental. After completing a task, send the work to a second Claude for independent review. They debate and can escalate to you as Judge."
+                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                </StackPanel>
+            </CheckBox>
+
             <!-- Instructions section -->
             <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,20,0,16"/>
 

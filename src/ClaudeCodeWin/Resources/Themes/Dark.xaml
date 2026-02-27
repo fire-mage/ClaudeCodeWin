@@ -21,6 +21,11 @@
     <Color x:Key="ThinkingBubbleColor">#1a2e1a</Color>
     <Color x:Key="WarningColor">#FFAB1A</Color>
 
+    <!-- Extreme Code Review bubble colors -->
+    <Color x:Key="ReviewerBubbleColor">#1a1a3a</Color>
+    <Color x:Key="DriverBubbleColor">#2a1a2a</Color>
+    <Color x:Key="JudgeBubbleColor">#3a2a1a</Color>
+
     <!-- Brushes -->
     <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}"/>
     <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}"/>
@@ -41,6 +46,11 @@
     <SolidColorBrush x:Key="ThinkingBubbleBrush" Color="{StaticResource ThinkingBubbleColor}"/>
     <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}"/>
     <SolidColorBrush x:Key="MutedTextBrush" Color="{StaticResource TextSecondaryColor}"/>
+
+    <!-- Extreme Code Review brushes -->
+    <SolidColorBrush x:Key="ReviewerBubbleBrush" Color="{StaticResource ReviewerBubbleColor}"/>
+    <SolidColorBrush x:Key="DriverBubbleBrush" Color="{StaticResource DriverBubbleColor}"/>
+    <SolidColorBrush x:Key="JudgeBubbleBrush" Color="{StaticResource JudgeBubbleColor}"/>
 
     <!-- Global TextBlock style -->
     <Style TargetType="TextBlock">

@@ -56,4 +56,8 @@ public class AppSettings
     // CCW Activation Code
     public string? ActivationCode { get; set; }
     public List<string> ActivatedFeatures { get; set; } = [];
+
+    // Extreme Code: enable code review panel with AI debate
+    public bool ExtremeCodeEnabled { get; set; }
+    public int ReviewMaxRounds { get; set; } = 3;
 }

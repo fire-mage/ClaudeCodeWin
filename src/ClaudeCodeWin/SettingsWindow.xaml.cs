@@ -33,6 +33,7 @@ public partial class SettingsWindow : Window
 
         AutoConfirmCheck.IsChecked = settings.AutoConfirmPlanMode;
         ContextSnapshotCheck.IsChecked = settings.ContextSnapshotEnabled;
+        ExtremeCodeCheck.IsChecked = settings.ExtremeCodeEnabled;
 
         UpdateInstructionsSummary();
         UpdateServersSummary();
@@ -62,6 +63,14 @@ public partial class SettingsWindow : Window
         if (!_initialized) return;
 
         _settings.ContextSnapshotEnabled = ContextSnapshotCheck.IsChecked == true;
+        _settingsService.Save(_settings);
+    }
+
+    private void ExtremeCode_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_initialized) return;
+
+        _settings.ExtremeCodeEnabled = ExtremeCodeCheck.IsChecked == true;
         _settingsService.Save(_settings);
     }
 

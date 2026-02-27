@@ -23,6 +23,8 @@
         <converters:GitStatusToBrushConverter x:Key="GitStatusBrush"/>
         <converters:StatusTextToBrushConverter x:Key="StatusTextBrush"/>
         <converters:StringToVisibilityConverter x:Key="StringToVis"/>
+        <converters:ReviewRoleToBrushConverter x:Key="ReviewRoleToBrush"/>
+        <converters:ReviewRoleToAlignmentConverter x:Key="ReviewRoleToAlign"/>
     </Window.Resources>
 
     <Window.TaskbarItemInfo>
@@ -163,6 +165,10 @@
 
         <!-- Tab content area — bound to the active tab's ViewModel -->
         <Grid Grid.Row="2" DataContext="{Binding ActiveTab}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>  <!-- Review panel (Extreme Code) -->
+            </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>        <!-- Chat -->
                 <RowDefinition Height="Auto"/>     <!-- Message queue -->
@@ -347,6 +353,53 @@
                                             </TextBox>
                                         </StackPanel>
                                     </Border>
+
+                                    <!-- Send to Review button (Extreme Code) -->
+                                    <Button Content="&#x1F50D; Send to Review"
+                                            FontSize="11"
+                                            Padding="8,3"
+                                            Margin="0,4,0,0"
+                                            HorizontalAlignment="Left"
+                                            Cursor="Hand"
+                                            Background="{StaticResource ReviewerBubbleBrush}"
+                                            Foreground="{StaticResource TextBrush}"
+                                            BorderThickness="1"
+                                            BorderBrush="{StaticResource BorderBrush}"
+                                            Command="{Binding DataContext.ActiveTab.SendToReviewCommand,
+                                                RelativeSource={RelativeSource AncestorType=Window}}"
+                                            ToolTip="Send this work to Extreme Code Review">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border Background="{TemplateBinding Background}"
+                                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                                    CornerRadius="4"
+                                                                    Padding="{TemplateBinding Padding}">
+                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter Property="Opacity" Value="0.85"/>
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding DataContext.ActiveTab.ExtremeCodeEnabled,
+                                                        RelativeSource={RelativeSource AncestorType=Window}}" Value="False">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding HasCompletionSummary}" Value="False">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
 
                                     <!-- Attachments (screenshots, files sent with this message) -->
                                     <ItemsControl ItemsSource="{Binding Attachments}"
@@ -1788,6 +1841,214 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </Expander>
+        </Border>
+
+        <!-- ========== Extreme Code Review Panel (sidebar) ========== -->
+        <Border Grid.Column="1" Grid.RowSpan="7"
+                Width="420"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1,0,0,0"
+                DataContext="{Binding ReviewPanel}"
+                Visibility="{Binding IsOpen, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>  <!-- Header -->
+                    <RowDefinition Height="*"/>     <!-- Messages -->
+                    <RowDefinition Height="Auto"/>  <!-- Footer / Actions -->
+                </Grid.RowDefinitions>
+
+                <!-- Header -->
+                <Border Grid.Row="0"
+                        Background="{StaticResource SurfaceLightBrush}"
+                        Padding="12,8"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="0,0,0,1">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Extreme Code Review"
+                                       FontSize="13" FontWeight="Bold"
+                                       Foreground="{StaticResource TextBrush}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <TextBlock Text="{Binding RoundText}"
+                                           FontSize="11"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text=" — "
+                                           FontSize="11"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="{Binding StatusText}"
+                                           FontSize="11"
+                                           Foreground="{StaticResource AccentBrush}"/>
+                            </StackPanel>
+                        </StackPanel>
+                        <Button Grid.Column="1"
+                                Content="Dismiss"
+                                FontSize="11" Padding="6,2"
+                                Margin="4,0"
+                                Command="{Binding DismissCommand}"
+                                Style="{StaticResource LinkButton}"/>
+                        <Button Grid.Column="2"
+                                Content="&#x2715;"
+                                FontSize="14" Padding="4,0"
+                                Command="{Binding CloseCommand}"
+                                Foreground="{StaticResource TextSecondaryBrush}"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <TextBlock Text="{TemplateBinding Content}"
+                                               Foreground="{TemplateBinding Foreground}"
+                                               FontSize="14" Padding="4,0"/>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <!-- Review messages -->
+                <ScrollViewer Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto"
+                              Padding="8">
+                    <ItemsControl ItemsSource="{Binding Messages}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:ReviewMessageViewModel}">
+                                <Border Margin="4,4"
+                                        Padding="10,8"
+                                        CornerRadius="8"
+                                        MaxWidth="380"
+                                        Background="{Binding Role, Converter={StaticResource ReviewRoleToBrush}}"
+                                        HorizontalAlignment="{Binding Role, Converter={StaticResource ReviewRoleToAlign}}">
+                                    <StackPanel>
+                                        <!-- Role label + timestamp -->
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                            <TextBlock Text="{Binding RoleIcon}"
+                                                       FontSize="12" Margin="0,0,4,0"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding RoleLabel}"
+                                                       FontSize="11" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource AccentBrush}"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding Timestamp, StringFormat=HH:mm}"
+                                                       FontSize="10" Margin="8,0,0,0"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <!-- Message text -->
+                                        <TextBox Text="{Binding Text, Mode=OneWay}"
+                                                 IsReadOnly="True"
+                                                 TextWrapping="Wrap"
+                                                 FontFamily="Cascadia Code,Consolas,Courier New"
+                                                 FontSize="12"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 Padding="0"
+                                                 Foreground="{StaticResource TextBrush}"
+                                                 SelectionBrush="{StaticResource SelectionBrush}"
+                                                 IsTabStop="False"
+                                                 Cursor="IBeam"/>
+                                        <!-- Streaming indicator -->
+                                        <TextBlock Text="&#x25CF;"
+                                                   FontSize="10"
+                                                   Foreground="{StaticResource PrimaryBrush}"
+                                                   Visibility="{Binding IsStreaming, Converter={StaticResource BoolToVis}}"
+                                                   Margin="0,4,0,0">
+                                            <TextBlock.Triggers>
+                                                <EventTrigger RoutedEvent="Loaded">
+                                                    <BeginStoryboard>
+                                                        <Storyboard RepeatBehavior="Forever">
+                                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                             From="1.0" To="0.3"
+                                                                             Duration="0:0:0.6"
+                                                                             AutoReverse="True"/>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </EventTrigger>
+                                            </TextBlock.Triggers>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Footer: Actions -->
+                <Border Grid.Row="2"
+                        Background="{StaticResource SurfaceLightBrush}"
+                        Padding="12,8"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="0,1,0,0">
+                    <StackPanel>
+                        <!-- Consensus actions -->
+                        <StackPanel Orientation="Horizontal"
+                                    Visibility="{Binding ShowActions, Converter={StaticResource BoolToVis}}"
+                                    HorizontalAlignment="Center">
+                            <Button Content="Apply Fixes"
+                                    Style="{StaticResource PrimaryButton}"
+                                    Command="{Binding ApplyFixesCommand}"
+                                    Padding="12,6" Margin="0,0,8,0"
+                                    FontSize="12"/>
+                            <Button Content="Dismiss"
+                                    Style="{StaticResource CancelButton}"
+                                    Command="{Binding DismissCommand}"
+                                    Padding="12,6"
+                                    FontSize="12"/>
+                        </StackPanel>
+
+                        <!-- Judge input (on escalation) -->
+                        <StackPanel Visibility="{Binding ShowJudgeInput, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Your verdict as Judge:"
+                                       FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{StaticResource AccentBrush}"
+                                       Margin="0,0,0,4"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
+                                         Text="{Binding JudgeInput, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource InputTextBox}"
+                                         FontSize="12"
+                                         MaxHeight="80"
+                                         Margin="0,0,6,0"/>
+                                <Button Grid.Column="1"
+                                        Content="Send"
+                                        Style="{StaticResource PrimaryButton}"
+                                        Command="{Binding SendJudgeVerdictCommand}"
+                                        Padding="12,6"
+                                        FontSize="12"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Status when reviewing -->
+                        <TextBlock Text="{Binding StatusText}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,2,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ShowActions}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding ShowJudgeInput}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+            </Grid>
         </Border>
 
         </Grid> <!-- End of tab content area -->
