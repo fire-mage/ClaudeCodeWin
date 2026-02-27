@@ -24,12 +24,21 @@ public partial class MainViewModel
         if (_isAutoReviewPending)
         {
             _isAutoReviewPending = false;
+            DiagnosticLogger.Log("AUTO_REVIEW_CHECK", "re-review path: _isAutoReviewPending was true");
             TryStartAutoReview();
             return;
         }
 
         // Auto-trigger first review after task completion (only if project files changed)
-        if (_settings.ReviewerEnabled && DetectCompletionMarker() && HasProjectFileChanges())
+        var reviewEnabled = _settings.ReviewerEnabled;
+        var hasMarker = DetectCompletionMarker();
+        var hasProjectFiles = HasProjectFileChanges();
+
+        DiagnosticLogger.Log("AUTO_REVIEW_CHECK",
+            $"reviewEnabled={reviewEnabled} hasMarker={hasMarker} hasProjectFiles={hasProjectFiles} " +
+            $"changedFiles={ChangedFiles.Count} wd={WorkingDirectory}");
+
+        if (reviewEnabled && hasMarker && hasProjectFiles)
         {
             _reviewAttempt = 0;
             _lastReviewCriticalSnippet = null;
@@ -203,10 +212,19 @@ public partial class MainViewModel
     private bool HasProjectFileChanges()
     {
         if (string.IsNullOrEmpty(WorkingDirectory) || ChangedFiles.Count == 0)
+        {
+            DiagnosticLogger.Log("PROJECT_FILES", $"empty: wd={WorkingDirectory} count={ChangedFiles.Count}");
             return false;
+        }
 
         var wd = WorkingDirectory.Replace('\\', '/').TrimEnd('/') + "/";
-        return ChangedFiles.Any(f => f.Replace('\\', '/').StartsWith(wd, StringComparison.OrdinalIgnoreCase));
+        var match = ChangedFiles.Any(f => f.Replace('\\', '/').StartsWith(wd, StringComparison.OrdinalIgnoreCase));
+        if (!match)
+        {
+            DiagnosticLogger.Log("PROJECT_FILES",
+                $"no match: wd={wd} files=[{string.Join(", ", ChangedFiles.Take(5))}]");
+        }
+        return match;
     }
 
     /// <summary>

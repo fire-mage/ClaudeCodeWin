@@ -403,6 +403,8 @@ public partial class MainViewModel : ViewModelBase
             {
                 MessageQueue.Remove(qm);
                 CancelProcessing();
+                _currentTaskStartIndex = Messages.Count;
+                ChangedFiles.Clear();
                 _ = SendDirectAsync(qm.Text, qm.Attachments);
             }
         });

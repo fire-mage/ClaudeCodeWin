@@ -40,6 +40,8 @@ public partial class MainViewModel
 
         // Mark the start of a new task (user-initiated, not queued clarification or review fix)
         _currentTaskStartIndex = Messages.Count; // Will point to the user message about to be added
+        ChangedFiles.Clear(); // Clear only on user-initiated messages (not queued or review-fix)
+        InputText = string.Empty;
 
         await SendDirectAsync(text, Attachments.Count > 0 ? [.. Attachments] : null);
     }
@@ -65,10 +67,8 @@ public partial class MainViewModel
         _lastSentAttachments = attachments;
         _hasResponseStarted = false;
 
-        ChangedFiles.Clear();
         EffectiveProjectName = "";
         _cliService.ClearFileSnapshots();
-        InputText = string.Empty;
         IsProcessing = true;
         StatusText = "Processing...";
         StartNudgeTimer();
@@ -388,10 +388,17 @@ public partial class MainViewModel
 
             // If summary was already extracted, it contains the marker
             if (Messages[i].HasCompletionSummary)
+            {
+                DiagnosticLogger.Log("COMPLETION_MARKER", $"found via HasCompletionSummary at msg[{i}]");
                 return true;
+            }
 
             var text = Messages[i].Text;
-            if (string.IsNullOrEmpty(text)) continue;
+            if (string.IsNullOrEmpty(text))
+            {
+                DiagnosticLogger.Log("COMPLETION_MARKER", $"msg[{i}] has empty text, skipping");
+                continue;
+            }
 
             // Check last 500 chars for completion markers
             var tail = text.Length > 500 ? text[^500..] : text;
@@ -400,12 +407,18 @@ public partial class MainViewModel
             foreach (var marker in MessageViewModel.CompletionMarkers)
             {
                 if (lower.Contains(marker))
+                {
+                    DiagnosticLogger.Log("COMPLETION_MARKER", $"found '{marker}' in tail of msg[{i}] (len={text.Length})");
                     return true;
+                }
             }
 
+            DiagnosticLogger.Log("COMPLETION_MARKER",
+                $"no marker in msg[{i}] (len={text.Length}), tail(last100): {(tail.Length > 100 ? tail[^100..] : tail)}");
             break; // Only check the last non-reviewer assistant message
         }
 
+        DiagnosticLogger.Log("COMPLETION_MARKER", "not found in any assistant message");
         return false;
     }
 
