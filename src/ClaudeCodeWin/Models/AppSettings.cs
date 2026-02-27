@@ -58,6 +58,6 @@ public class AppSettings
     public List<string> ActivatedFeatures { get; set; } = [];
 
     // Extreme Code: enable code review panel with AI debate
-    public bool ExtremeCodeEnabled { get; set; }
+    public bool ExtremeCodeEnabled { get; set; } = true;
     public int ReviewMaxRounds { get; set; } = 3;
 }
