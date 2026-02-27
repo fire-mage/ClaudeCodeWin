@@ -49,14 +49,29 @@ public partial class MarketplaceWindow : Window
         BuildTagFilters();
         ApplyFilter();
 
-        Loaded += (_, _) => SearchBox.Focus();
+        Loaded += async (_, _) =>
+        {
+            McpSearchBox.Focus();
+            // MCP is now Tab 0 (default) — load servers on first open
+            if (!_mcpTabLoaded && !_mcpTabLoading)
+            {
+                _mcpTabLoading = true;
+                try { await LoadMcpServersAsync(); _mcpTabLoaded = true; }
+                catch { /* Allow retry on next tab switch */ }
+                finally { _mcpTabLoading = false; }
+                UpdateBottomStatus();
+            }
+        };
     }
 
     // ===== Tab switching =====
 
     private async void MainTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (MainTabs.SelectedIndex == 1 && !_mcpTabLoaded && !_mcpTabLoading)
+        // Guard: fires during InitializeComponent before fields are assigned
+        if (_registryService is null) return;
+
+        if (MainTabs.SelectedIndex == 0 && !_mcpTabLoaded && !_mcpTabLoading)
         {
             _mcpTabLoading = true;
             try
@@ -372,12 +387,12 @@ public partial class MarketplaceWindow : Window
     {
         if (MainTabs.SelectedIndex == 0)
         {
-            var installedCount = _allPlugins.Count(p => _installedIds.Contains(p.Id));
-            StatusText.Text = $"{_allPlugins.Count} plugins, {installedCount} installed";
+            StatusText.Text = $"{_mcpServers.Count} MCP servers";
         }
         else
         {
-            StatusText.Text = $"{_mcpServers.Count} MCP servers";
+            var installedCount = _allPlugins.Count(p => _installedIds.Contains(p.Id));
+            StatusText.Text = $"{_allPlugins.Count} plugins, {installedCount} installed";
         }
     }
 

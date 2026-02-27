@@ -35,7 +35,7 @@ public class McpRegistryService
     {
         var cache = LoadCache();
         if (cache is not null && (DateTime.UtcNow - cache.FetchedAt) < CacheTtl)
-            return (cache.Servers, true);
+            return (DeduplicateByName(cache.Servers), true);
 
         var servers = await FetchFirstPageAsync(ct);
         SaveCache(new RegistryCache { FetchedAt = DateTime.UtcNow, Servers = servers });
@@ -57,7 +57,7 @@ public class McpRegistryService
 
     public static string GenerateInstallCommand(McpRegistryServer server)
     {
-        var slug = SanitizeSlug(server.DisplayName);
+        var slug = SanitizeSlug(server.Name.Replace('/', '-'));
 
         // Remote servers (HTTP/SSE)
         if (server.Remotes.Count > 0)
@@ -112,10 +112,34 @@ public class McpRegistryService
         if (response?.Servers is null)
             return [];
 
-        return response.Servers
+        var servers = response.Servers
             .Where(e => e.Server is not null)
             .Select(e => e.Server!)
             .ToList();
+
+        return DeduplicateByName(servers);
+    }
+
+    /// <summary>
+    /// API returns all versions of each server — deduplicate by Name, keep latest version.
+    /// Also applied to cached data in case cache was written before deduplication was added.
+    /// </summary>
+    private static List<McpRegistryServer> DeduplicateByName(List<McpRegistryServer> servers)
+    {
+        return servers
+            .GroupBy(s => s.Name)
+            .Select(g => g.OrderBy(s => ParseVersion(s.Version)).Last())
+            .ToList();
+    }
+
+    private static (int, int, int) ParseVersion(string v)
+    {
+        if (string.IsNullOrEmpty(v)) return (0, 0, 0);
+        var parts = v.TrimStart('v').Split('.', 3);
+        int.TryParse(parts.ElementAtOrDefault(0), out var major);
+        int.TryParse(parts.ElementAtOrDefault(1), out var minor);
+        int.TryParse(parts.ElementAtOrDefault(2)?.Split('-')[0], out var patch);
+        return (major, minor, patch);
     }
 
     private static string SanitizeSlug(string name)
@@ -129,12 +153,11 @@ public class McpRegistryService
 
     private static string QuoteArg(string value)
     {
-        // Windows cmd.exe: use double quotes; escape inner double quotes with backslash
-        if (value.Contains(' ') || value.Contains(';') || value.Contains('&') ||
-            value.Contains('|') || value.Contains('$') || value.Contains('`') ||
-            value.Contains('\'') || value.Contains('"') || value.Contains('%'))
-            return "\"" + value.Replace("\"", "\\\"") + "\"";
-        return value;
+        // Strip all control characters (newlines, null bytes, ANSI escapes, etc.)
+        value = new string(value.Where(c => !char.IsControl(c)).ToArray());
+        // POSIX single-quote escaping: wrap in single quotes, escape inner ' as '\''
+        // Safe for bash (Claude CLI's Bash tool on Windows uses bash)
+        return "'" + value.Replace("'", @"'\''") + "'";
     }
 
     private void SaveCache(RegistryCache cache)

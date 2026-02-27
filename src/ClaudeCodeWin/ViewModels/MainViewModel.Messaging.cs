@@ -375,10 +375,13 @@ public partial class MainViewModel
 
     private bool DetectCompletionMarker()
     {
-        // Find the last assistant message
+        // Find the last non-reviewer assistant message
         for (var i = Messages.Count - 1; i >= 0; i--)
         {
             if (Messages[i].Role != MessageRole.Assistant) continue;
+
+            // Skip reviewer messages — they contain VERDICT, not completion markers
+            if (Messages[i].IsReviewerMessage) continue;
 
             // If summary was already extracted, it contains the marker
             if (Messages[i].HasCompletionSummary)
@@ -397,7 +400,7 @@ public partial class MainViewModel
                     return true;
             }
 
-            break; // Only check the last assistant message
+            break; // Only check the last non-reviewer assistant message
         }
 
         return false;

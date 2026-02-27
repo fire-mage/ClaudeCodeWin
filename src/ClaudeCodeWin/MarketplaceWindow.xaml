@@ -29,7 +29,145 @@
                     x:Name="MainTabs"
                     SelectionChanged="MainTabs_SelectionChanged">
 
-            <!-- ======== Tab 1: Knowledge Skills ======== -->
+            <!-- ======== Tab 1: MCP Servers ======== -->
+            <TabItem Header="MCP Servers" Style="{StaticResource MarketplaceTabItem}">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Search + Refresh -->
+                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox Grid.Column="0" x:Name="McpSearchBox"
+                                 Background="{StaticResource SurfaceBrush}"
+                                 Foreground="{StaticResource TextBrush}"
+                                 BorderBrush="{StaticResource BorderBrush}"
+                                 CaretBrush="{StaticResource TextBrush}"
+                                 Padding="8,6" FontSize="13"
+                                 TextChanged="McpSearchBox_TextChanged"
+                                 Margin="0,0,8,0"/>
+
+                        <!-- Search placeholder -->
+                        <TextBlock Grid.Column="0" x:Name="McpSearchPlaceholder"
+                                   Text="Search MCP servers..." FontSize="13" IsHitTestVisible="False"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   VerticalAlignment="Center" Margin="10,0,0,0"/>
+
+                        <Button Grid.Column="1" x:Name="McpRefreshButton"
+                                Content="Refresh" Click="McpRefresh_Click"
+                                Padding="16,6"
+                                Background="{StaticResource SurfaceBrush}"
+                                Foreground="{StaticResource TextBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                Cursor="Hand"/>
+                    </Grid>
+
+                    <!-- Status / Loading -->
+                    <TextBlock Grid.Row="1" x:Name="McpStatusText"
+                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,0,0,6"/>
+
+                    <!-- Empty state -->
+                    <TextBlock Grid.Row="2" x:Name="McpEmptyLabel"
+                               Text="No MCP servers found."
+                               FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Visibility="Collapsed"/>
+
+                    <!-- MCP Server list -->
+                    <ListView Grid.Row="2" x:Name="McpServerList"
+                              Background="{StaticResource SurfaceBrush}"
+                              BorderBrush="{StaticResource BorderBrush}"
+                              BorderThickness="1"
+                              Foreground="{StaticResource TextBrush}"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                <Setter Property="Padding" Value="12,10"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListViewItem">
+                                            <Border x:Name="Bd" Background="Transparent"
+                                                    Padding="{TemplateBinding Padding}"
+                                                    BorderBrush="{StaticResource BorderBrush}"
+                                                    BorderThickness="0,0,0,1">
+                                                <ContentPresenter/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background"
+                                                            Value="{StaticResource SurfaceLightBrush}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Display name -->
+                                    <TextBlock Grid.Row="0" Grid.Column="0"
+                                               Text="{Binding DisplayName}"
+                                               FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextBrush}"/>
+
+                                    <!-- Install button -->
+                                    <Button Grid.Row="0" Grid.Column="1" Grid.RowSpan="3"
+                                            VerticalAlignment="Center"
+                                            Padding="16,6" Margin="8,0,0,0" Cursor="Hand"
+                                            Click="McpInstallButton_Click"
+                                            Tag="{Binding Name}">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+                                                <Setter Property="Content" Value="Install"/>
+                                                <Setter Property="FontSize" Value="12"/>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+
+                                    <!-- Description -->
+                                    <TextBlock Grid.Row="1" Grid.Column="0"
+                                               Text="{Binding Description}"
+                                               FontSize="12"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                                               MaxHeight="36" Margin="0,3,8,0"/>
+
+                                    <!-- Info line: package type · transport · author -->
+                                    <TextBlock Grid.Row="2" Grid.Column="0"
+                                               Text="{Binding InfoLine}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource AccentBrush}"
+                                               Margin="0,4,0,0"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </TabItem>
+
+            <!-- ======== Tab 2: Knowledge Skills ======== -->
             <TabItem Header="Knowledge Skills" Style="{StaticResource MarketplaceTabItem}">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>
@@ -168,144 +306,6 @@
                                                    FontSize="11"
                                                    Foreground="{StaticResource TextSecondaryBrush}"/>
                                     </StackPanel>
-                                </Grid>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
-                </Grid>
-            </TabItem>
-
-            <!-- ======== Tab 2: MCP Servers ======== -->
-            <TabItem Header="MCP Servers" Style="{StaticResource MarketplaceTabItem}">
-                <Grid Margin="0,8,0,0">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <!-- Search + Refresh -->
-                    <Grid Grid.Row="0" Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <TextBox Grid.Column="0" x:Name="McpSearchBox"
-                                 Background="{StaticResource SurfaceBrush}"
-                                 Foreground="{StaticResource TextBrush}"
-                                 BorderBrush="{StaticResource BorderBrush}"
-                                 CaretBrush="{StaticResource TextBrush}"
-                                 Padding="8,6" FontSize="13"
-                                 TextChanged="McpSearchBox_TextChanged"
-                                 Margin="0,0,8,0"/>
-
-                        <!-- Search placeholder -->
-                        <TextBlock Grid.Column="0" x:Name="McpSearchPlaceholder"
-                                   Text="Search MCP servers..." FontSize="13" IsHitTestVisible="False"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                   VerticalAlignment="Center" Margin="10,0,0,0"/>
-
-                        <Button Grid.Column="1" x:Name="McpRefreshButton"
-                                Content="Refresh" Click="McpRefresh_Click"
-                                Padding="16,6"
-                                Background="{StaticResource SurfaceBrush}"
-                                Foreground="{StaticResource TextBrush}"
-                                BorderBrush="{StaticResource BorderBrush}"
-                                Cursor="Hand"/>
-                    </Grid>
-
-                    <!-- Status / Loading -->
-                    <TextBlock Grid.Row="1" x:Name="McpStatusText"
-                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
-                               Margin="0,0,0,6"/>
-
-                    <!-- Empty state -->
-                    <TextBlock Grid.Row="2" x:Name="McpEmptyLabel"
-                               Text="No MCP servers found."
-                               FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Visibility="Collapsed"/>
-
-                    <!-- MCP Server list -->
-                    <ListView Grid.Row="2" x:Name="McpServerList"
-                              Background="{StaticResource SurfaceBrush}"
-                              BorderBrush="{StaticResource BorderBrush}"
-                              BorderThickness="1"
-                              Foreground="{StaticResource TextBrush}"
-                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                        <ListView.ItemContainerStyle>
-                            <Style TargetType="ListViewItem">
-                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-                                <Setter Property="Padding" Value="12,10"/>
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="ListViewItem">
-                                            <Border x:Name="Bd" Background="Transparent"
-                                                    Padding="{TemplateBinding Padding}"
-                                                    BorderBrush="{StaticResource BorderBrush}"
-                                                    BorderThickness="0,0,0,1">
-                                                <ContentPresenter/>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="Bd" Property="Background"
-                                                            Value="{StaticResource SurfaceLightBrush}"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                            </Style>
-                        </ListView.ItemContainerStyle>
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-
-                                    <!-- Display name -->
-                                    <TextBlock Grid.Row="0" Grid.Column="0"
-                                               Text="{Binding DisplayName}"
-                                               FontSize="14" FontWeight="SemiBold"
-                                               Foreground="{StaticResource TextBrush}"/>
-
-                                    <!-- Install button -->
-                                    <Button Grid.Row="0" Grid.Column="1" Grid.RowSpan="3"
-                                            VerticalAlignment="Center"
-                                            Padding="16,6" Margin="8,0,0,0" Cursor="Hand"
-                                            Click="McpInstallButton_Click"
-                                            Tag="{Binding Name}">
-                                        <Button.Style>
-                                            <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
-                                                <Setter Property="Content" Value="Install"/>
-                                                <Setter Property="FontSize" Value="12"/>
-                                            </Style>
-                                        </Button.Style>
-                                    </Button>
-
-                                    <!-- Description -->
-                                    <TextBlock Grid.Row="1" Grid.Column="0"
-                                               Text="{Binding Description}"
-                                               FontSize="12"
-                                               Foreground="{StaticResource TextSecondaryBrush}"
-                                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
-                                               MaxHeight="36" Margin="0,3,8,0"/>
-
-                                    <!-- Info line: package type · transport · author -->
-                                    <TextBlock Grid.Row="2" Grid.Column="0"
-                                               Text="{Binding InfoLine}"
-                                               FontSize="11"
-                                               Foreground="{StaticResource AccentBrush}"
-                                               Margin="0,4,0,0"/>
                                 </Grid>
                             </DataTemplate>
                         </ListView.ItemTemplate>
