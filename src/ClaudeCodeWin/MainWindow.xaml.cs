@@ -1006,7 +1006,14 @@ public partial class MainWindow : Window
         var window = new MarketplaceWindow(marketplaceService, registryService, kbEntries) { Owner = this };
         if (window.ShowDialog() != true) return;
 
-        if (window.IsMcpInstall && window.SelectedMcpServer is not null)
+        if (window.IsRecommendationRequest && window.RecommendationServers is { Count: > 0 })
+        {
+            var prompt = BuildRecommendationPrompt(window.UserGoal!, window.RecommendationServers);
+            ViewModel.InputText = prompt;
+            if (ViewModel.SendCommand.CanExecute(null))
+                ViewModel.SendCommand.Execute(null);
+        }
+        else if (window.IsMcpInstall && window.SelectedMcpServer is not null)
         {
             var server = window.SelectedMcpServer;
             var command = Services.McpRegistryService.GenerateInstallCommand(server);
@@ -1058,6 +1065,41 @@ public partial class MainWindow : Window
                "1. Run the install command above (adapt for the user's environment if needed)\n" +
                "2. If the server requires API keys or environment variables, help the user set them up\n" +
                "3. Verify the server was added successfully with `claude mcp list`";
+    }
+
+    private static string BuildRecommendationPrompt(string goal, List<Models.McpRegistryServer> servers)
+    {
+        const int maxServers = 20;
+        var capped = servers.Count > maxServers ? servers.Take(maxServers).ToList() : servers;
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("The user is looking for an MCP server in the Marketplace and wants your recommendation.");
+        sb.AppendLine();
+        sb.AppendLine($"**User's goal:** {goal}");
+        sb.AppendLine();
+        sb.AppendLine(capped.Count < servers.Count
+            ? $"**Search results (showing top {capped.Count} of {servers.Count}):**"
+            : $"**Search results ({servers.Count}):**");
+        sb.AppendLine();
+
+        for (int i = 0; i < capped.Count; i++)
+        {
+            var s = capped[i];
+            sb.AppendLine($"{i + 1}. **{s.DisplayName}** ({s.Name})");
+            sb.AppendLine($"   Description: {s.Description}");
+            sb.AppendLine($"   Type: {s.InfoLine}");
+            if (s.Repository is not null)
+                sb.AppendLine($"   Repository: {s.Repository.Url}");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("Please:");
+        sb.AppendLine("1. Analyze which server(s) best fit the user's goal");
+        sb.AppendLine("2. Recommend the best option and explain why");
+        sb.AppendLine("3. If multiple options are viable, briefly compare them");
+        sb.AppendLine("4. If none of the results fit, say so and suggest alternative search terms");
+
+        return sb.ToString();
     }
 
     private void MenuItem_ExploreSkill_Click(object sender, RoutedEventArgs e)

@@ -37,6 +37,21 @@ public partial class MarketplaceWindow : Window
     /// </summary>
     public bool IsMcpInstall { get; private set; }
 
+    /// <summary>
+    /// True when the user clicked "Ask Claude" for a recommendation.
+    /// </summary>
+    public bool IsRecommendationRequest { get; private set; }
+
+    /// <summary>
+    /// The user's goal/problem description for the recommendation.
+    /// </summary>
+    public string? UserGoal { get; private set; }
+
+    /// <summary>
+    /// The list of MCP servers to evaluate for the recommendation.
+    /// </summary>
+    public List<McpRegistryServer>? RecommendationServers { get; private set; }
+
     public MarketplaceWindow(MarketplaceService marketplaceService, McpRegistryService registryService, List<KnowledgeBaseEntry> kbEntries)
     {
         InitializeComponent();
@@ -290,6 +305,8 @@ public partial class MarketplaceWindow : Window
         McpSearchPlaceholder.Visibility = string.IsNullOrEmpty(McpSearchBox.Text)
             ? Visibility.Visible
             : Visibility.Collapsed;
+
+        UpdateAskClaudeButton();
     }
 
     private void McpSearchBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -297,6 +314,8 @@ public partial class MarketplaceWindow : Window
         McpSearchPlaceholder.Visibility = string.IsNullOrEmpty(McpSearchBox.Text)
             ? Visibility.Visible
             : Visibility.Collapsed;
+
+        UpdateAskClaudeButton();
 
         _searchDebounceTimer?.Stop();
         _searchDebounceTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
@@ -378,6 +397,35 @@ public partial class MarketplaceWindow : Window
 
         SelectedMcpServer = server;
         IsMcpInstall = true;
+        DialogResult = true;
+    }
+
+    // ===== Ask Claude recommendation =====
+
+    private void GoalBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        GoalPlaceholder.Visibility = string.IsNullOrEmpty(GoalBox.Text)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        UpdateAskClaudeButton();
+    }
+
+    private void UpdateAskClaudeButton()
+    {
+        AskClaudeButton.IsEnabled = !string.IsNullOrWhiteSpace(GoalBox.Text)
+            && _mcpServers.Count > 0
+            && !string.IsNullOrWhiteSpace(McpSearchBox.Text);
+    }
+
+    private void AskClaude_Click(object sender, RoutedEventArgs e)
+    {
+        var goal = GoalBox.Text?.Trim();
+        if (string.IsNullOrEmpty(goal) || _mcpServers.Count == 0) return;
+
+        IsRecommendationRequest = true;
+        UserGoal = goal;
+        RecommendationServers = _mcpServers.ToList();
         DialogResult = true;
     }
 
