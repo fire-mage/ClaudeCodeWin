@@ -46,16 +46,18 @@ public partial class MainViewModel
         await SendDirectAsync(text, Attachments.Count > 0 ? [.. Attachments] : null);
     }
 
-    private async Task SendDirectAsync(string text, List<FileAttachment>? attachments)
+    private async Task SendDirectAsync(string text, List<FileAttachment>? attachments, string? participantLabel = null)
     {
-        // Cancel any active review if the user sent a message (not an auto-review fix prompt)
-        if (_reviewService?.IsActive == true)
+        // Cancel any active review if this is a real user message (not an auto-review fix prompt)
+        if (_reviewService?.IsActive == true && participantLabel is null)
         {
             CancelReview();
             Messages.Add(new MessageViewModel(MessageRole.System, "Review cancelled (user message)."));
         }
 
         var userMsg = new MessageViewModel(MessageRole.User, text);
+        if (participantLabel is not null)
+            userMsg.ReviewerLabel = participantLabel;
         if (attachments is not null)
             userMsg.Attachments = [.. attachments];
         Messages.Add(userMsg);

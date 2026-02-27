@@ -11,6 +11,7 @@ public partial class MainViewModel
     private MessageViewModel? _currentReviewerMessage;
     private string? _lastReviewCriticalSnippet;
     private int _currentTaskStartIndex;
+    private System.Windows.Threading.DispatcherTimer? _reviewStatusClearTimer;
 
     public bool ReviewerEnabled => _settings.ReviewerEnabled;
 
@@ -65,7 +66,7 @@ public partial class MainViewModel
         var recentMessages = Messages
             .Skip(Math.Min(_currentTaskStartIndex, Messages.Count))
             .Where(m => m.Role is MessageRole.User or MessageRole.Assistant
-                        && !m.IsReviewerMessage
+                        && !(m.Role == MessageRole.Assistant && m.IsReviewerMessage) // exclude reviewer output, keep fix prompts
                         && !string.IsNullOrEmpty(m.Text))
             .Select(m => (role: m.Role == MessageRole.User ? "user" : "assistant", text: m.Text))
             .ToList();
@@ -76,11 +77,15 @@ public partial class MainViewModel
         _reviewService = new ReviewService();
         _reviewService.Configure(_cliService.ClaudeExePath, WorkingDirectory);
 
-        // System message
+        // System message with round info
+        // ReviewAutoRetries is the max number of review rounds (stop condition: _reviewAttempt >= value)
+        var maxRounds = _settings.ReviewAutoRetries;
+        var roundNum = _reviewAttempt + 1;
         Messages.Add(new MessageViewModel(MessageRole.System,
             _reviewAttempt == 0
                 ? "Starting code review..."
-                : $"Re-reviewing code (attempt {_reviewAttempt + 1})..."));
+                : $"Re-reviewing code (Round {roundNum}/{maxRounds})..."));
+        ReviewStatusText = $"Review Round {roundNum}/{maxRounds}";
 
         // Reviewer message bubble for streaming
         _currentReviewerMessage = new MessageViewModel(MessageRole.Assistant)
@@ -129,6 +134,7 @@ public partial class MainViewModel
                     _currentReviewerMessage = null;
                 }
                 _reviewService = null;
+                ReviewStatusText = "";
                 Messages.Add(new MessageViewModel(MessageRole.System, "Review failed. Proceeding without review."));
                 TryShowTaskSuggestion();
             });
@@ -145,6 +151,13 @@ public partial class MainViewModel
         if (verdict == ReviewVerdict.Consensus)
         {
             Messages.Add(new MessageViewModel(MessageRole.System, "Review passed — no issues found."));
+            ReviewStatusText = "Review Passed";
+            // Auto-clear status after 5 seconds (stored as field for cancellation)
+            _reviewStatusClearTimer?.Stop();
+            _reviewStatusClearTimer = null; // allow GC of old timer before creating new
+            _reviewStatusClearTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            _reviewStatusClearTimer.Tick += (_, _) => { ReviewStatusText = ""; _reviewStatusClearTimer?.Stop(); _reviewStatusClearTimer = null; };
+            _reviewStatusClearTimer.Start();
             TryShowTaskSuggestion();
             return;
         }
@@ -156,6 +169,7 @@ public partial class MainViewModel
         {
             Messages.Add(new MessageViewModel(MessageRole.System,
                 $"Review found issues after {_reviewAttempt} attempts. Awaiting your decision."));
+            ReviewStatusText = $"Review: Issues after {_reviewAttempt} rounds";
             TryShowTaskSuggestion();
             return;
         }
@@ -166,6 +180,7 @@ public partial class MainViewModel
         {
             Messages.Add(new MessageViewModel(MessageRole.System,
                 "Review loop detected — same critical issue repeated. Stopping auto-review."));
+            ReviewStatusText = "Review: Loop detected";
             TryShowTaskSuggestion();
             return;
         }
@@ -180,7 +195,7 @@ public partial class MainViewModel
 
             Please fix the issues identified above. After fixing, provide a brief summary of what you changed.
             """;
-        SendDirectAsync(fixPrompt, null).ContinueWith(t =>
+        SendDirectAsync(fixPrompt, null, "Auto-Review").ContinueWith(t =>
         {
             if (t.Exception is not null)
                 DiagnosticLogger.Log("REVIEW_FIX_ERROR", t.Exception.InnerException?.Message ?? t.Exception.Message);
@@ -200,6 +215,9 @@ public partial class MainViewModel
         _isAutoReviewPending = false;
         _reviewAttempt = 0;
         _lastReviewCriticalSnippet = null;
+        _reviewStatusClearTimer?.Stop();
+        _reviewStatusClearTimer = null;
+        ReviewStatusText = "";
         if (_currentReviewerMessage is not null)
         {
             _currentReviewerMessage.IsStreaming = false;

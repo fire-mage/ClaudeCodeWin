@@ -284,21 +284,37 @@
                             <Border Margin="4,4,4,4"
                                     Padding="12,8"
                                     CornerRadius="8"
-                                    Background="{Binding Role, Converter={StaticResource RoleToBubble}}"
-                                    HorizontalAlignment="{Binding Role, Converter={StaticResource RoleToAlign}}"
-                                    MaxWidth="{Binding Role, Converter={StaticResource RoleToMaxWidth}}"
                                     Visibility="{Binding IsThinking, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="{Binding Role, Converter={StaticResource RoleToBubble}}"/>
+                                        <Setter Property="HorizontalAlignment" Value="{Binding Role, Converter={StaticResource RoleToAlign}}"/>
+                                        <Setter Property="MaxWidth" Value="{Binding Role, Converter={StaticResource RoleToMaxWidth}}"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsReviewerMessage}" Value="True">
+                                                <Setter Property="Background" Value="{StaticResource ReviewerBubbleBrush}"/>
+                                                <Setter Property="HorizontalAlignment" Value="Center"/>
+                                                <Setter Property="MaxWidth" Value="Infinity"/>
+                                                <Setter Property="BorderBrush" Value="{StaticResource ReviewerAccentBrush}"/>
+                                                <Setter Property="BorderThickness" Value="2,0,0,0"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
                                 <StackPanel>
-                                    <!-- Reviewer badge -->
+                                    <!-- Reviewer / participant badge -->
                                     <Border CornerRadius="3"
-                                            Background="{StaticResource ReviewerBubbleBrush}"
+                                            Background="{StaticResource SurfaceLightBrush}"
+                                            BorderBrush="{StaticResource ReviewerAccentBrush}"
+                                            BorderThickness="1"
                                             Padding="6,2"
                                             Margin="0,0,0,4"
                                             HorizontalAlignment="Left"
                                             Visibility="{Binding IsReviewerMessage, Converter={StaticResource BoolToVis}}">
                                         <TextBlock Text="{Binding ReviewerLabel}"
                                                    FontSize="10" FontWeight="SemiBold"
-                                                   Foreground="{StaticResource TextBrush}"/>
+                                                   Foreground="{StaticResource ReviewerAccentBrush}"/>
                                     </Border>
                                     <!-- Timestamp -->
                                     <TextBlock Text="{Binding Timestamp, StringFormat='HH:mm'}"
@@ -1897,6 +1913,18 @@
                                FontSize="12"
                                Foreground="{Binding StatusText, Converter={StaticResource StatusTextBrush}}"
                                VerticalAlignment="Center"/>
+                    <!-- Review status badge -->
+                    <Border CornerRadius="3"
+                            Background="{StaticResource ReviewerBubbleBrush}"
+                            BorderBrush="{StaticResource ReviewerAccentBrush}"
+                            BorderThickness="1"
+                            Padding="6,2" Margin="8,0,0,0"
+                            VerticalAlignment="Center"
+                            Visibility="{Binding ReviewStatusText, Converter={StaticResource StringToVis}}">
+                        <TextBlock Text="{Binding ReviewStatusText}"
+                                   FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}"/>
+                    </Border>
                 </StackPanel>
                 <!-- Folder block — all grey -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal"

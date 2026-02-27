@@ -21,8 +21,9 @@
     <Color x:Key="ThinkingBubbleColor">#1a2e1a</Color>
     <Color x:Key="WarningColor">#FFAB1A</Color>
 
-    <!-- Code Review badge color -->
+    <!-- Code Review badge / participant color -->
     <Color x:Key="ReviewerBubbleColor">#1a1a3a</Color>
+    <Color x:Key="ReviewerAccentColor">#5865F2</Color>
 
     <!-- Brushes -->
     <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}"/>
@@ -45,8 +46,9 @@
     <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}"/>
     <SolidColorBrush x:Key="MutedTextBrush" Color="{StaticResource TextSecondaryColor}"/>
 
-    <!-- Code Review badge brush -->
+    <!-- Code Review badge / participant brushes -->
     <SolidColorBrush x:Key="ReviewerBubbleBrush" Color="{StaticResource ReviewerBubbleColor}"/>
+    <SolidColorBrush x:Key="ReviewerAccentBrush" Color="{StaticResource ReviewerAccentColor}"/>
 
     <!-- Global TextBlock style -->
     <Style TargetType="TextBlock">

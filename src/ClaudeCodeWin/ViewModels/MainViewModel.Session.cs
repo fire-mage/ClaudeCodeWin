@@ -108,6 +108,7 @@ public partial class MainViewModel
         _cliService.ResetSession();
         ModelName = "";
         StatusText = "";
+        ReviewStatusText = "";
         ContextUsageText = "";
         ContextPctText = "";
         TodoProgressText = "";

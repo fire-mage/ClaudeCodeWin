@@ -158,6 +158,13 @@ public partial class MainViewModel : ViewModelBase
         set => SetProperty(ref _statusText, value);
     }
 
+    private string _reviewStatusText = "";
+    public string ReviewStatusText
+    {
+        get => _reviewStatusText;
+        set => SetProperty(ref _reviewStatusText, value);
+    }
+
     public string ModelName
     {
         get => _modelName;
