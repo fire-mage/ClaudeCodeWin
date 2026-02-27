@@ -158,6 +158,7 @@ public partial class MainViewModel
     private void CancelProcessing()
     {
         _cliService.Cancel();
+        CancelReview();
         IsProcessing = false;
         StopNudgeTimer();
         StatusText = "Cancelled";

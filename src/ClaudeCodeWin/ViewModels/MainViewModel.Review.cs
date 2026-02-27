@@ -1,5 +1,3 @@
-using System.Windows;
-using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 using ClaudeCodeWin.Services;
 
@@ -8,62 +6,43 @@ namespace ClaudeCodeWin.ViewModels;
 public partial class MainViewModel
 {
     private ReviewService? _reviewService;
-    private bool _isReviewDriverTurn;
+    private int _reviewAttempt;
+    private bool _isAutoReviewPending;
+    private MessageViewModel? _currentReviewerMessage;
 
-    public ReviewPanelViewModel ReviewPanel { get; } = new();
-
-    public bool ExtremeCodeEnabled => _settings.ExtremeCodeEnabled;
-
-    public RelayCommand SendToReviewCommand { get; private set; } = null!;
+    public bool ReviewerEnabled => _settings.ReviewerEnabled;
 
     /// <summary>
-    /// Initialize the Extreme Code review system. Called from constructor.
+    /// Called from HandleCompleted after every turn.
+    /// Decides whether to auto-trigger a review or show FinalizeActions.
     /// </summary>
-    private void InitializeReview()
+    private void OnTurnCompleted()
     {
-        SendToReviewCommand = new RelayCommand(StartCodeReview,
-            () => ExtremeCodeEnabled && !IsProcessing && HasDialogHistory && !ReviewPanel.IsOpen);
-
-        ReviewPanel.OnCloseRequested += () =>
+        // If a review cycle just finished and fixes were applied, auto re-review
+        if (_isAutoReviewPending)
         {
-            _reviewService?.Stop();
-            _reviewService = null;
-            _isReviewDriverTurn = false;
-        };
-
-        ReviewPanel.OnJudgeVerdictSubmitted += verdict =>
-        {
-            _reviewService?.SendJudgeVerdict(verdict);
-        };
-
-        ReviewPanel.OnApplyFixesRequested += suggestions =>
-        {
-            ReviewPanel.IsOpen = false;
-            _reviewService?.Stop();
-            _reviewService = null;
-            _isReviewDriverTurn = false;
-
-            var prompt = $"""
-                The following issues were identified during an Extreme Code Review.
-                Please apply the agreed fixes:
-
-                {suggestions}
-                """;
-            _ = SendDirectAsync(prompt, null);
-        };
-    }
-
-    private void StartCodeReview()
-    {
-        if (_reviewService is not null)
-        {
-            _reviewService.Stop();
-            _reviewService = null;
+            _isAutoReviewPending = false;
+            TryStartAutoReview();
+            return;
         }
 
-        _isReviewDriverTurn = false;
+        // Auto-trigger first review after task completion
+        if (_settings.ReviewerEnabled && DetectCompletionMarker() && ChangedFiles.Count > 0)
+        {
+            _reviewAttempt = 0;
+            TryStartAutoReview();
+            return;
+        }
 
-        // Collect context
+        TryShowTaskSuggestion();
+    }
+
+    private void TryStartAutoReview()
+    {
+        // Stop any previous review CLI process before starting a new one
+        CancelReview();
+
+        // Collect fresh context (new git diff for each re-review)
         var recentMessages = Messages
             .Where(m => m.Role is MessageRole.User or MessageRole.Assistant && !string.IsNullOrEmpty(m.Text))
             .Select(m => (role: m.Role == MessageRole.User ? "user" : "assistant", text: m.Text))
@@ -72,49 +51,46 @@ public partial class MainViewModel
         var gitDiff = _gitService.RunGit("diff HEAD", WorkingDirectory);
         var context = ReviewService.BuildReviewContext(ChangedFiles, recentMessages, gitDiff);
 
-        // Create and configure review service
         _reviewService = new ReviewService();
         _reviewService.Configure(_cliService.ClaudeExePath, WorkingDirectory);
 
+        // System message
+        Messages.Add(new MessageViewModel(MessageRole.System,
+            _reviewAttempt == 0
+                ? "Starting code review..."
+                : $"Re-reviewing code (attempt {_reviewAttempt + 1})..."));
+
+        // Reviewer message bubble for streaming
+        _currentReviewerMessage = new MessageViewModel(MessageRole.Assistant)
+        {
+            IsStreaming = true,
+            ReviewerLabel = "Reviewer"
+        };
+        Messages.Add(_currentReviewerMessage);
+
         // Wire events
-        _reviewService.OnTextDelta += (role, text) =>
-        {
-            RunOnUI(() => ReviewPanel.AppendText(text));
-        };
-
-        _reviewService.OnMessageCompleted += (role, fullText) =>
+        _reviewService.OnTextDelta += text =>
         {
             RunOnUI(() =>
             {
-                if (role == ReviewRole.System)
+                if (_currentReviewerMessage is not null)
                 {
-                    ReviewPanel.AddMessage(role, fullText);
-                }
-                else if (role != ReviewRole.Driver)
-                {
-                    // Driver messages are completed by HandleCompleted via SubmitDriverResponse
-                    ReviewPanel.CompleteMessage(fullText);
+                    _currentReviewerMessage.IsThinking = false;
+                    _currentReviewerMessage.Text += text;
                 }
             });
         };
 
-        _reviewService.OnRoundStarted += round =>
+        _reviewService.OnReviewCompleted += (fullText, verdict) =>
         {
             RunOnUI(() =>
             {
-                ReviewPanel.CurrentRound = round;
-                if (round > 1)
-                    ReviewPanel.AddMessage(ReviewRole.System, $"--- Round {round} ---");
-            });
-        };
-
-        _reviewService.OnStatusChanged += status =>
-        {
-            RunOnUI(() =>
-            {
-                ReviewPanel.Status = status;
-                if (status is ReviewStatus.Consensus)
-                    ReviewPanel.IsReviewing = false;
+                if (_currentReviewerMessage is not null)
+                {
+                    _currentReviewerMessage.IsStreaming = false;
+                    _currentReviewerMessage = null;
+                }
+                HandleReviewVerdict(verdict, fullText);
             });
         };
 
@@ -122,46 +98,76 @@ public partial class MainViewModel
         {
             RunOnUI(() =>
             {
-                ReviewPanel.AddMessage(ReviewRole.System, $"Error: {error}");
-                ReviewPanel.IsReviewing = false;
-            });
-        };
-
-        // Detect new streaming messages by role change (for Reviewer only).
-        ReviewRole? lastStreamingRole = null;
-
-        _reviewService.OnTextDelta += (role, text) =>
-        {
-            RunOnUI(() =>
-            {
-                if (lastStreamingRole != role)
+                if (_currentReviewerMessage is not null)
                 {
-                    lastStreamingRole = role;
-                    ReviewPanel.StartMessage(role);
+                    _currentReviewerMessage.IsStreaming = false;
+                    _currentReviewerMessage.Text = $"Review error: {error}";
+                    _currentReviewerMessage = null;
                 }
+                _reviewService = null;
+                Messages.Add(new MessageViewModel(MessageRole.System, "Review failed. Proceeding without review."));
+                TryShowTaskSuggestion();
             });
         };
 
-        // Wire driver response request — main Claude acts as Driver
-        _reviewService.OnDriverResponseNeeded += prompt =>
+        _reviewService.RunReview(context);
+    }
+
+    private void HandleReviewVerdict(ReviewVerdict verdict, string reviewText)
+    {
+        _reviewService?.Stop();
+        _reviewService = null;
+
+        if (verdict == ReviewVerdict.Consensus)
         {
-            RunOnUI(() =>
-            {
-                _isReviewDriverTurn = true;
-                lastStreamingRole = ReviewRole.Driver;
-                ReviewPanel.StartMessage(ReviewRole.Driver);
+            Messages.Add(new MessageViewModel(MessageRole.System, "Review passed — no issues found."));
+            TryShowTaskSuggestion();
+            return;
+        }
 
-                // Send silently — response only appears in Review panel, not main chat
-                _ = SendSilentAsync(prompt);
-            });
-        };
+        // ISSUES_FOUND (or None — treat as issues found to be safe)
+        _reviewAttempt++;
 
-        // Reset panel and open
-        ReviewPanel.Reset();
-        ReviewPanel.MaxRounds = _settings.ReviewMaxRounds;
-        ReviewPanel.IsOpen = true;
+        if (_reviewAttempt > _settings.ReviewAutoRetries)
+        {
+            Messages.Add(new MessageViewModel(MessageRole.System,
+                $"Review found issues after {_reviewAttempt} attempts. Awaiting your decision."));
+            TryShowTaskSuggestion();
+            return;
+        }
 
-        // Start the review
-        _reviewService.StartReview(context, _settings.ReviewMaxRounds);
+        // Auto-fix: send reviewer's feedback as prompt to main Claude
+        _isAutoReviewPending = true;
+        var fixPrompt = $"""
+            A code reviewer found issues in your recent work:
+
+            {reviewText}
+
+            Please fix the issues identified above. After fixing, provide a brief summary of what you changed.
+            """;
+        SendDirectAsync(fixPrompt, null).ContinueWith(t =>
+        {
+            if (t.Exception is not null)
+                DiagnosticLogger.Log("REVIEW_FIX_ERROR", t.Exception.InnerException?.Message ?? t.Exception.Message);
+        }, TaskContinuationOptions.OnlyOnFaulted);
+    }
+
+    /// <summary>
+    /// Cancel any active review (e.g. when user sends a message or cancels processing).
+    /// </summary>
+    private void CancelReview()
+    {
+        if (_reviewService is not null)
+        {
+            _reviewService.Stop();
+            _reviewService = null;
+        }
+        _isAutoReviewPending = false;
+        _reviewAttempt = 0;
+        if (_currentReviewerMessage is not null)
+        {
+            _currentReviewerMessage.IsStreaming = false;
+            _currentReviewerMessage = null;
+        }
     }
 }

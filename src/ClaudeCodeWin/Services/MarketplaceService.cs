@@ -126,16 +126,28 @@ public class MarketplaceService
     public void SaveCustomPlugin(MarketplacePlugin plugin)
     {
         Directory.CreateDirectory(CustomPluginsDir);
-        var filePath = Path.Combine(CustomPluginsDir, $"{plugin.Id}.json");
+        var filePath = SafePluginPath(plugin.Id);
         var json = JsonSerializer.Serialize(plugin, JsonDefaults.Options);
         File.WriteAllText(filePath, json);
     }
 
     public void DeleteCustomPlugin(string pluginId)
     {
-        var filePath = Path.Combine(CustomPluginsDir, $"{pluginId}.json");
+        var filePath = SafePluginPath(pluginId);
         if (File.Exists(filePath))
             File.Delete(filePath);
+    }
+
+    /// <summary>
+    /// Returns a safe file path for a plugin ID, preventing path traversal.
+    /// </summary>
+    private static string SafePluginPath(string pluginId)
+    {
+        // Strip any directory separators and path traversal sequences
+        var safeName = Path.GetFileName(pluginId);
+        if (string.IsNullOrEmpty(safeName) || safeName is "." or "..")
+            safeName = "plugin";
+        return Path.Combine(CustomPluginsDir, $"{safeName}.json");
     }
 
     public HashSet<string> GetInstalledPluginIds(List<KnowledgeBaseEntry> kbEntries)

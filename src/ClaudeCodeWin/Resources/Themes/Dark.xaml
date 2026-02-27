@@ -21,10 +21,8 @@
     <Color x:Key="ThinkingBubbleColor">#1a2e1a</Color>
     <Color x:Key="WarningColor">#FFAB1A</Color>
 
-    <!-- Extreme Code Review bubble colors -->
+    <!-- Code Review badge color -->
     <Color x:Key="ReviewerBubbleColor">#1a1a3a</Color>
-    <Color x:Key="DriverBubbleColor">#2a1a2a</Color>
-    <Color x:Key="JudgeBubbleColor">#3a2a1a</Color>
 
     <!-- Brushes -->
     <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}"/>
@@ -47,10 +45,8 @@
     <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}"/>
     <SolidColorBrush x:Key="MutedTextBrush" Color="{StaticResource TextSecondaryColor}"/>
 
-    <!-- Extreme Code Review brushes -->
+    <!-- Code Review badge brush -->
     <SolidColorBrush x:Key="ReviewerBubbleBrush" Color="{StaticResource ReviewerBubbleColor}"/>
-    <SolidColorBrush x:Key="DriverBubbleBrush" Color="{StaticResource DriverBubbleColor}"/>
-    <SolidColorBrush x:Key="JudgeBubbleBrush" Color="{StaticResource JudgeBubbleColor}"/>
 
     <!-- Global TextBlock style -->
     <Style TargetType="TextBlock">
@@ -490,6 +486,45 @@
     <Style x:Key="StatusBarStyle" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
         <Setter Property="Padding" Value="10,4"/>
+    </Style>
+
+    <!-- Marketplace TabControl -->
+    <Style x:Key="MarketplaceTabControl" TargetType="TabControl">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+    </Style>
+
+    <Style x:Key="MarketplaceTabItem" TargetType="TabItem">
+        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabItem">
+                    <Border x:Name="Bd" Background="Transparent"
+                            Padding="16,8"
+                            BorderBrush="Transparent"
+                            BorderThickness="0,0,0,2">
+                        <ContentPresenter ContentSource="Header"
+                                          HorizontalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush"
+                                    Value="{StaticResource PrimaryBrush}"/>
+                            <Setter Property="Foreground"
+                                    Value="{StaticResource TextBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background"
+                                    Value="{StaticResource SurfaceLightBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- Chip style for attachments -->

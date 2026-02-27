@@ -465,8 +465,6 @@ public partial class MainViewModel : ViewModelBase
                 TaskRunnerService.RunTaskPublic(task, this, _ownerWindow);
         };
 
-        InitializeReview();
-
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
         Messages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasDialogHistory));
         MessageQueue.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasQueuedMessages));
@@ -577,6 +575,7 @@ public partial class MainViewModel : ViewModelBase
     /// </summary>
     public void Dispose()
     {
+        CancelReview();
         _cliService.StopSession();
         StopNudgeTimer();
         _bgTaskTimer?.Stop();

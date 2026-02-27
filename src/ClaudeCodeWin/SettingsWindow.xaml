@@ -116,19 +116,43 @@
                 </StackPanel>
             </CheckBox>
 
-            <!-- Extreme Code section -->
+            <!-- Development Team section -->
             <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,20,0,16"/>
 
-            <TextBlock Text="Extreme Code" FontSize="16" FontWeight="Bold"
-                       Foreground="{StaticResource AccentBrush}" Margin="0,0,0,12"/>
+            <TextBlock Text="Development Team" FontSize="16" FontWeight="Bold"
+                       Foreground="{StaticResource AccentBrush}" Margin="0,0,0,4"/>
+            <TextBlock Text="Add AI team members that automatically participate after task completion."
+                       FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12" TextWrapping="Wrap"/>
 
-            <CheckBox x:Name="ExtremeCodeCheck" Style="{StaticResource SettingsCheckBox}"
+            <CheckBox x:Name="ReviewerCheck" Style="{StaticResource SettingsCheckBox}"
                       Margin="0,0,0,10"
-                      Checked="ExtremeCode_Changed" Unchecked="ExtremeCode_Changed">
+                      Checked="Reviewer_Changed" Unchecked="Reviewer_Changed">
                 <StackPanel>
-                    <TextBlock Text="Enable Extreme Code Review" FontWeight="SemiBold"/>
-                    <TextBlock Text="Experimental. After completing a task, send the work to a second Claude for independent review. They debate and can escalate to you as Judge."
+                    <TextBlock Text="Reviewer" FontWeight="SemiBold"/>
+                    <TextBlock Text="Auto-review code after task completion. A second Claude reviews your work and suggests fixes. Up to 3 automatic re-reviews."
                                FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                </StackPanel>
+            </CheckBox>
+
+            <CheckBox Style="{StaticResource SettingsCheckBox}"
+                      Margin="0,0,0,10"
+                      IsEnabled="False" IsChecked="False">
+                <StackPanel>
+                    <TextBlock Text="Tester (coming soon)" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Text="Automatically run tests after code changes and report failures."
+                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Opacity="0.5"/>
+                </StackPanel>
+            </CheckBox>
+
+            <CheckBox Style="{StaticResource SettingsCheckBox}"
+                      Margin="0,0,0,10"
+                      IsEnabled="False" IsChecked="False">
+                <StackPanel>
+                    <TextBlock Text="Security Specialist (coming soon)" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Text="Run security audit on code changes, check for OWASP vulnerabilities."
+                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Opacity="0.5"/>
                 </StackPanel>
             </CheckBox>
 

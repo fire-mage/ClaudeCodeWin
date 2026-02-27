@@ -39,9 +39,25 @@ public class MessageViewModel : ViewModelBase
     private string? _taskOutputText;
     private bool _isTaskOutputSent;
     private string? _completionSummary;
+    private string? _reviewerLabel;
 
     public MessageRole Role { get; }
     public DateTime Timestamp { get; }
+
+    /// <summary>
+    /// When set, the message is displayed as a reviewer message with a special label/badge.
+    /// </summary>
+    public string? ReviewerLabel
+    {
+        get => _reviewerLabel;
+        set
+        {
+            if (SetProperty(ref _reviewerLabel, value))
+                OnPropertyChanged(nameof(IsReviewerMessage));
+        }
+    }
+
+    public bool IsReviewerMessage => !string.IsNullOrEmpty(_reviewerLabel);
 
     /// <summary>
     /// Image file paths detected in the message text, displayed inline.
@@ -148,6 +164,7 @@ public class MessageViewModel : ViewModelBase
         _thinkingStartTime = DateTime.UtcNow;
         ThinkingDurationText = ActivelyWorkingLabel;
         _thinkingTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _thinkingTimer.Tick -= ThinkingTimer_Tick; // prevent handler accumulation
         _thinkingTimer.Tick += ThinkingTimer_Tick;
         _thinkingTimer.Start();
     }

@@ -33,7 +33,7 @@ public partial class SettingsWindow : Window
 
         AutoConfirmCheck.IsChecked = settings.AutoConfirmPlanMode;
         ContextSnapshotCheck.IsChecked = settings.ContextSnapshotEnabled;
-        ExtremeCodeCheck.IsChecked = settings.ExtremeCodeEnabled;
+        ReviewerCheck.IsChecked = settings.ReviewerEnabled;
 
         UpdateInstructionsSummary();
         UpdateServersSummary();
@@ -66,11 +66,11 @@ public partial class SettingsWindow : Window
         _settingsService.Save(_settings);
     }
 
-    private void ExtremeCode_Changed(object sender, RoutedEventArgs e)
+    private void Reviewer_Changed(object sender, RoutedEventArgs e)
     {
         if (!_initialized) return;
 
-        _settings.ExtremeCodeEnabled = ExtremeCodeCheck.IsChecked == true;
+        _settings.ReviewerEnabled = ReviewerCheck.IsChecked == true;
         _settingsService.Save(_settings);
     }
 

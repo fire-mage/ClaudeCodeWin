@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using ClaudeCodeWin.Models;
 using ClaudeCodeWin.Services;
 
@@ -9,20 +10,39 @@ namespace ClaudeCodeWin;
 public partial class MarketplaceWindow : Window
 {
     private readonly MarketplaceService _marketplaceService;
+    private readonly McpRegistryService _registryService;
     private readonly HashSet<string> _installedIds;
     private List<MarketplacePlugin> _allPlugins;
     private string? _activeTag;
+
+    // MCP tab state
+    private List<McpRegistryServer> _mcpServers = [];
+    private CancellationTokenSource? _searchCts;
+    private DispatcherTimer? _searchDebounceTimer;
+    private bool _mcpTabLoaded;
+    private bool _mcpTabLoading;
 
     /// <summary>
     /// Plugin selected for installation via Explore Skill flow.
     /// </summary>
     public MarketplacePlugin? SelectedPlugin { get; private set; }
 
-    public MarketplaceWindow(MarketplaceService marketplaceService, List<KnowledgeBaseEntry> kbEntries)
+    /// <summary>
+    /// MCP server selected for installation.
+    /// </summary>
+    public McpRegistryServer? SelectedMcpServer { get; private set; }
+
+    /// <summary>
+    /// True when the user selected an MCP server (not a knowledge plugin).
+    /// </summary>
+    public bool IsMcpInstall { get; private set; }
+
+    public MarketplaceWindow(MarketplaceService marketplaceService, McpRegistryService registryService, List<KnowledgeBaseEntry> kbEntries)
     {
         InitializeComponent();
 
         _marketplaceService = marketplaceService;
+        _registryService = registryService;
         _installedIds = marketplaceService.GetInstalledPluginIds(kbEntries);
         _allPlugins = marketplaceService.GetAllPlugins();
 
@@ -31,6 +51,33 @@ public partial class MarketplaceWindow : Window
 
         Loaded += (_, _) => SearchBox.Focus();
     }
+
+    // ===== Tab switching =====
+
+    private async void MainTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (MainTabs.SelectedIndex == 1 && !_mcpTabLoaded && !_mcpTabLoading)
+        {
+            _mcpTabLoading = true;
+            try
+            {
+                await LoadMcpServersAsync();
+                _mcpTabLoaded = true;
+            }
+            catch
+            {
+                // Allow retry on next tab switch
+            }
+            finally
+            {
+                _mcpTabLoading = false;
+            }
+        }
+
+        UpdateBottomStatus();
+    }
+
+    // ===== Knowledge Skills tab (existing logic) =====
 
     private void BuildTagFilters()
     {
@@ -114,12 +161,10 @@ public partial class MarketplaceWindow : Window
         var query = SearchBox.Text?.Trim() ?? "";
         var filtered = _allPlugins.Where(p =>
         {
-            // Tag filter
             if (_activeTag is not null &&
                 !p.Tags.Any(t => t.Equals(_activeTag, StringComparison.OrdinalIgnoreCase)))
                 return false;
 
-            // Search filter
             if (query.Length > 0)
             {
                 return p.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
@@ -135,7 +180,6 @@ public partial class MarketplaceWindow : Window
         EmptyLabel.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         PluginList.Visibility = filtered.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        // Update search placeholder
         SearchPlaceholder.Visibility = string.IsNullOrEmpty(SearchBox.Text)
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -194,6 +238,155 @@ public partial class MarketplaceWindow : Window
             MessageBox.Show($"Failed to import: {ex.Message}", "Import Error",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    // ===== MCP Servers tab =====
+
+    private async Task LoadMcpServersAsync()
+    {
+        McpStatusText.Text = "Loading MCP servers...";
+        McpRefreshButton.IsEnabled = false;
+
+        try
+        {
+            var (servers, fromCache) = await _registryService.GetCachedOrFetchAsync();
+            _mcpServers = servers;
+            UpdateMcpList();
+
+            var cacheNote = fromCache ? " (cached)" : "";
+            McpStatusText.Text = $"{_mcpServers.Count} servers{cacheNote} \u00b7 Search for more";
+        }
+        catch (Exception ex)
+        {
+            McpStatusText.Text = $"Failed to load: {ex.Message}";
+        }
+        finally
+        {
+            McpRefreshButton.IsEnabled = true;
+        }
+    }
+
+    private void UpdateMcpList()
+    {
+        McpServerList.ItemsSource = _mcpServers;
+        McpEmptyLabel.Visibility = _mcpServers.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        McpServerList.Visibility = _mcpServers.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        McpSearchPlaceholder.Visibility = string.IsNullOrEmpty(McpSearchBox.Text)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private void McpSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        McpSearchPlaceholder.Visibility = string.IsNullOrEmpty(McpSearchBox.Text)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        _searchDebounceTimer?.Stop();
+        _searchDebounceTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _searchDebounceTimer.Tick -= OnSearchDebounce;
+        _searchDebounceTimer.Tick += OnSearchDebounce;
+        _searchDebounceTimer.Start();
+    }
+
+    private async void OnSearchDebounce(object? sender, EventArgs e)
+    {
+        _searchDebounceTimer?.Stop();
+        var query = McpSearchBox.Text?.Trim() ?? "";
+
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchCts = new CancellationTokenSource();
+        var ct = _searchCts.Token;
+
+        try
+        {
+            McpStatusText.Text = string.IsNullOrEmpty(query) ? "Loading..." : $"Searching \"{query}\"...";
+
+            List<McpRegistryServer> results;
+            if (string.IsNullOrEmpty(query))
+            {
+                var (servers, _) = await _registryService.GetCachedOrFetchAsync(ct);
+                results = servers;
+            }
+            else
+            {
+                results = await _registryService.SearchAsync(query, ct);
+            }
+
+            if (!ct.IsCancellationRequested)
+            {
+                _mcpServers = results;
+                UpdateMcpList();
+                McpStatusText.Text = string.IsNullOrEmpty(query)
+                    ? $"{_mcpServers.Count} servers \u00b7 Search for more"
+                    : $"{_mcpServers.Count} results for \"{query}\"";
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (!ct.IsCancellationRequested)
+                McpStatusText.Text = $"Search failed: {ex.Message}";
+        }
+    }
+
+    private async void McpRefresh_Click(object sender, RoutedEventArgs e)
+    {
+        McpStatusText.Text = "Refreshing...";
+        McpRefreshButton.IsEnabled = false;
+
+        try
+        {
+            _mcpServers = await _registryService.RefreshCacheAsync();
+            UpdateMcpList();
+            McpStatusText.Text = $"{_mcpServers.Count} servers \u00b7 Search for more";
+        }
+        catch (Exception ex)
+        {
+            McpStatusText.Text = $"Refresh failed: {ex.Message}";
+        }
+        finally
+        {
+            McpRefreshButton.IsEnabled = true;
+        }
+    }
+
+    private void McpInstallButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string serverName)
+            return;
+
+        var server = _mcpServers.FirstOrDefault(s => s.Name == serverName);
+        if (server is null) return;
+
+        SelectedMcpServer = server;
+        IsMcpInstall = true;
+        DialogResult = true;
+    }
+
+    // ===== Common =====
+
+    private void UpdateBottomStatus()
+    {
+        if (MainTabs.SelectedIndex == 0)
+        {
+            var installedCount = _allPlugins.Count(p => _installedIds.Contains(p.Id));
+            StatusText.Text = $"{_allPlugins.Count} plugins, {installedCount} installed";
+        }
+        else
+        {
+            StatusText.Text = $"{_mcpServers.Count} MCP servers";
+        }
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchDebounceTimer?.Stop();
+        base.OnClosed(e);
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)

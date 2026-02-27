@@ -43,6 +43,13 @@ public partial class MainViewModel
 
     private async Task SendDirectAsync(string text, List<FileAttachment>? attachments)
     {
+        // Cancel any active review if the user sent a message (not an auto-review fix prompt)
+        if (_reviewService?.IsActive == true)
+        {
+            CancelReview();
+            Messages.Add(new MessageViewModel(MessageRole.System, "Review cancelled (user message)."));
+        }
+
         var userMsg = new MessageViewModel(MessageRole.User, text);
         if (attachments is not null)
             userMsg.Attachments = [.. attachments];
@@ -112,25 +119,6 @@ public partial class MainViewModel
         await Task.Run(() => _cliService.SendMessage(finalPrompt, attachments));
     }
 
-    /// <summary>
-    /// Send a prompt to the CLI without showing any messages in the main chat.
-    /// Used for review driver responses — the text only appears in the Review panel.
-    /// </summary>
-    private async Task SendSilentAsync(string prompt)
-    {
-        _hasResponseStarted = false;
-        IsProcessing = true;
-        StatusText = "Responding to review...";
-        StartNudgeTimer();
-        UpdateCta(CtaState.Processing);
-
-        // Create a hidden assistant message (NOT added to Messages) to accumulate the response
-        _currentAssistantMessage = new MessageViewModel(MessageRole.Assistant) { IsStreaming = true };
-        _isFirstDelta = true;
-
-        await Task.Run(() => _cliService.SendMessage(prompt));
-    }
-
     private void HandleTextBlockStart()
     {
         RunOnUI(() =>
@@ -143,8 +131,7 @@ public partial class MainViewModel
             {
                 _currentAssistantMessage.IsStreaming = false;
                 _currentAssistantMessage = new MessageViewModel(MessageRole.Assistant) { IsStreaming = true };
-                if (!_isReviewDriverTurn)
-                    Messages.Add(_currentAssistantMessage);
+                Messages.Add(_currentAssistantMessage);
                 _hadToolsSinceLastText = false;
                 _isFirstDelta = true;
             }
@@ -169,10 +156,6 @@ public partial class MainViewModel
                 {
                     _currentAssistantMessage.Text += text;
                 }
-
-                // Forward text to review panel when acting as Driver
-                if (_isReviewDriverTurn)
-                    ReviewPanel.AppendText(text);
             }
         });
     }
@@ -278,11 +261,6 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
-            // Capture driver response before clearing the message reference
-            string? reviewDriverText = null;
-            if (_isReviewDriverTurn && _currentAssistantMessage is not null)
-                reviewDriverText = _currentAssistantMessage.Text;
-
             if (_currentAssistantMessage is not null)
             {
                 _currentAssistantMessage.IsStreaming = false;
@@ -375,15 +353,6 @@ public partial class MainViewModel
             RefreshGitStatus();
             SaveChatHistory();
 
-            // If this was a review driver turn, submit response and continue debate
-            if (reviewDriverText is not null && _reviewService is not null)
-            {
-                _isReviewDriverTurn = false;
-                ReviewPanel.CompleteMessage(reviewDriverText);
-                _reviewService.SubmitDriverResponse(reviewDriverText);
-                return; // Review cycle continues via ReviewService callback
-            }
-
             _notificationService.NotifyIfInactive();
 
             // Auto-send next queued message
@@ -398,8 +367,8 @@ public partial class MainViewModel
                 // Normal turn completion — reset ExitPlanMode loop counter
                 _exitPlanModeAutoCount = 0;
 
-                // Task suggestion popup: show when task appears completed
-                TryShowTaskSuggestion();
+                // Auto-review or task suggestion popup
+                OnTurnCompleted();
             }
         });
     }

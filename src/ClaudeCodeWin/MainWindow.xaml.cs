@@ -997,13 +997,25 @@ public partial class MainWindow : Window
     private void MenuItem_Marketplace_Click(object sender, RoutedEventArgs e)
     {
         var marketplaceService = new Services.MarketplaceService();
+        var registryService = new Services.McpRegistryService();
         var workDir = ViewModel.WorkingDirectory;
         var kbEntries = !string.IsNullOrEmpty(workDir) && _knowledgeBaseService is not null
             ? _knowledgeBaseService.LoadEntries(workDir)
             : new List<Models.KnowledgeBaseEntry>();
 
-        var window = new MarketplaceWindow(marketplaceService, kbEntries) { Owner = this };
-        if (window.ShowDialog() == true && window.SelectedPlugin is not null)
+        var window = new MarketplaceWindow(marketplaceService, registryService, kbEntries) { Owner = this };
+        if (window.ShowDialog() != true) return;
+
+        if (window.IsMcpInstall && window.SelectedMcpServer is not null)
+        {
+            var server = window.SelectedMcpServer;
+            var command = Services.McpRegistryService.GenerateInstallCommand(server);
+            var prompt = BuildMcpInstallPrompt(server, command);
+            ViewModel.InputText = prompt;
+            if (ViewModel.SendCommand.CanExecute(null))
+                ViewModel.SendCommand.Execute(null);
+        }
+        else if (window.SelectedPlugin is not null)
         {
             var plugin = window.SelectedPlugin;
             var prompt = $"The user wants you to install a skill from Marketplace into your Knowledge Base.\n\n" +
@@ -1021,6 +1033,31 @@ public partial class MainWindow : Window
             if (ViewModel.SendCommand.CanExecute(null))
                 ViewModel.SendCommand.Execute(null);
         }
+    }
+
+    private static string BuildMcpInstallPrompt(Models.McpRegistryServer server, string command)
+    {
+        var repoLine = server.Repository is not null ? $"\nRepository: {server.Repository.Url}" : "";
+        var websiteLine = !string.IsNullOrEmpty(server.WebsiteUrl) ? $"\nWebsite: {server.WebsiteUrl}" : "";
+
+        var envVarInfo = "";
+        if (server.Packages.Count > 0 && server.Packages[0].EnvironmentVariables is { Count: > 0 } envVars)
+        {
+            var lines = envVars.Select(ev => $"  - {ev.Name}: {ev.Description}{(ev.IsSecret ? " (secret)" : "")}");
+            envVarInfo = $"\n\nRequired environment variables:\n{string.Join("\n", lines)}";
+        }
+
+        return $"The user wants to install an MCP server from the official MCP Registry.\n\n" +
+               $"Server: {server.DisplayName}\n" +
+               $"Full name: {server.Name}\n" +
+               $"Version: {server.Version}\n" +
+               $"Description: {server.Description}" +
+               repoLine + websiteLine + envVarInfo +
+               $"\n\nSuggested install command:\n```\n{command}\n```\n\n" +
+               "Please:\n" +
+               "1. Run the install command above (adapt for the user's environment if needed)\n" +
+               "2. If the server requires API keys or environment variables, help the user set them up\n" +
+               "3. Verify the server was added successfully with `claude mcp list`";
     }
 
     private void MenuItem_ExploreSkill_Click(object sender, RoutedEventArgs e)

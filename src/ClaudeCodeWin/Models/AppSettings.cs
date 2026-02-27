@@ -57,7 +57,11 @@ public class AppSettings
     public string? ActivationCode { get; set; }
     public List<string> ActivatedFeatures { get; set; } = [];
 
-    // Extreme Code: enable code review panel with AI debate
-    public bool ExtremeCodeEnabled { get; set; } = true;
-    public int ReviewMaxRounds { get; set; } = 3;
+    // Development Team: auto-review after task completion
+    public bool ReviewerEnabled { get; set; } = true;
+    public int ReviewAutoRetries { get; set; } = 3;
+
+    // Legacy migration: map old ExtremeCodeEnabled to ReviewerEnabled
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool ExtremeCodeEnabled { get => ReviewerEnabled; set => ReviewerEnabled = value; }
 }
