@@ -38,6 +38,9 @@ public partial class MainViewModel
             return;
         }
 
+        // Mark the start of a new task (user-initiated, not queued clarification or review fix)
+        _currentTaskStartIndex = Messages.Count; // Will point to the user message about to be added
+
         await SendDirectAsync(text, Attachments.Count > 0 ? [.. Attachments] : null);
     }
 

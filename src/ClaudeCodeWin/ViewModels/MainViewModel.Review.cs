@@ -9,6 +9,8 @@ public partial class MainViewModel
     private int _reviewAttempt;
     private bool _isAutoReviewPending;
     private MessageViewModel? _currentReviewerMessage;
+    private string? _lastReviewCriticalSnippet;
+    private int _currentTaskStartIndex;
 
     public bool ReviewerEnabled => _settings.ReviewerEnabled;
 
@@ -26,10 +28,11 @@ public partial class MainViewModel
             return;
         }
 
-        // Auto-trigger first review after task completion
-        if (_settings.ReviewerEnabled && DetectCompletionMarker() && ChangedFiles.Count > 0)
+        // Auto-trigger first review after task completion (only if project files changed)
+        if (_settings.ReviewerEnabled && DetectCompletionMarker() && HasProjectFileChanges())
         {
             _reviewAttempt = 0;
+            _lastReviewCriticalSnippet = null;
             TryStartAutoReview();
             return;
         }
@@ -40,11 +43,21 @@ public partial class MainViewModel
     private void TryStartAutoReview()
     {
         // Stop any previous review CLI process before starting a new one
+        // Preserve review attempt counter and loop detection state
+        var savedAttempt = _reviewAttempt;
+        var savedSnippet = _lastReviewCriticalSnippet;
         CancelReview();
+        _reviewAttempt = savedAttempt;
+        _lastReviewCriticalSnippet = savedSnippet;
 
-        // Collect fresh context (new git diff for each re-review)
+        // Collect context from the current task only (from user's task message onward)
+        // _currentTaskStartIndex is set in SendMessageAsync when user initiates a task,
+        // so it excludes previous tasks, and clarifications don't reset it
         var recentMessages = Messages
-            .Where(m => m.Role is MessageRole.User or MessageRole.Assistant && !string.IsNullOrEmpty(m.Text))
+            .Skip(Math.Min(_currentTaskStartIndex, Messages.Count))
+            .Where(m => m.Role is MessageRole.User or MessageRole.Assistant
+                        && !m.IsReviewerMessage
+                        && !string.IsNullOrEmpty(m.Text))
             .Select(m => (role: m.Role == MessageRole.User ? "user" : "assistant", text: m.Text))
             .ToList();
 
@@ -128,13 +141,24 @@ public partial class MainViewModel
         // ISSUES_FOUND (or None — treat as issues found to be safe)
         _reviewAttempt++;
 
-        if (_reviewAttempt > _settings.ReviewAutoRetries)
+        if (_reviewAttempt >= _settings.ReviewAutoRetries)
         {
             Messages.Add(new MessageViewModel(MessageRole.System,
                 $"Review found issues after {_reviewAttempt} attempts. Awaiting your decision."));
             TryShowTaskSuggestion();
             return;
         }
+
+        // Loop detection: if reviewer repeats the same CRITICAL finding, stop early
+        var criticalSnippet = ExtractFirstCritical(reviewText);
+        if (criticalSnippet is not null && criticalSnippet == _lastReviewCriticalSnippet)
+        {
+            Messages.Add(new MessageViewModel(MessageRole.System,
+                "Review loop detected — same critical issue repeated. Stopping auto-review."));
+            TryShowTaskSuggestion();
+            return;
+        }
+        _lastReviewCriticalSnippet = criticalSnippet;
 
         // Auto-fix: send reviewer's feedback as prompt to main Claude
         _isAutoReviewPending = true;
@@ -164,10 +188,44 @@ public partial class MainViewModel
         }
         _isAutoReviewPending = false;
         _reviewAttempt = 0;
+        _lastReviewCriticalSnippet = null;
         if (_currentReviewerMessage is not null)
         {
             _currentReviewerMessage.IsStreaming = false;
             _currentReviewerMessage = null;
         }
+    }
+
+    /// <summary>
+    /// Returns true if any changed file is within the project's working directory
+    /// (excludes memory files, KB articles, and other files outside the project).
+    /// </summary>
+    private bool HasProjectFileChanges()
+    {
+        if (string.IsNullOrEmpty(WorkingDirectory) || ChangedFiles.Count == 0)
+            return false;
+
+        var wd = WorkingDirectory.Replace('\\', '/').TrimEnd('/') + "/";
+        return ChangedFiles.Any(f => f.Replace('\\', '/').StartsWith(wd, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Extracts a normalized snippet of the first CRITICAL finding from review text.
+    /// Returns null if no CRITICAL found.
+    /// </summary>
+    private static string? ExtractFirstCritical(string reviewText)
+    {
+        var lines = reviewText.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (lines[i].Contains("CRITICAL", StringComparison.OrdinalIgnoreCase))
+            {
+                // Take this line + next few lines as the "critical snippet" (normalized)
+                var snippet = string.Join(" ", lines.Skip(i).Take(3))
+                    .Trim().ToLowerInvariant();
+                return snippet.Length > 200 ? snippet[..200] : snippet;
+            }
+        }
+        return null;
     }
 }
