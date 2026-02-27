@@ -12,6 +12,8 @@ public partial class MainViewModel
     private string? _lastReviewCriticalSnippet;
     private int _currentTaskStartIndex;
     private System.Windows.Threading.DispatcherTimer? _reviewStatusClearTimer;
+    private System.Windows.Threading.DispatcherTimer? _reviewTimeoutTimer;
+    private System.Windows.Threading.DispatcherTimer? _reviewNudgeTimer;
 
     public bool ReviewerEnabled => _settings.ReviewerEnabled;
 
@@ -105,6 +107,8 @@ public partial class MainViewModel
                     _currentReviewerMessage.IsThinking = false;
                     _currentReviewerMessage.Text += text;
                 }
+                // Reviewer is alive — restart nudge timer
+                ResetNudgeTimer();
             });
         };
 
@@ -134,6 +138,7 @@ public partial class MainViewModel
                     _currentReviewerMessage = null;
                 }
                 _reviewService = null;
+                StopReviewTimers();
                 ReviewStatusText = "";
                 Messages.Add(new MessageViewModel(MessageRole.System, "Review failed. Proceeding without review."));
                 TryShowTaskSuggestion();
@@ -141,10 +146,72 @@ public partial class MainViewModel
         };
 
         _reviewService.RunReview(context);
+
+        // Start timeout and nudge timers
+        StartReviewTimers();
+    }
+
+    private void StartReviewTimers()
+    {
+        StopReviewTimers();
+
+        var timeoutSeconds = Math.Max(_settings.ReviewTimeoutSeconds, 30);
+
+        var nudgeSeconds = (int)(timeoutSeconds * 0.6);
+
+        // Nudge timer: fires once at 60% of timeout to unstick a hung reviewer
+        _reviewNudgeTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(nudgeSeconds) };
+        _reviewNudgeTimer.Tick += (_, _) =>
+        {
+            _reviewNudgeTimer?.Stop();
+            _reviewNudgeTimer = null; // fire only once — prevent ResetNudgeTimer from restarting
+            if (_reviewService is { IsActive: true })
+            {
+                Messages.Add(new MessageViewModel(MessageRole.System, "Review taking long, sending nudge..."));
+                _reviewService.SendNudge();
+            }
+        };
+        _reviewNudgeTimer.Start();
+
+        // Timeout timer: auto-cancel review after full timeout
+        _reviewTimeoutTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(timeoutSeconds) };
+        _reviewTimeoutTimer.Tick += (_, _) =>
+        {
+            _reviewTimeoutTimer?.Stop();
+            if (_reviewService is not null)
+            {
+                var timeStr = timeoutSeconds % 60 == 0
+                    ? $"{timeoutSeconds / 60} min"
+                    : $"{timeoutSeconds / 60}m {timeoutSeconds % 60}s";
+                Messages.Add(new MessageViewModel(MessageRole.System,
+                    $"Review timed out after {timeStr}."));
+                CancelReview();
+                TryShowTaskSuggestion();
+            }
+        };
+        _reviewTimeoutTimer.Start();
+    }
+
+    private void StopReviewTimers()
+    {
+        _reviewNudgeTimer?.Stop();
+        _reviewNudgeTimer = null;
+        _reviewTimeoutTimer?.Stop();
+        _reviewTimeoutTimer = null;
+    }
+
+    private void ResetNudgeTimer()
+    {
+        if (_reviewNudgeTimer is not null)
+        {
+            _reviewNudgeTimer.Stop();
+            _reviewNudgeTimer.Start();
+        }
     }
 
     private void HandleReviewVerdict(ReviewVerdict verdict, string reviewText)
     {
+        StopReviewTimers();
         _reviewService?.Stop();
         _reviewService = null;
 
@@ -207,6 +274,7 @@ public partial class MainViewModel
     /// </summary>
     private void CancelReview()
     {
+        StopReviewTimers();
         if (_reviewService is not null)
         {
             _reviewService.Stop();

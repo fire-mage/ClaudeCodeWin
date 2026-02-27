@@ -60,6 +60,7 @@ public class AppSettings
     // Development Team: auto-review after task completion
     public bool ReviewerEnabled { get; set; } = true;
     public int ReviewAutoRetries { get; set; } = 3;
+    public int ReviewTimeoutSeconds { get; set; } = 300;
 
     // Legacy migration: map old ExtremeCodeEnabled to ReviewerEnabled
     [System.Text.Json.Serialization.JsonIgnore]

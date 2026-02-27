@@ -43,6 +43,17 @@ public class ReviewService
         SendToReviewer(prompt);
     }
 
+    /// <summary>
+    /// Send a nudge message to the reviewer CLI via stdin to unstick it if it's hung.
+    /// </summary>
+    public void SendNudge()
+    {
+        if (_isActive && _reviewerCli is not null)
+        {
+            _reviewerCli.SendMessage("Are you still working? Please continue with your review and provide a verdict.");
+        }
+    }
+
     public void Stop()
     {
         _isActive = false;
