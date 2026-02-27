@@ -308,6 +308,34 @@ public partial class MarketplaceWindow : Window
             : Visibility.Collapsed;
 
         UpdateAskClaudeButton();
+
+        // Schedule button state update after layout — Loaded event may not fire
+        // reliably when ItemsSource changes (WPF VirtualizingPanel quirk)
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, UpdateMcpButtonStates);
+    }
+
+    private void UpdateMcpButtonStates()
+    {
+        for (var i = 0; i < McpServerList.Items.Count; i++)
+        {
+            if (McpServerList.ItemContainerGenerator.ContainerFromIndex(i) is not System.Windows.Controls.ListViewItem container)
+                continue;
+            var btn = FindDescendant<Button>(container);
+            if (btn is not null && btn.Tag is string serverName)
+                ApplyMcpButtonState(btn, serverName);
+        }
+    }
+
+    private static T? FindDescendant<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T match) return match;
+            var result = FindDescendant<T>(child);
+            if (result is not null) return result;
+        }
+        return null;
     }
 
     private void McpSearchBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -400,7 +428,7 @@ public partial class MarketplaceWindow : Window
         if (_installedIds.Contains(kbTag))
         {
             // HTTP servers may need OAuth — offer to launch interactive CLI for authorization
-            if (server.Remotes.Count > 0 || server.TransportDisplay == "http")
+            if (IsRemoteTransport(server))
             {
                 LaunchMcpAuthorization(server);
                 return;
@@ -451,11 +479,15 @@ public partial class MarketplaceWindow : Window
     private void McpInstallButton_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is not Button btn || btn.Tag is not string serverName) return;
+        ApplyMcpButtonState(btn, serverName);
+    }
+
+    private void ApplyMcpButtonState(Button btn, string serverName)
+    {
         var server = _mcpServers.FirstOrDefault(s => s.Name == serverName);
         if (server is not null && _installedIds.Contains(Services.McpRegistryService.GetKbTag(server)))
         {
-            // HTTP servers need OAuth — show "Authorize" button instead of static "Installed"
-            if (server.Remotes.Count > 0 || server.TransportDisplay == "http")
+            if (IsRemoteTransport(server))
                 MarkButtonAsAuthorize(btn);
             else
                 MarkButtonAsInstalled(btn);
@@ -465,6 +497,15 @@ public partial class MarketplaceWindow : Window
             ResetButtonToInstall(btn);
         }
     }
+
+    /// <summary>
+    /// Returns true if the server uses remote transport (streamable-http, http, sse).
+    /// These servers typically need OAuth authorization.
+    /// </summary>
+    private static bool IsRemoteTransport(McpRegistryServer server)
+        => server.Remotes.Count > 0
+           || server.TransportDisplay.Contains("http", StringComparison.OrdinalIgnoreCase)
+           || server.TransportDisplay.Equals("sse", StringComparison.OrdinalIgnoreCase);
 
     private void PluginInstallButton_Loaded(object sender, RoutedEventArgs e)
     {

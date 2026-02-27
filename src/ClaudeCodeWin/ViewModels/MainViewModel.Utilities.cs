@@ -152,6 +152,15 @@ public partial class MainViewModel
             return true;
         }
 
+        if (_reviewService is not null)
+        {
+            CancelReview();
+            StatusText = "Review cancelled";
+            UpdateCta(CtaState.WaitingForUser);
+            Messages.Add(new MessageViewModel(MessageRole.System, "Review cancelled by user."));
+            return true;
+        }
+
         return false;
     }
 

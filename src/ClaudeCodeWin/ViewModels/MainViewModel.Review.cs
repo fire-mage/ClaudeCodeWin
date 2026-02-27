@@ -107,6 +107,7 @@ public partial class MainViewModel
         {
             RunOnUI(() =>
             {
+                if (_reviewService is null) return; // cancelled before dispatcher ran
                 if (_currentReviewerMessage is not null)
                 {
                     _currentReviewerMessage.IsStreaming = false;
@@ -120,6 +121,7 @@ public partial class MainViewModel
         {
             RunOnUI(() =>
             {
+                if (_reviewService is null) return; // cancelled before dispatcher ran
                 if (_currentReviewerMessage is not null)
                 {
                     _currentReviewerMessage.IsStreaming = false;
