@@ -187,11 +187,12 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type vm:MessageViewModel}">
                         <StackPanel>
-                            <!-- THINKING block — separate prominent rectangle -->
+                            <!-- THINKING block — shows live thinking text while Claude reasons -->
                             <Border Margin="4,4,4,4"
                                     Padding="16,12"
                                     CornerRadius="8"
                                     MinWidth="250"
+                                    MaxWidth="700"
                                     HorizontalAlignment="Left"
                                     Background="{StaticResource ThinkingBubbleBrush}"
                                     BorderBrush="{StaticResource PrimaryBrush}"
@@ -209,59 +210,79 @@
                                         </BeginStoryboard>
                                     </EventTrigger>
                                 </Border.Triggers>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#x25CF; " FontSize="18"
-                                               Foreground="{StaticResource PrimaryBrush}"
-                                               VerticalAlignment="Center"/>
-                                    <TextBlock Text="Claude is thinking..."
-                                               FontFamily="Nunito,Segoe UI,sans-serif"
-                                               FontSize="15"
-                                               FontWeight="SemiBold"
-                                               Foreground="{StaticResource PrimaryBrush}"
-                                               VerticalAlignment="Center"/>
-                                    <TextBlock Text="{Binding ThinkingDurationText}"
-                                               FontFamily="Cascadia Code,Consolas,monospace"
-                                               FontSize="13"
-                                               Foreground="{StaticResource MutedTextBrush}"
-                                               Margin="12,0,0,0"
-                                               VerticalAlignment="Center"/>
-                                    <Button Content="Are You OK?"
-                                            Margin="12,0,0,0"
-                                            Padding="8,2"
-                                            FontSize="11"
-                                            Cursor="Hand"
-                                            Command="{Binding DataContext.ActiveTab.NudgeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                            ToolTip="Claude seems stuck. Click to send a nudge message."
-                                            Visibility="{Binding DataContext.ActiveTab.ShowNudgeButton, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
-                                        <Button.Style>
-                                            <Style TargetType="Button">
-                                                <Setter Property="Background" Value="Transparent"/>
-                                                <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
-                                                <Setter Property="BorderBrush" Value="{StaticResource WarningBrush}"/>
-                                                <Setter Property="BorderThickness" Value="1"/>
-                                                <Setter Property="Template">
-                                                    <Setter.Value>
-                                                        <ControlTemplate TargetType="Button">
-                                                            <Border Background="{TemplateBinding Background}"
-                                                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                                                    CornerRadius="4"
-                                                                    Padding="{TemplateBinding Padding}">
-                                                                <ContentPresenter HorizontalAlignment="Center"
-                                                                                  VerticalAlignment="Center"/>
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter Property="Background"
-                                                                            Value="{StaticResource SurfaceLightBrush}"/>
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Setter.Value>
-                                                </Setter>
-                                            </Style>
-                                        </Button.Style>
-                                    </Button>
+                                <StackPanel>
+                                    <!-- Header: indicator + label + timer + nudge -->
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#x25CF; " FontSize="18"
+                                                   Foreground="{StaticResource PrimaryBrush}"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Text="Claude is thinking..."
+                                                   FontFamily="Nunito,Segoe UI,sans-serif"
+                                                   FontSize="15"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource PrimaryBrush}"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding ThinkingDurationText}"
+                                                   FontFamily="Cascadia Code,Consolas,monospace"
+                                                   FontSize="13"
+                                                   Foreground="{StaticResource MutedTextBrush}"
+                                                   Margin="12,0,0,0"
+                                                   VerticalAlignment="Center"/>
+                                        <Button Content="Are You OK?"
+                                                Margin="12,0,0,0"
+                                                Padding="8,2"
+                                                FontSize="11"
+                                                Cursor="Hand"
+                                                Command="{Binding DataContext.ActiveTab.NudgeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                ToolTip="Claude seems stuck. Click to send a nudge message."
+                                                Visibility="{Binding DataContext.ActiveTab.ShowNudgeButton, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="Background" Value="Transparent"/>
+                                                    <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{StaticResource WarningBrush}"/>
+                                                    <Setter Property="BorderThickness" Value="1"/>
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border Background="{TemplateBinding Background}"
+                                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                                        CornerRadius="4"
+                                                                        Padding="{TemplateBinding Padding}">
+                                                                    <ContentPresenter HorizontalAlignment="Center"
+                                                                                      VerticalAlignment="Center"/>
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter Property="Background"
+                                                                                Value="{StaticResource SurfaceLightBrush}"/>
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </StackPanel>
+                                    <!-- Streaming thinking text content -->
+                                    <TextBox Text="{Binding ThinkingText, Mode=OneWay}"
+                                             IsReadOnly="True"
+                                             TextWrapping="Wrap"
+                                             FontFamily="Cascadia Code,Consolas,Courier New"
+                                             FontSize="12"
+                                             FontStyle="Italic"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             Padding="0,8,0,0"
+                                             Foreground="{StaticResource MutedTextBrush}"
+                                             SelectionBrush="{StaticResource SelectionBrush}"
+                                             IsTabStop="False"
+                                             Cursor="IBeam"
+                                             MaxHeight="300"
+                                             VerticalScrollBarVisibility="Auto"
+                                             Visibility="{Binding HasThinkingText, Converter={StaticResource BoolToVis}}"/>
                                 </StackPanel>
                             </Border>
 
@@ -287,6 +308,59 @@
                                                Margin="0,-2,0,0"
                                                Visibility="{Binding IsBookmarked, Converter={StaticResource BoolToVis}}"
                                                ToolTip="Bookmarked"/>
+                                    <!-- Collapsible thinking content (shown after thinking phase completes) -->
+                                    <Border Margin="0,0,0,6"
+                                            CornerRadius="4"
+                                            Background="{StaticResource ThinkingBubbleBrush}"
+                                            BorderBrush="{StaticResource PrimaryBrush}"
+                                            BorderThickness="1,0,0,0"
+                                            Padding="8,6"
+                                            Visibility="{Binding HasThinkingText, Converter={StaticResource BoolToVis}}">
+                                        <StackPanel>
+                                            <!-- Clickable header -->
+                                            <Border Background="Transparent" Cursor="Hand"
+                                                    MouseLeftButtonUp="ThinkingToggle_Click">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock FontSize="9" Margin="0,0,5,0"
+                                                               Foreground="{StaticResource PrimaryBrush}"
+                                                               VerticalAlignment="Center">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Text" Value="&#x25B6;"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsThinkingExpanded}" Value="True">
+                                                                        <Setter Property="Text" Value="&#x25BC;"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock Text="Thinking"
+                                                               FontSize="12"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{StaticResource PrimaryBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+                                            <!-- Expandable thinking text -->
+                                            <TextBox Text="{Binding ThinkingText, Mode=OneWay}"
+                                                     IsReadOnly="True"
+                                                     TextWrapping="Wrap"
+                                                     FontFamily="Cascadia Code,Consolas,Courier New"
+                                                     FontSize="12"
+                                                     FontStyle="Italic"
+                                                     Background="Transparent"
+                                                     BorderThickness="0"
+                                                     Padding="0,4,0,0"
+                                                     Foreground="{StaticResource MutedTextBrush}"
+                                                     SelectionBrush="{StaticResource SelectionBrush}"
+                                                     IsTabStop="False"
+                                                     Cursor="IBeam"
+                                                     MaxHeight="400"
+                                                     VerticalScrollBarVisibility="Auto"
+                                                     Visibility="{Binding IsThinkingExpanded, Converter={StaticResource BoolToVis}}"/>
+                                        </StackPanel>
+                                    </Border>
                                     <!-- Main text (selectable) -->
                                     <TextBox Text="{Binding Text, Mode=OneWay}"
                                              IsReadOnly="True"

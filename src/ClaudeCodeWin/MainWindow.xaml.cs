@@ -767,6 +767,12 @@ public partial class MainWindow : Window
             ShowImagePreviewWindow(this, filePath);
     }
 
+    private void ThinkingToggle_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is ViewModels.MessageViewModel vm)
+            vm.IsThinkingExpanded = !vm.IsThinkingExpanded;
+    }
+
     private void AttachmentPreview_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (sender is FrameworkElement fe && fe.DataContext is Models.FileAttachment att

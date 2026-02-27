@@ -149,6 +149,23 @@ public partial class MainViewModel
                 {
                     _currentAssistantMessage.Text += text;
                 }
+
+                // Forward text to review panel when acting as Driver
+                if (_isReviewDriverTurn)
+                    ReviewPanel.AppendText(text);
+            }
+        });
+    }
+
+    private void HandleThinkingDelta(string text)
+    {
+        RunOnUI(() =>
+        {
+            ResetNudgeActivity();
+            if (_currentAssistantMessage is not null)
+            {
+                _currentAssistantMessage.ThinkingText += text;
+                _currentAssistantMessage.ResetThinkingTimer();
             }
         });
     }
@@ -241,6 +258,11 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            // Capture driver response before clearing the message reference
+            string? reviewDriverText = null;
+            if (_isReviewDriverTurn && _currentAssistantMessage is not null)
+                reviewDriverText = _currentAssistantMessage.Text;
+
             if (_currentAssistantMessage is not null)
             {
                 _currentAssistantMessage.IsStreaming = false;
@@ -331,8 +353,18 @@ public partial class MainViewModel
             }
 
             RefreshGitStatus();
-            _notificationService.NotifyIfInactive();
             SaveChatHistory();
+
+            // If this was a review driver turn, submit response and continue debate
+            if (reviewDriverText is not null && _reviewService is not null)
+            {
+                _isReviewDriverTurn = false;
+                ReviewPanel.CompleteMessage(reviewDriverText);
+                _reviewService.SubmitDriverResponse(reviewDriverText);
+                return; // Review cycle continues via ReviewService callback
+            }
+
+            _notificationService.NotifyIfInactive();
 
             // Auto-send next queued message
             if (MessageQueue.Count > 0)

@@ -4,19 +4,20 @@ using ClaudeCodeWin.Models;
 namespace ClaudeCodeWin.Services;
 
 /// <summary>
-/// Manages the Extreme Code review debate between a Reviewer and Driver CLI session.
-/// Each participant is a separate ClaudeCliService instance.
+/// Manages the Extreme Code review debate between a Reviewer CLI and the main Claude (Driver).
+/// The Reviewer runs as a separate CLI process; the Driver role is handled by the main assistant
+/// in the chat, which has full conversation context.
 /// </summary>
 public class ReviewService
 {
     private ClaudeCliService? _reviewerCli;
-    private ClaudeCliService? _driverCli;
     private readonly StringBuilder _currentResponse = new();
     private bool _isActive;
     private int _currentRound;
     private int _maxRounds;
     private string? _claudeExePath;
     private string? _workingDirectory;
+    private Action<string>? _pendingDriverCallback;
 
     // Events for UI updates
     public event Action<ReviewRole, string>? OnTextDelta; // role, text chunk
@@ -24,6 +25,12 @@ public class ReviewService
     public event Action<ReviewStatus>? OnStatusChanged;
     public event Action<int>? OnRoundStarted; // round number
     public event Action<string>? OnError;
+
+    /// <summary>
+    /// Fired when it's the Driver's turn. The main Claude should respond to this prompt.
+    /// Call <see cref="SubmitDriverResponse"/> when the response is ready.
+    /// </summary>
+    public event Action<string>? OnDriverResponseNeeded; // reviewer feedback for main Claude
 
     public bool IsActive => _isActive;
     public int CurrentRound => _currentRound;
@@ -52,9 +59,9 @@ public class ReviewService
         OnRoundStarted?.Invoke(_currentRound);
 
         var prompt = BuildReviewerPrompt(context);
-        SendToParticipant(_reviewerCli, ReviewRole.Reviewer, prompt, reviewerResponseText =>
+        SendToReviewer(prompt, reviewerResponseText =>
         {
-            // Reviewer finished — now send to Driver
+            // Reviewer finished — now send to Driver (main Claude)
             if (!_isActive) return;
 
             var verdict = DetectVerdict(reviewerResponseText);
@@ -64,10 +71,9 @@ public class ReviewService
                 return;
             }
 
-            // Create driver CLI and send reviewer's feedback
-            _driverCli = CreateCliService();
-            var driverPrompt = BuildDriverPrompt(context, reviewerResponseText);
-            SendToParticipant(_driverCli, ReviewRole.Driver, driverPrompt, HandleDriverResponse);
+            // Request driver response from the main Claude
+            var driverPrompt = BuildDriverPrompt(reviewerResponseText);
+            RequestDriverResponse(driverPrompt, HandleDriverResponse);
         });
     }
 
@@ -84,7 +90,7 @@ public class ReviewService
         if (_reviewerCli is not null)
         {
             var prompt = $"The Judge (user) has made a decision:\n\n{verdict}\n\nAcknowledge the decision briefly.";
-            SendToParticipant(_reviewerCli, ReviewRole.Reviewer, prompt, _ =>
+            SendToReviewer(prompt, _ =>
             {
                 OnStatusChanged?.Invoke(ReviewStatus.Consensus);
             });
@@ -95,13 +101,26 @@ public class ReviewService
         }
     }
 
+    /// <summary>
+    /// Called by MainViewModel when the main Claude has finished responding as Driver.
+    /// </summary>
+    public void SubmitDriverResponse(string responseText)
+    {
+        if (_pendingDriverCallback is null) return;
+
+        OnMessageCompleted?.Invoke(ReviewRole.Driver, responseText);
+
+        var callback = _pendingDriverCallback;
+        _pendingDriverCallback = null;
+        callback(responseText);
+    }
+
     public void Stop()
     {
         _isActive = false;
+        _pendingDriverCallback = null;
         _reviewerCli?.StopSession();
-        _driverCli?.StopSession();
         _reviewerCli = null;
-        _driverCli = null;
     }
 
     private void HandleDriverResponse(string driverResponseText)
@@ -137,7 +156,7 @@ public class ReviewService
 
         // Continue debate: send driver's response back to reviewer
         var reviewerFollowup = BuildReviewerFollowupPrompt(driverResponseText);
-        SendToParticipant(_reviewerCli!, ReviewRole.Reviewer, reviewerFollowup, reviewerText =>
+        SendToReviewer(reviewerFollowup, reviewerText =>
         {
             if (!_isActive) return;
 
@@ -154,10 +173,20 @@ public class ReviewService
                 return;
             }
 
-            // Driver responds again
+            // Driver responds again (via main Claude)
             var driverFollowup = BuildDriverFollowupPrompt(reviewerText);
-            SendToParticipant(_driverCli!, ReviewRole.Driver, driverFollowup, HandleDriverResponse);
+            RequestDriverResponse(driverFollowup, HandleDriverResponse);
         });
+    }
+
+    /// <summary>
+    /// Request a response from the main Claude acting as Driver.
+    /// Saves the continuation callback and fires the event.
+    /// </summary>
+    private void RequestDriverResponse(string prompt, Action<string> onCompleted)
+    {
+        _pendingDriverCallback = onCompleted;
+        OnDriverResponseNeeded?.Invoke(prompt);
     }
 
     private ClaudeCliService CreateCliService()
@@ -168,9 +197,14 @@ public class ReviewService
         return cli;
     }
 
-    private void SendToParticipant(ClaudeCliService cli, ReviewRole role,
-        string prompt, Action<string> onCompleted)
+    /// <summary>
+    /// Send a prompt to the Reviewer CLI and wire one-shot event handlers.
+    /// </summary>
+    private void SendToReviewer(string prompt, Action<string> onCompleted)
     {
+        var cli = _reviewerCli;
+        if (cli is null) return;
+
         var responseBuilder = new StringBuilder();
 
         // Wire events (one-shot handlers)
@@ -181,7 +215,7 @@ public class ReviewService
         textHandler = text =>
         {
             responseBuilder.Append(text);
-            OnTextDelta?.Invoke(role, text);
+            OnTextDelta?.Invoke(ReviewRole.Reviewer, text);
         };
 
         completedHandler = result =>
@@ -192,7 +226,7 @@ public class ReviewService
             cli.OnError -= errorHandler;
 
             var fullText = responseBuilder.ToString();
-            OnMessageCompleted?.Invoke(role, fullText);
+            OnMessageCompleted?.Invoke(ReviewRole.Reviewer, fullText);
             onCompleted(fullText);
         };
 
@@ -202,7 +236,7 @@ public class ReviewService
             cli.OnCompleted -= completedHandler;
             cli.OnError -= errorHandler;
 
-            OnError?.Invoke($"{role}: {error}");
+            OnError?.Invoke($"Reviewer: {error}");
             if (_isActive)
                 OnStatusChanged?.Invoke(ReviewStatus.Dismissed);
         };
@@ -212,12 +246,10 @@ public class ReviewService
         cli.OnError += errorHandler;
 
         // Auto-confirm any permission requests (reviewer is read-only conceptually)
-        Action<string, string, string, System.Text.Json.JsonElement>? controlHandler = null;
-        controlHandler = (requestId, toolName, toolUseId, input) =>
+        cli.OnControlRequest += (requestId, toolName, toolUseId, input) =>
         {
             cli.SendControlResponse(requestId, "allow", toolUseId: toolUseId);
         };
-        cli.OnControlRequest += controlHandler;
 
         cli.SendMessage(prompt);
     }
@@ -256,22 +288,20 @@ public class ReviewService
             """;
     }
 
-    private static string BuildDriverPrompt(string context, string reviewerFeedback)
+    /// <summary>
+    /// Driver prompt for the main Claude — simplified, no context repetition
+    /// (the main Claude already has full conversation context).
+    /// </summary>
+    private static string BuildDriverPrompt(string reviewerFeedback)
     {
         return $"""
-            You are the original developer (the "Driver") in an Extreme Code Review session.
-            A reviewer has analyzed your code and provided feedback below.
-
-            Your job: evaluate each point honestly.
+            An independent code reviewer has analyzed your recent changes and provided the following feedback.
+            Please evaluate each point honestly:
             - If a point is valid: acknowledge it and explain how you'd fix it
-            - If a point is invalid: explain specifically why, referencing the code
+            - If a point is invalid: explain specifically why your approach is correct
             - If partially valid: explain the nuance
 
-            Here is your original work context:
-
-            {context}
-
-            Here is the reviewer's feedback:
+            Reviewer's feedback:
 
             {reviewerFeedback}
 
@@ -304,11 +334,11 @@ public class ReviewService
     private static string BuildDriverFollowupPrompt(string reviewerResponse)
     {
         return $"""
-            The Reviewer has responded:
+            The Reviewer has responded with additional feedback:
 
             {reviewerResponse}
 
-            Continue the discussion. Evaluate their new points:
+            Continue the discussion. Evaluate their points:
             - If valid: acknowledge
             - If invalid: explain why
 

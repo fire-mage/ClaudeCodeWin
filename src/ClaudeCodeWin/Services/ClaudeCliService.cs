@@ -38,6 +38,7 @@ public class ClaudeCliService
     // Events
     public event Action<string>? OnTextDelta;
     public event Action? OnTextBlockStart; // fires when a new text content_block starts
+    public event Action<string>? OnThinkingDelta; // extended thinking text chunk
     public event Action<string, string, string>? OnToolUseStarted; // toolName, toolUseId, input
     public event Action<string, string, string>? OnToolResult; // toolName, toolUseId, content
     public event Action<ResultData>? OnCompleted;
@@ -60,6 +61,7 @@ public class ClaudeCliService
     {
         _parser.OnTextDelta += text => OnTextDelta?.Invoke(text);
         _parser.OnTextBlockStart += () => OnTextBlockStart?.Invoke();
+        _parser.OnThinkingDelta += text => OnThinkingDelta?.Invoke(text);
         _parser.OnToolUseStarted += (name, id, input) => OnToolUseStarted?.Invoke(name, id, input);
         _parser.OnToolResult += (name, id, content) => OnToolResult?.Invoke(name, id, content);
         _parser.OnControlRequest += (rid, name, id, input) => OnControlRequest?.Invoke(rid, name, id, input);

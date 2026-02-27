@@ -32,6 +32,8 @@ public class MessageViewModel : ViewModelBase
     private string _thinkingDurationText = ActivelyWorkingLabel;
     private DispatcherTimer? _thinkingTimer;
     private DateTime _thinkingStartTime;
+    private string _thinkingText = string.Empty;
+    private bool _isThinkingExpanded;
     private string _toolActivitySummary = string.Empty;
     private bool _isBookmarked;
     private string? _taskOutputText;
@@ -115,6 +117,30 @@ public class MessageViewModel : ViewModelBase
     {
         get => _thinkingDurationText;
         private set => SetProperty(ref _thinkingDurationText, value);
+    }
+
+    /// <summary>
+    /// Accumulated text from Claude's extended thinking (thinking_delta events).
+    /// </summary>
+    public string ThinkingText
+    {
+        get => _thinkingText;
+        set
+        {
+            if (SetProperty(ref _thinkingText, value))
+                OnPropertyChanged(nameof(HasThinkingText));
+        }
+    }
+
+    public bool HasThinkingText => !string.IsNullOrEmpty(_thinkingText);
+
+    /// <summary>
+    /// Whether the collapsed thinking section is expanded (post-completion).
+    /// </summary>
+    public bool IsThinkingExpanded
+    {
+        get => _isThinkingExpanded;
+        set => SetProperty(ref _isThinkingExpanded, value);
     }
 
     private void StartThinkingTimer()

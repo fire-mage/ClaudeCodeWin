@@ -23,6 +23,7 @@ public class StreamJsonParser
     // Events
     public event Action<string>? OnTextDelta;
     public event Action? OnTextBlockStart;
+    public event Action<string>? OnThinkingDelta;
     public event Action<string, string, string>? OnToolUseStarted; // toolName, toolUseId, input
     public event Action<string, string, string>? OnToolResult; // toolName, toolUseId, content
     public event Action<ResultData>? OnCompleted;
@@ -317,6 +318,9 @@ public class StreamJsonParser
             return;
         }
 
+        if (blockType == "thinking")
+            return; // Recognized; deltas handled in HandleContentBlockDelta
+
         if (blockType == "tool_use")
         {
             var toolName = block.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
@@ -352,10 +356,15 @@ public class StreamJsonParser
         {
             OnTextDelta?.Invoke(text.GetString() ?? string.Empty);
         }
+        else if (deltaType == "thinking_delta" && delta.TryGetProperty("thinking", out var thinking))
+        {
+            OnThinkingDelta?.Invoke(thinking.GetString() ?? string.Empty);
+        }
         else if (deltaType == "input_json_delta" && delta.TryGetProperty("partial_json", out var pj))
         {
             _toolInputBuffer.Append(pj.GetString() ?? "");
         }
+        // signature_delta is intentionally ignored — internal verification, no user content
     }
 
     private void HandleContentBlockStop()

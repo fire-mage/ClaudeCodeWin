@@ -478,6 +478,7 @@ public partial class MainViewModel : ViewModelBase
 
         _cliService.OnTextBlockStart += HandleTextBlockStart;
         _cliService.OnTextDelta += HandleTextDelta;
+        _cliService.OnThinkingDelta += HandleThinkingDelta;
         _cliService.OnToolUseStarted += HandleToolUseStarted;
         _cliService.OnToolResult += HandleToolResult;
         _cliService.OnCompleted += HandleCompleted;

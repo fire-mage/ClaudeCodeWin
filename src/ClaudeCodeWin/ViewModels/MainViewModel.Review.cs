@@ -8,6 +8,7 @@ namespace ClaudeCodeWin.ViewModels;
 public partial class MainViewModel
 {
     private ReviewService? _reviewService;
+    private bool _isReviewDriverTurn;
 
     public ReviewPanelViewModel ReviewPanel { get; } = new();
 
@@ -27,6 +28,7 @@ public partial class MainViewModel
         {
             _reviewService?.Stop();
             _reviewService = null;
+            _isReviewDriverTurn = false;
         };
 
         ReviewPanel.OnJudgeVerdictSubmitted += verdict =>
@@ -39,6 +41,7 @@ public partial class MainViewModel
             ReviewPanel.IsOpen = false;
             _reviewService?.Stop();
             _reviewService = null;
+            _isReviewDriverTurn = false;
 
             var prompt = $"""
                 The following issues were identified during an Extreme Code Review.
@@ -57,6 +60,8 @@ public partial class MainViewModel
             _reviewService.Stop();
             _reviewService = null;
         }
+
+        _isReviewDriverTurn = false;
 
         // Collect context
         var recentMessages = Messages
@@ -85,8 +90,9 @@ public partial class MainViewModel
                 {
                     ReviewPanel.AddMessage(role, fullText);
                 }
-                else
+                else if (role != ReviewRole.Driver)
                 {
+                    // Driver messages are completed by HandleCompleted via SubmitDriverResponse
                     ReviewPanel.CompleteMessage(fullText);
                 }
             });
@@ -97,12 +103,8 @@ public partial class MainViewModel
             RunOnUI(() =>
             {
                 ReviewPanel.CurrentRound = round;
-                // Add round separator
                 if (round > 1)
                     ReviewPanel.AddMessage(ReviewRole.System, $"--- Round {round} ---");
-
-                // Determine who speaks next (odd rounds start with Reviewer, responses with Driver)
-                // The ReviewService handles the actual logic; we just prepare the streaming message
             });
         };
 
@@ -125,8 +127,7 @@ public partial class MainViewModel
             });
         };
 
-        // Detect new streaming messages by role change.
-        // The OnTextDelta fires first, so we create a new message bubble when the role changes.
+        // Detect new streaming messages by role change (for Reviewer only).
         ReviewRole? lastStreamingRole = null;
 
         _reviewService.OnTextDelta += (role, text) =>
@@ -138,6 +139,20 @@ public partial class MainViewModel
                     lastStreamingRole = role;
                     ReviewPanel.StartMessage(role);
                 }
+            });
+        };
+
+        // Wire driver response request — main Claude acts as Driver
+        _reviewService.OnDriverResponseNeeded += prompt =>
+        {
+            RunOnUI(() =>
+            {
+                _isReviewDriverTurn = true;
+                lastStreamingRole = ReviewRole.Driver;
+                ReviewPanel.StartMessage(ReviewRole.Driver);
+
+                // Send the reviewer's feedback to the main Claude
+                _ = SendDirectAsync(prompt, null);
             });
         };
 
