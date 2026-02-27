@@ -395,6 +395,14 @@ public partial class MarketplaceWindow : Window
         var server = _mcpServers.FirstOrDefault(s => s.Name == serverName);
         if (server is null) return;
 
+        var kbTag = Services.McpRegistryService.GetKbTag(server);
+        if (_installedIds.Contains(kbTag))
+        {
+            MessageBox.Show($"'{server.DisplayName}' is already installed and documented in your Knowledge Base.",
+                "Already Installed", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
         SelectedMcpServer = server;
         IsMcpInstall = true;
         DialogResult = true;

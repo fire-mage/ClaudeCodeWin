@@ -1044,27 +1044,67 @@ public partial class MainWindow : Window
 
     private static string BuildMcpInstallPrompt(Models.McpRegistryServer server, string command)
     {
-        var repoLine = server.Repository is not null ? $"\nRepository: {server.Repository.Url}" : "";
-        var websiteLine = !string.IsNullOrEmpty(server.WebsiteUrl) ? $"\nWebsite: {server.WebsiteUrl}" : "";
+        var sb = new System.Text.StringBuilder();
 
-        var envVarInfo = "";
+        sb.AppendLine("The user wants to install an MCP server from the official MCP Registry.");
+        sb.AppendLine();
+        sb.AppendLine($"Server: {server.DisplayName}");
+        sb.AppendLine($"Full name: {server.Name}");
+        sb.AppendLine($"Version: {server.Version}");
+        sb.AppendLine($"Description: {server.Description}");
+
+        if (server.Repository is not null)
+            sb.AppendLine($"Repository: {server.Repository.Url}");
+        if (!string.IsNullOrEmpty(server.WebsiteUrl))
+            sb.AppendLine($"Website: {server.WebsiteUrl}");
+
         if (server.Packages.Count > 0 && server.Packages[0].EnvironmentVariables is { Count: > 0 } envVars)
         {
-            var lines = envVars.Select(ev => $"  - {ev.Name}: {ev.Description}{(ev.IsSecret ? " (secret)" : "")}");
-            envVarInfo = $"\n\nRequired environment variables:\n{string.Join("\n", lines)}";
+            sb.AppendLine();
+            sb.AppendLine("Required environment variables:");
+            foreach (var ev in envVars)
+                sb.AppendLine($"  - {ev.Name}: {ev.Description}{(ev.IsSecret ? " (secret)" : "")}");
         }
 
-        return $"The user wants to install an MCP server from the official MCP Registry.\n\n" +
-               $"Server: {server.DisplayName}\n" +
-               $"Full name: {server.Name}\n" +
-               $"Version: {server.Version}\n" +
-               $"Description: {server.Description}" +
-               repoLine + websiteLine + envVarInfo +
-               $"\n\nSuggested install command:\n```\n{command}\n```\n\n" +
-               "Please:\n" +
-               "1. Run the install command above (adapt for the user's environment if needed)\n" +
-               "2. If the server requires API keys or environment variables, help the user set them up\n" +
-               "3. Verify the server was added successfully with `claude mcp list`";
+        sb.AppendLine();
+        sb.AppendLine($"Suggested install command:\n```\n{command}\n```");
+        sb.AppendLine();
+
+        // Documentation URL for Claude to fetch
+        var docUrl = server.Repository?.Url ?? server.WebsiteUrl;
+
+        sb.AppendLine("Please follow these steps in order:");
+        sb.AppendLine();
+        sb.AppendLine("**Step 1 — Install the server**");
+        sb.AppendLine("Run the install command above (adapt for the user's environment if needed).");
+        sb.AppendLine();
+
+        sb.AppendLine("**Step 2 — Study the documentation**");
+        if (!string.IsNullOrEmpty(docUrl))
+        {
+            sb.AppendLine($"Fetch the documentation from: {docUrl}");
+            sb.AppendLine("Read it to understand: what tools the server provides, what arguments they accept, what auth/setup is required, and any usage examples.");
+        }
+        else
+        {
+            sb.AppendLine("No repository or website URL is available. Run `claude mcp list` and document the server's capabilities based on its description and discovered tool names.");
+        }
+        sb.AppendLine();
+
+        sb.AppendLine("**Step 3 — Guide auth/setup**");
+        sb.AppendLine("If the server requires API keys, OAuth, or any other setup — guide the user through the process step by step. Explain where to get credentials and how to configure them.");
+        sb.AppendLine();
+
+        var kbTag = Services.McpRegistryService.GetKbTag(server);
+        sb.AppendLine("**Step 4 — Create a KB article**");
+        sb.AppendLine("Create a Knowledge Base article summarizing: purpose, available tools with brief descriptions, auth requirements, and common usage examples.");
+        sb.AppendLine($"IMPORTANT: include the tag 'marketplace:{kbTag}' in the tags array so the Marketplace can track installation status.");
+        sb.AppendLine();
+
+        sb.AppendLine("**Step 5 — Verify**");
+        sb.AppendLine("Run `claude mcp list` to confirm the server is installed and active.");
+
+        return sb.ToString();
     }
 
     private static string BuildRecommendationPrompt(string goal, List<Models.McpRegistryServer> servers)

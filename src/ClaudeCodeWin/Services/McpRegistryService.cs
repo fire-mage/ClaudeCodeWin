@@ -99,6 +99,9 @@ public class McpRegistryService
         return $"# No install command available for {server.Name}";
     }
 
+    public static string GetKbTag(McpRegistryServer server)
+        => $"mcp-{SanitizeSlug(server.Name.Replace('/', '-'))}";
+
     private async Task<List<McpRegistryServer>> FetchFirstPageAsync(CancellationToken ct)
     {
         var url = $"{BaseUrl}?limit={PageSize}";
