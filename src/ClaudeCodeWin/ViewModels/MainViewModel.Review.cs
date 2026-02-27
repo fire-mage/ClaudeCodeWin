@@ -151,8 +151,8 @@ public partial class MainViewModel
                 lastStreamingRole = ReviewRole.Driver;
                 ReviewPanel.StartMessage(ReviewRole.Driver);
 
-                // Send the reviewer's feedback to the main Claude
-                _ = SendDirectAsync(prompt, null);
+                // Send silently — response only appears in Review panel, not main chat
+                _ = SendSilentAsync(prompt);
             });
         };
 

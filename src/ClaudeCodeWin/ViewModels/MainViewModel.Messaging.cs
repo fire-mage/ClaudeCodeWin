@@ -112,6 +112,25 @@ public partial class MainViewModel
         await Task.Run(() => _cliService.SendMessage(finalPrompt, attachments));
     }
 
+    /// <summary>
+    /// Send a prompt to the CLI without showing any messages in the main chat.
+    /// Used for review driver responses — the text only appears in the Review panel.
+    /// </summary>
+    private async Task SendSilentAsync(string prompt)
+    {
+        _hasResponseStarted = false;
+        IsProcessing = true;
+        StatusText = "Responding to review...";
+        StartNudgeTimer();
+        UpdateCta(CtaState.Processing);
+
+        // Create a hidden assistant message (NOT added to Messages) to accumulate the response
+        _currentAssistantMessage = new MessageViewModel(MessageRole.Assistant) { IsStreaming = true };
+        _isFirstDelta = true;
+
+        await Task.Run(() => _cliService.SendMessage(prompt));
+    }
+
     private void HandleTextBlockStart()
     {
         RunOnUI(() =>
@@ -124,7 +143,8 @@ public partial class MainViewModel
             {
                 _currentAssistantMessage.IsStreaming = false;
                 _currentAssistantMessage = new MessageViewModel(MessageRole.Assistant) { IsStreaming = true };
-                Messages.Add(_currentAssistantMessage);
+                if (!_isReviewDriverTurn)
+                    Messages.Add(_currentAssistantMessage);
                 _hadToolsSinceLastText = false;
                 _isFirstDelta = true;
             }
