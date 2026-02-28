@@ -10,6 +10,8 @@ public static class LanguageDetector
     private static readonly HtmlCompletionProvider HtmlCompletionInstance = new();
     private static readonly CssTokenizer CssInstance = new();
     private static readonly CssCompletionProvider CssCompletionInstance = new();
+    private static readonly PythonTokenizer PythonInstance = new();
+    private static readonly PythonCompletionProvider PythonCompletionInstance = new();
 
     public static ILanguageTokenizer? GetTokenizer(string? filePath)
     {
@@ -20,6 +22,7 @@ public static class LanguageDetector
             ".cs" => CSharpInstance,
             ".html" or ".htm" => HtmlInstance,
             ".css" => CssInstance,
+            ".py" => PythonInstance,
             _ => null
         };
     }
@@ -33,6 +36,7 @@ public static class LanguageDetector
             ".cs" => CSharpCompletionInstance,
             ".html" or ".htm" => HtmlCompletionInstance,
             ".css" => CssCompletionInstance,
+            ".py" => PythonCompletionInstance,
             _ => null
         };
     }

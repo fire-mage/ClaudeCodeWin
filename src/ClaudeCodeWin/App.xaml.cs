@@ -98,12 +98,15 @@ public partial class App : Application
             cliUpdateService.BlacklistedVersions = new HashSet<string>(settings.FailedCliVersions);
             var usageService = new UsageService();
             var contextSnapshotService = new ContextSnapshotService();
+            var backlogService = new BacklogService();
+            backlogService.Load();
 
             // Create TabHostViewModel (manages multiple tabs)
             var tabHost = new TabHostViewModel(
                 notificationService, settingsService, settings, gitService,
                 updateService, fileIndexService, chatHistoryService,
-                projectRegistry, contextSnapshotService, usageService);
+                projectRegistry, contextSnapshotService, usageService,
+                backlogService);
 
             // Determine which project paths to restore (new multi-tab or legacy single)
             var tabPaths = (settings.OpenTabPaths is { Count: > 0 }

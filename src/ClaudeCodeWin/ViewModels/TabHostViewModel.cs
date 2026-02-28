@@ -23,6 +23,7 @@ public class TabHostViewModel : ViewModelBase
     private readonly ProjectRegistryService _projectRegistry;
     private readonly ContextSnapshotService _contextSnapshotService;
     private readonly UsageService _usageService;
+    private readonly BacklogService _backlogService;
 
     // Project uniqueness: prevent the same project from being open in two tabs
     private readonly HashSet<string> _openProjects = new(StringComparer.OrdinalIgnoreCase);
@@ -35,6 +36,9 @@ public class TabHostViewModel : ViewModelBase
 
     // CLI executable path (shared across all tabs)
     public string ClaudeExePath { get; set; } = "claude";
+
+    // Backlog service (shared across all tabs)
+    public BacklogService Backlog => _backlogService;
 
     public ObservableCollection<MainViewModel> Tabs { get; } = [];
 
@@ -114,7 +118,8 @@ public class TabHostViewModel : ViewModelBase
         ChatHistoryService chatHistoryService,
         ProjectRegistryService projectRegistry,
         ContextSnapshotService contextSnapshotService,
-        UsageService usageService)
+        UsageService usageService,
+        BacklogService backlogService)
     {
         _notificationService = notificationService;
         _settingsService = settingsService;
@@ -126,6 +131,7 @@ public class TabHostViewModel : ViewModelBase
         _projectRegistry = projectRegistry;
         _contextSnapshotService = contextSnapshotService;
         _usageService = usageService;
+        _backlogService = backlogService;
 
         Update = new UpdateViewModel(updateService, settings);
         Update.OnStatusTextChange += text =>
