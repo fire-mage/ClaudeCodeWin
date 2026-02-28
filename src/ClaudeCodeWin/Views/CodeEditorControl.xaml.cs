@@ -10,6 +10,7 @@ public partial class CodeEditorControl : UserControl
     private ScrollViewer? _editorScrollViewer;
     private int _currentMatchIndex = -1;
     private List<int> _matchPositions = [];
+    private bool _suppressSearchUpdate;
 
     public CodeEditorControl()
     {
@@ -309,12 +310,19 @@ public partial class CodeEditorControl : UserControl
 
         var count = _matchPositions.Count;
 
-        // Replace from end to start to preserve positions
-        for (int i = _matchPositions.Count - 1; i >= 0; i--)
+        // Suppress re-entrant search updates during batch replace
+        _suppressSearchUpdate = true;
+        try
         {
-            Editor.Select(_matchPositions[i], query.Length);
-            Editor.SelectedText = replacement;
+            // Replace from end to start to preserve positions
+            for (int i = _matchPositions.Count - 1; i >= 0; i--)
+            {
+                Editor.Select(_matchPositions[i], query.Length);
+                Editor.SelectedText = replacement;
+            }
         }
+        finally { _suppressSearchUpdate = false; }
+
         UpdateMatchPositions();
         MatchCountLabel.Text = $"Replaced {count}";
     }
@@ -355,6 +363,7 @@ public partial class CodeEditorControl : UserControl
         {
             Background = (Brush)FindResource("BackgroundBrush"),
             Foreground = (Brush)FindResource("TextBrush"),
+            CaretBrush = (Brush)FindResource("TextBrush"),
             BorderBrush = (Brush)FindResource("BorderBrush"),
             Padding = new Thickness(8, 4, 8, 4),
             FontFamily = new FontFamily("Cascadia Code,Consolas,Courier New"),
@@ -376,6 +385,8 @@ public partial class CodeEditorControl : UserControl
             Width = 80,
             Padding = new Thickness(0, 4, 0, 4),
             Margin = new Thickness(0, 0, 8, 0),
+            Background = (Brush)FindResource("SurfaceLightBrush"),
+            Foreground = (Brush)FindResource("TextBrush"),
             IsDefault = true
         };
         okButton.Click += (_, _) =>
@@ -392,6 +403,8 @@ public partial class CodeEditorControl : UserControl
             Content = "Cancel",
             Width = 80,
             Padding = new Thickness(0, 4, 0, 4),
+            Background = (Brush)FindResource("SurfaceLightBrush"),
+            Foreground = (Brush)FindResource("TextSecondaryBrush"),
             IsCancel = true
         };
 
@@ -428,6 +441,9 @@ public partial class CodeEditorControl : UserControl
             Text = Editor.Text;
 
         UpdateLineNumbers();
+
+        // Skip search update during batch operations (ReplaceAll)
+        if (_suppressSearchUpdate) return;
 
         // Re-run search if active
         if (SearchBar.Visibility == Visibility.Visible && !string.IsNullOrEmpty(SearchTextBox.Text))
