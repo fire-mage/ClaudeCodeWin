@@ -48,8 +48,8 @@ public partial class MainViewModel
         var explorerTab = new SubTab(SubTabType.Explorer, "Explorer");
         var chatTab = new SubTab(SubTabType.Chat, "Chat");
 
-        SubTabs.Add(explorerTab);
         SubTabs.Add(chatTab);
+        SubTabs.Add(explorerTab);
 
         ActiveSubTab = chatTab; // Start with Chat active
 
