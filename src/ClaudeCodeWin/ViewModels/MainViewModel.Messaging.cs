@@ -360,6 +360,10 @@ public partial class MainViewModel
 
             _notificationService.NotifyIfInactive();
 
+            // Show notification dot on this tab if it's not currently active
+            if (!IsActiveTab)
+                HasNotification = true;
+
             // Auto-send next queued message
             if (MessageQueue.Count > 0)
             {

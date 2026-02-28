@@ -484,6 +484,16 @@
         </Setter>
     </Style>
 
+    <!-- GridSplitter between left panel and content area -->
+    <Style x:Key="ProjectPanelSplitter" TargetType="GridSplitter">
+        <Setter Property="Background" Value="{StaticResource BorderBrush}"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
     <!-- StatusBar -->
     <Style x:Key="StatusBarStyle" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>

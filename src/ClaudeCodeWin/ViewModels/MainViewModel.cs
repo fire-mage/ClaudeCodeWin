@@ -311,7 +311,19 @@ public partial class MainViewModel : ViewModelBase
     public bool IsActiveTab
     {
         get => _isActiveTab;
-        set => SetProperty(ref _isActiveTab, value);
+        set
+        {
+            if (SetProperty(ref _isActiveTab, value) && value)
+                HasNotification = false;
+        }
+    }
+
+    private bool _hasNotification;
+    /// <summary>Green dot indicator: shown when work completes on an inactive tab.</summary>
+    public bool HasNotification
+    {
+        get => _hasNotification;
+        set => SetProperty(ref _hasNotification, value);
     }
 
     // Project locking callbacks (set by TabHostViewModel)

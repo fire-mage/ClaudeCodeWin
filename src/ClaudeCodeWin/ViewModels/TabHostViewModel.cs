@@ -271,6 +271,7 @@ public class TabHostViewModel : ViewModelBase
             case nameof(MainViewModel.ShowRateLimitBanner):
             case nameof(MainViewModel.RateLimitCountdown):
             case nameof(MainViewModel.TabTitle):
+            case nameof(MainViewModel.HasNotification):
                 // These are read via {Binding ActiveTab.PropertyName} in XAML
                 // but we also fire our own change to update any direct bindings
                 OnPropertyChanged($"ActiveTab.{e.PropertyName}");

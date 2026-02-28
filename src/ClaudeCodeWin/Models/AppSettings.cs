@@ -57,6 +57,13 @@ public class AppSettings
     public string? ActivationCode { get; set; }
     public List<string> ActivatedFeatures { get; set; } = [];
 
+    // Tab persistence: restore open project tabs across sessions
+    public List<string>? OpenTabPaths { get; set; }
+    public string? ActiveTabPath { get; set; }
+
+    // Left panel width (vertical project tabs, GridSplitter position)
+    public double? ProjectTabPanelWidth { get; set; }
+
     // Development Team: auto-review after task completion
     public bool ReviewerEnabled { get; set; } = true;
     public int ReviewAutoRetries { get; set; } = 3;

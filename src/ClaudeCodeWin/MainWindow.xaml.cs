@@ -48,9 +48,6 @@ public partial class MainWindow : Window
         InputTextBox.TextChanged += InputTextBox_TextChanged;
         AutocompleteList.MouseDoubleClick += AutocompleteList_MouseDoubleClick;
 
-        // Update Switch Project menu header with project count
-        UpdateSwitchProjectMenuHeader();
-
         // Subscribe to tab changes
         tabHost.OnActiveTabChanged += OnActiveTabChanged;
 
@@ -200,6 +197,10 @@ public partial class MainWindow : Window
             WindowState = WindowState.Maximized;
         }
 
+        // Restore left panel width
+        if (_settings.ProjectTabPanelWidth.HasValue && _settings.ProjectTabPanelWidth.Value > 60)
+            ProjectTabColumn.Width = new GridLength(_settings.ProjectTabPanelWidth.Value);
+
         InputTextBox.Focus();
     }
 
@@ -223,6 +224,17 @@ public partial class MainWindow : Window
         }
 
         _settings.WindowState = WindowState == WindowState.Maximized ? 2 : 0;
+
+        // Save open project tabs for restoration on next launch (skip tabs without a project)
+        _settings.OpenTabPaths = TabHost.Tabs
+            .Where(t => !string.IsNullOrEmpty(t.WorkingDirectory))
+            .Select(t => t.WorkingDirectory!)
+            .ToList();
+        _settings.ActiveTabPath = TabHost.ActiveTab?.WorkingDirectory;
+
+        // Save left panel width
+        _settings.ProjectTabPanelWidth = ProjectTabColumn.ActualWidth;
+
         _settingsService.Save(_settings);
 
         // Dispose all tabs (kill CLI processes)
@@ -817,13 +829,7 @@ public partial class MainWindow : Window
         previewWindow.ShowDialog();
     }
 
-    private void UpdateSwitchProjectMenuHeader()
-    {
-        var count = _projectRegistry.GetFilteredProjects(50).Count;
-        SwitchProjectMenu.Header = count > 0 ? $"Switch _Project ({count})" : "Switch _Project";
-    }
-
-    private void MenuItem_SwitchProject_Click(object sender, RoutedEventArgs e)
+    private void MenuItem_OpenProject_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new ProjectSwitchDialog(_projectRegistry, ViewModel.WorkingDirectory)
         {
@@ -832,8 +838,23 @@ public partial class MainWindow : Window
 
         if (dialog.ShowDialog() == true && dialog.SelectedProjectPath is not null)
         {
-            ViewModel.SetWorkingDirectory(dialog.SelectedProjectPath);
-            UpdateSwitchProjectMenuHeader();
+            // If the project is already open in another tab, switch to it instead of creating an orphan.
+            // Normalize both sides so "C:\Foo" and "c:\foo\" resolve to the same tab.
+            if (TabHost.IsProjectOpen(dialog.SelectedProjectPath))
+            {
+                var normalized = System.IO.Path.GetFullPath(dialog.SelectedProjectPath);
+                var existing = TabHost.Tabs.FirstOrDefault(t =>
+                    !string.IsNullOrEmpty(t.WorkingDirectory) &&
+                    string.Equals(System.IO.Path.GetFullPath(t.WorkingDirectory), normalized,
+                        StringComparison.OrdinalIgnoreCase));
+                if (existing is not null)
+                    TabHost.ActiveTab = existing;
+                return;
+            }
+
+            var newTab = TabHost.CreateTab();
+            newTab.ShowWelcome = false;
+            newTab.SetWorkingDirectory(dialog.SelectedProjectPath);
         }
     }
 
@@ -1261,7 +1282,6 @@ public partial class MainWindow : Window
         {
             DismissWelcomeScreen();
             ViewModel.SetWorkingDirectory(project.Path);
-            UpdateSwitchProjectMenuHeader();
         }
     }
 
@@ -1271,7 +1291,6 @@ public partial class MainWindow : Window
         {
             DismissWelcomeScreen();
             ViewModel.SetWorkingDirectory(project.Path);
-            UpdateSwitchProjectMenuHeader();
         }
     }
 
@@ -1286,7 +1305,6 @@ public partial class MainWindow : Window
         {
             DismissWelcomeScreen();
             ViewModel.SetWorkingDirectory(dialog.FolderName);
-            UpdateSwitchProjectMenuHeader();
         }
     }
 

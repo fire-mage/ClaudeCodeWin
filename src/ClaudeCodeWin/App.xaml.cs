@@ -105,12 +105,19 @@ public partial class App : Application
                 updateService, fileIndexService, chatHistoryService,
                 projectRegistry, contextSnapshotService, usageService);
 
-            // Create initial tab
-            var initialTab = tabHost.CreateTab();
+            // Determine which project paths to restore (new multi-tab or legacy single)
+            var tabPaths = (settings.OpenTabPaths is { Count: > 0 }
+                ? settings.OpenTabPaths
+                : string.IsNullOrEmpty(settings.WorkingDirectory)
+                    ? new List<string> { "" }
+                    : new List<string> { settings.WorkingDirectory })
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-            // Apply saved working directory to initial tab
-            if (!string.IsNullOrEmpty(settings.WorkingDirectory))
-                initialTab.SetWorkingDirectoryOnStartup(settings.WorkingDirectory);
+            // Create initial tab (always created before mainWindow)
+            var initialTab = tabHost.CreateTab();
+            if (!string.IsNullOrEmpty(tabPaths[0]))
+                initialTab.SetWorkingDirectoryOnStartup(tabPaths[0]);
 
             var mainWindow = new MainWindow(tabHost, notificationService, settingsService, settings, fileIndexService, chatHistoryService, projectRegistry);
             mainWindow.Show();
@@ -158,14 +165,38 @@ public partial class App : Application
             // Menus (resolve active tab at click time)
             scriptService.PopulateMenu(mainWindow, () => tabHost.ActiveTab!, gitService, settings, projectRegistry);
             taskRunnerService.PopulateMenu(mainWindow, () => tabHost.ActiveTab!);
-            initialTab.SetTaskRunner(taskRunnerService, mainWindow);
 
-            // Wire SetTaskRunner for future tabs
-            tabHost.OnActiveTabChanged += () =>
+            // Set task runner for all current and future tabs via CollectionChanged.
+            // This ensures every new tab (startup restore, "+" button, Ctrl+T) gets it immediately.
+            tabHost.Tabs.CollectionChanged += (_, args) =>
             {
-                if (tabHost.ActiveTab is not null)
-                    tabHost.ActiveTab.SetTaskRunner(taskRunnerService, mainWindow);
+                if (args.NewItems is null) return;
+                foreach (MainViewModel tab in args.NewItems)
+                    tab.SetTaskRunner(taskRunnerService, mainWindow);
             };
+
+            // Set task runner for tabs already created before this subscription (initial tab)
+            foreach (var tab in tabHost.Tabs)
+                tab.SetTaskRunner(taskRunnerService, mainWindow);
+
+            // Restore additional saved tabs (after hooks are wired)
+            foreach (var path in tabPaths.Skip(1))
+            {
+                var tab = tabHost.CreateTab();
+                tab.ShowWelcome = false;
+                if (!string.IsNullOrEmpty(path))
+                    tab.SetWorkingDirectoryOnStartup(path);
+            }
+
+            // Restore the previously active tab
+            if (!string.IsNullOrEmpty(settings.ActiveTabPath))
+            {
+                var target = tabHost.Tabs.FirstOrDefault(t =>
+                    string.Equals(t.WorkingDirectory, settings.ActiveTabPath,
+                        StringComparison.OrdinalIgnoreCase));
+                if (target is not null)
+                    tabHost.ActiveTab = target;
+            }
 
             // Knowledge Base
             var knowledgeBaseService = new KnowledgeBaseService();

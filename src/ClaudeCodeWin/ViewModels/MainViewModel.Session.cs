@@ -9,12 +9,20 @@ public partial class MainViewModel
     /// <summary>
     /// Sets the working directory on startup (before the CLI process starts).
     /// Unlike SetWorkingDirectory, this doesn't stop/start sessions or show messages.
+    /// Initializes all tab-visible properties (TabTitle, GitStatus, etc.) so restored tabs
+    /// show the correct project name immediately.
     /// </summary>
     public void SetWorkingDirectoryOnStartup(string folder)
     {
         _cliService.WorkingDirectory = folder;
-        // Lock this project in the tab system
+        ProjectPath = folder;
+        _registeredProjectRoots.Add(Path.GetFullPath(folder));
         LockProject?.Invoke(folder);
+        RefreshGitStatus();
+        _ = Task.Run(() => RefreshAutocompleteIndex());
+        _ = Task.Run(() => _projectRegistry.RegisterProject(folder, _gitService));
+        if (_settings.ContextSnapshotEnabled)
+            _contextSnapshotService.StartGenerationInBackground([folder]);
     }
 
     private void SelectFolder()
