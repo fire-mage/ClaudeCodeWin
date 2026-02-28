@@ -19,6 +19,7 @@ public partial class MainViewModel
         _registeredProjectRoots.Add(Path.GetFullPath(folder));
         LockProject?.Invoke(folder);
         RefreshGitStatus();
+        UpdateExplorerRoot();
         _ = Task.Run(() => RefreshAutocompleteIndex());
         _ = Task.Run(() => _projectRegistry.RegisterProject(folder, _gitService));
         if (_settings.ContextSnapshotEnabled)
@@ -76,6 +77,7 @@ public partial class MainViewModel
         // Lock this project in the tab system
         LockProject?.Invoke(folder);
         RefreshGitStatus();
+        UpdateExplorerRoot();
 
         // Register project in registry
         _ = Task.Run(() => _projectRegistry.RegisterProject(folder, _gitService));
@@ -285,6 +287,7 @@ public partial class MainViewModel
             _settingsService.Save(_settings);
             ProjectPath = entry.ProjectPath;
             RefreshGitStatus();
+            UpdateExplorerRoot();
             _ = Task.Run(() => RefreshAutocompleteIndex());
         }
 

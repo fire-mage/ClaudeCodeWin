@@ -467,6 +467,8 @@ public partial class MainViewModel : ViewModelBase
         DismissBgTaskCommand = new RelayCommand(ExecuteDismissBgTask);
         InitializeNudge();
         InitializeBackgroundTaskTimer();
+        InitializeSubTabCommands();
+        InitializeSubTabs();
 
         FinalizeActions = new FinalizeActionsViewModel(settingsService, settings, () => WorkingDirectory);
         FinalizeActions.OnCommitRequested += msg => _ = SendDirectAsync(msg, null);
@@ -561,6 +563,7 @@ public partial class MainViewModel : ViewModelBase
         {
             _registeredProjectRoots.Add(Path.GetFullPath(settings.WorkingDirectory));
             RefreshGitStatus();
+            UpdateExplorerRoot();
             _ = Task.Run(() => RefreshAutocompleteIndex());
             _ = Task.Run(() => _projectRegistry.RegisterProject(settings.WorkingDirectory, _gitService));
 
@@ -591,6 +594,7 @@ public partial class MainViewModel : ViewModelBase
         StopNudgeTimer();
         _bgTaskTimer?.Stop();
         FinalizeActions.StopTaskSuggestionTimer();
+        Explorer.Dispose();
     }
 }
 

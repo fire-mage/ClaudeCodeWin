@@ -167,6 +167,31 @@ public partial class MainWindow : Window
         }
     }
 
+    // --- Sub-tab management ---
+
+    private void SubTab_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.Tag is Models.SubTab subTab)
+        {
+            ViewModel.ActiveSubTab = subTab;
+            e.Handled = true;
+        }
+    }
+
+    private void SubTabClose_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.Tag is Models.SubTab subTab)
+        {
+            ViewModel.CloseFileTab(subTab);
+            e.Handled = true;
+        }
+    }
+
+    private void FileEditor_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        // HasUnsavedChanges is tracked automatically via SubTab.Content setter
+    }
+
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         if (_settings.WindowWidth.HasValue && _settings.WindowHeight.HasValue)
@@ -459,6 +484,17 @@ public partial class MainWindow : Window
                 TabHost.SwitchToNextTab();
             e.Handled = true;
             return;
+        }
+
+        // Ctrl+S = Save file (if editor tab active)
+        if (e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (ViewModel.IsFileEditorActive)
+            {
+                ViewModel.SaveFileTab();
+                e.Handled = true;
+                return;
+            }
         }
 
         // Ctrl+N = New session

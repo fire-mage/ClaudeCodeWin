@@ -1,0 +1,394 @@
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
+using System.Windows;
+using ClaudeCodeWin.Infrastructure;
+using ClaudeCodeWin.Models;
+
+namespace ClaudeCodeWin.ViewModels;
+
+public class ExplorerViewModel : ViewModelBase, IDisposable
+{
+    private FileSystemWatcher? _watcher;
+    private string _rootPath = "";
+    private FileNode? _selectedNode;
+
+    public ObservableCollection<FileNode> RootNodes { get; } = [];
+
+    public FileNode? SelectedNode
+    {
+        get => _selectedNode;
+        set => SetProperty(ref _selectedNode, value);
+    }
+
+    public string RootPath
+    {
+        get => _rootPath;
+        private set => SetProperty(ref _rootPath, value);
+    }
+
+    /// <summary>Fired when user wants to open a file in the editor.</summary>
+    public event Action<string>? OnOpenFile;
+
+    // Commands
+    public RelayCommand RefreshCommand { get; }
+    public RelayCommand CollapseAllCommand { get; }
+    public RelayCommand NewFileCommand { get; }
+    public RelayCommand NewFolderCommand { get; }
+    public RelayCommand OpenFileCommand { get; }
+    public RelayCommand DeleteCommand { get; }
+    public RelayCommand RenameCommand { get; }
+    public RelayCommand CopyPathCommand { get; }
+    public RelayCommand RevealInExplorerCommand { get; }
+
+    public ExplorerViewModel()
+    {
+        RefreshCommand = new RelayCommand(_ => Refresh());
+        CollapseAllCommand = new RelayCommand(_ => CollapseAll());
+        NewFileCommand = new RelayCommand(_ => CreateNewFile());
+        NewFolderCommand = new RelayCommand(_ => CreateNewFolder());
+        OpenFileCommand = new RelayCommand(p =>
+        {
+            var node = p as FileNode ?? SelectedNode;
+            if (node is { IsDirectory: false, IsPlaceholder: false })
+                OnOpenFile?.Invoke(node.FullPath);
+        });
+        DeleteCommand = new RelayCommand(_ => DeleteSelected());
+        RenameCommand = new RelayCommand(_ => RenameSelected());
+        CopyPathCommand = new RelayCommand(_ =>
+        {
+            if (SelectedNode != null)
+                Clipboard.SetText(SelectedNode.FullPath);
+        });
+        RevealInExplorerCommand = new RelayCommand(_ =>
+        {
+            if (SelectedNode != null)
+            {
+                var path = SelectedNode.IsDirectory ? SelectedNode.FullPath : Path.GetDirectoryName(SelectedNode.FullPath);
+                if (path != null)
+                    Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{SelectedNode.FullPath}\"") { UseShellExecute = true });
+            }
+        });
+    }
+
+    public void SetRoot(string path)
+    {
+        if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
+        if (string.Equals(RootPath, path, StringComparison.OrdinalIgnoreCase)) return;
+
+        RootPath = path;
+        LoadTree();
+        SetupWatcher();
+    }
+
+    private void LoadTree()
+    {
+        RunOnUI(() =>
+        {
+            RootNodes.Clear();
+            if (string.IsNullOrEmpty(RootPath)) return;
+
+            var root = new FileNode(Path.GetFileName(RootPath), RootPath, true);
+            root.LoadChildren();
+            root.IsExpanded = true;
+            RootNodes.Add(root);
+        });
+    }
+
+    private void SetupWatcher()
+    {
+        _watcher?.Dispose();
+        if (string.IsNullOrEmpty(RootPath)) return;
+
+        try
+        {
+            _watcher = new FileSystemWatcher(RootPath)
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName
+                               | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+                EnableRaisingEvents = true
+            };
+
+            // Debounce: collect changes and refresh after a short delay
+            System.Timers.Timer? debounce = null;
+
+            void OnChanged(object s, FileSystemEventArgs e)
+            {
+                debounce?.Stop();
+                debounce?.Dispose();
+                debounce = new System.Timers.Timer(500) { AutoReset = false };
+                debounce.Elapsed += (_, _) =>
+                {
+                    debounce.Dispose();
+                    debounce = null;
+                    // Only refresh the affected parent node instead of the whole tree
+                    var dir = Path.GetDirectoryName(e.FullPath);
+                    if (dir != null)
+                        RunOnUI(() => RefreshNode(dir));
+                };
+                debounce.Start();
+            }
+
+            _watcher.Created += OnChanged;
+            _watcher.Deleted += OnChanged;
+            _watcher.Renamed += (s, e) => OnChanged(s, e);
+        }
+        catch
+        {
+            // FileSystemWatcher can fail on some paths — not critical
+        }
+    }
+
+    private void RefreshNode(string directoryPath)
+    {
+        if (RootNodes.Count == 0) return;
+
+        var node = FindNode(RootNodes[0], directoryPath);
+        node?.Invalidate();
+    }
+
+    private static FileNode? FindNode(FileNode root, string path)
+    {
+        if (string.Equals(root.FullPath, path, StringComparison.OrdinalIgnoreCase))
+            return root;
+
+        if (!root.IsDirectory) return null;
+
+        foreach (var child in root.Children)
+        {
+            var found = FindNode(child, path);
+            if (found != null) return found;
+        }
+
+        return null;
+    }
+
+    public void Refresh()
+    {
+        LoadTree();
+    }
+
+    private void CollapseAll()
+    {
+        foreach (var node in RootNodes)
+            CollapseRecursive(node);
+    }
+
+    private static void CollapseRecursive(FileNode node)
+    {
+        if (!node.IsDirectory) return;
+        foreach (var child in node.Children)
+            CollapseRecursive(child);
+        node.IsExpanded = false;
+    }
+
+    private void CreateNewFile()
+    {
+        var parentPath = GetSelectedDirectory();
+        if (parentPath == null) return;
+
+        var name = PromptForName("New File", "Enter file name:");
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        var filePath = Path.Combine(parentPath, name);
+        if (File.Exists(filePath))
+        {
+            MessageBox.Show($"File '{name}' already exists.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            File.WriteAllText(filePath, "");
+            RefreshNode(parentPath);
+            OnOpenFile?.Invoke(filePath);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to create file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void CreateNewFolder()
+    {
+        var parentPath = GetSelectedDirectory();
+        if (parentPath == null) return;
+
+        var name = PromptForName("New Folder", "Enter folder name:");
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        var folderPath = Path.Combine(parentPath, name);
+        if (Directory.Exists(folderPath))
+        {
+            MessageBox.Show($"Folder '{name}' already exists.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(folderPath);
+            RefreshNode(parentPath);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to create folder: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void DeleteSelected()
+    {
+        if (SelectedNode is null or { IsPlaceholder: true }) return;
+
+        var msg = SelectedNode.IsDirectory
+            ? $"Delete folder '{SelectedNode.Name}' and all its contents?"
+            : $"Delete file '{SelectedNode.Name}'?";
+
+        if (MessageBox.Show(msg, "Confirm Delete", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            if (SelectedNode.IsDirectory)
+                Directory.Delete(SelectedNode.FullPath, true);
+            else
+                File.Delete(SelectedNode.FullPath);
+
+            var parent = Path.GetDirectoryName(SelectedNode.FullPath);
+            if (parent != null)
+                RefreshNode(parent);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to delete: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void RenameSelected()
+    {
+        if (SelectedNode is null or { IsPlaceholder: true }) return;
+
+        var newName = PromptForName("Rename", "Enter new name:", SelectedNode.Name);
+        if (string.IsNullOrWhiteSpace(newName) || newName == SelectedNode.Name) return;
+
+        var parentDir = Path.GetDirectoryName(SelectedNode.FullPath);
+        if (parentDir == null) return;
+
+        var newPath = Path.Combine(parentDir, newName);
+
+        try
+        {
+            if (SelectedNode.IsDirectory)
+                Directory.Move(SelectedNode.FullPath, newPath);
+            else
+                File.Move(SelectedNode.FullPath, newPath);
+
+            RefreshNode(parentDir);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to rename: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private string? GetSelectedDirectory()
+    {
+        if (SelectedNode == null)
+            return RootPath;
+
+        return SelectedNode.IsDirectory
+            ? SelectedNode.FullPath
+            : Path.GetDirectoryName(SelectedNode.FullPath);
+    }
+
+    private static string? PromptForName(string title, string prompt, string defaultValue = "")
+    {
+        // Simple input dialog using WPF Window
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 400,
+            Height = 150,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = Application.Current.MainWindow,
+            Background = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#161b22")),
+            ResizeMode = ResizeMode.NoResize,
+            WindowStyle = WindowStyle.ToolWindow
+        };
+
+        var grid = new System.Windows.Controls.Grid { Margin = new Thickness(12) };
+        grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
+        grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
+        grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
+
+        var label = new System.Windows.Controls.TextBlock
+        {
+            Text = prompt,
+            Foreground = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#e6edf3")),
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        System.Windows.Controls.Grid.SetRow(label, 0);
+
+        var textBox = new System.Windows.Controls.TextBox
+        {
+            Text = defaultValue,
+            Background = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#0d1117")),
+            Foreground = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#e6edf3")),
+            BorderBrush = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#30363d")),
+            Padding = new Thickness(8, 4, 8, 4),
+            FontFamily = new System.Windows.Media.FontFamily("Cascadia Code,Consolas,Courier New"),
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+        System.Windows.Controls.Grid.SetRow(textBox, 1);
+
+        var buttonPanel = new System.Windows.Controls.StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        System.Windows.Controls.Grid.SetRow(buttonPanel, 2);
+
+        string? result = null;
+
+        var okButton = new System.Windows.Controls.Button
+        {
+            Content = "OK",
+            Width = 80,
+            Padding = new Thickness(0, 4, 0, 4),
+            Margin = new Thickness(0, 0, 8, 0),
+            IsDefault = true
+        };
+        okButton.Click += (_, _) => { result = textBox.Text; dialog.Close(); };
+
+        var cancelButton = new System.Windows.Controls.Button
+        {
+            Content = "Cancel",
+            Width = 80,
+            Padding = new Thickness(0, 4, 0, 4),
+            IsCancel = true
+        };
+
+        buttonPanel.Children.Add(okButton);
+        buttonPanel.Children.Add(cancelButton);
+
+        grid.Children.Add(label);
+        grid.Children.Add(textBox);
+        grid.Children.Add(buttonPanel);
+
+        dialog.Content = grid;
+        dialog.ShowDialog();
+
+        return result;
+    }
+
+    public void Dispose()
+    {
+        _watcher?.Dispose();
+        _watcher = null;
+    }
+}

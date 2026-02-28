@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:converters="clr-namespace:ClaudeCodeWin.Converters"
         xmlns:vm="clr-namespace:ClaudeCodeWin.ViewModels"
+        xmlns:models="clr-namespace:ClaudeCodeWin.Models"
+        xmlns:views="clr-namespace:ClaudeCodeWin.Views"
         Title="Claude Code for Windows (CCW)"
         MinHeight="500" MinWidth="600"
         Background="{StaticResource BackgroundBrush}"
@@ -177,33 +179,119 @@
             <!-- Content area — bound to the active tab's ViewModel -->
             <Grid Grid.Column="2" DataContext="{Binding ActiveTab}">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>     <!-- Inner tab strip (Chat) -->
-                    <RowDefinition Height="*"/>        <!-- Chat -->
-                    <RowDefinition Height="Auto"/>     <!-- Message queue -->
-                    <RowDefinition Height="Auto"/>     <!-- Attachments -->
-                    <RowDefinition Height="Auto"/>     <!-- CTA hint -->
-                    <RowDefinition Height="Auto"/>     <!-- Input -->
-                    <RowDefinition Height="Auto"/>     <!-- Background tasks -->
-                    <RowDefinition Height="Auto"/>     <!-- Changed files -->
+                    <RowDefinition Height="Auto"/>     <!-- Inner sub-tab strip -->
+                    <RowDefinition Height="*"/>        <!-- Content (Explorer / Chat / File editor) -->
                 </Grid.RowDefinitions>
 
-                <!-- Inner tab strip: Chat (placeholder for future Explorer / file tabs) -->
+                <!-- Inner sub-tab strip: Explorer | Chat | file tabs -->
                 <Border Grid.Row="0"
                         Background="{StaticResource SurfaceBrush}"
                         BorderBrush="{StaticResource BorderBrush}"
                         BorderThickness="0,0,0,1">
-                    <StackPanel Orientation="Horizontal" Margin="4,0">
-                        <Border Padding="12,5"
-                                Background="{StaticResource SurfaceLightBrush}"
-                                CornerRadius="4,4,0,0">
-                            <TextBlock Text="Chat" FontSize="12"
-                                       Foreground="{StaticResource TextBrush}"/>
-                        </Border>
-                    </StackPanel>
+                    <ItemsControl ItemsSource="{Binding SubTabs}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="4,0"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:SubTab}">
+                                <Border x:Name="SubTabBorder" Padding="10,5" Margin="0,0,1,0"
+                                        CornerRadius="4,4,0,0" Cursor="Hand"
+                                        Background="{StaticResource SurfaceBrush}"
+                                        MouseLeftButtonUp="SubTab_Click" Tag="{Binding}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding DisplayTitle}" FontSize="12"
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxWidth="180"/>
+                                        <!-- Close button for file tabs -->
+                                        <Border Padding="6,0,0,0" Cursor="Hand"
+                                                Background="Transparent"
+                                                MouseLeftButtonUp="SubTabClose_Click" Tag="{Binding}"
+                                                VerticalAlignment="Center"
+                                                Visibility="{Binding IsCloseable, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="x" FontSize="10"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                        <Setter TargetName="SubTabBorder" Property="Background"
+                                                Value="{StaticResource SurfaceLightBrush}"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </Border>
 
-                <!-- Chat area -->
-                <ScrollViewer Grid.Row="1" x:Name="ChatScrollViewer"
+                <!-- === Content area: Explorer / Chat / File Editor === -->
+                <Grid Grid.Row="1">
+
+                    <!-- Explorer panel -->
+                    <Border Visibility="{Binding IsExplorerActive, Converter={StaticResource BoolToVis}}">
+                        <views:FileExplorerControl DataContext="{Binding Explorer}"/>
+                    </Border>
+
+                    <!-- File editor panel (basic TextBox for Phase 1) -->
+                    <Grid Visibility="{Binding IsFileEditorActive, Converter={StaticResource BoolToVis}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>  <!-- Editor toolbar -->
+                            <RowDefinition Height="*"/>     <!-- Editor -->
+                        </Grid.RowDefinitions>
+
+                        <!-- Editor toolbar -->
+                        <Border Grid.Row="0" Padding="8,4"
+                                Background="{StaticResource SurfaceBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="0,0,0,1">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="Save" Padding="8,3" Margin="0,0,4,0"
+                                        Style="{StaticResource SubTabToolButton}"
+                                        Command="{Binding SaveFileCommand}"
+                                        ToolTip="Save file (Ctrl+S)"/>
+                                <Button Content="Send to Review" Padding="8,3"
+                                        Style="{StaticResource SubTabToolButton}"
+                                        Command="{Binding SendFileToReviewCommand}"
+                                        ToolTip="Send this file to Claude for review"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- TextBox editor -->
+                        <TextBox Grid.Row="1"
+                                 x:Name="FileEditorTextBox"
+                                 Text="{Binding ActiveFileTab.Content, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True"
+                                 AcceptsTab="True"
+                                 TextWrapping="NoWrap"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 VerticalScrollBarVisibility="Auto"
+                                 FontFamily="Cascadia Code,Consolas,Courier New"
+                                 FontSize="14"
+                                 Background="{StaticResource BackgroundBrush}"
+                                 Foreground="{StaticResource TextBrush}"
+                                 CaretBrush="{StaticResource TextBrush}"
+                                 BorderThickness="0"
+                                 Padding="12,8"
+                                 TextChanged="FileEditor_TextChanged"/>
+                    </Grid>
+
+                    <!-- Chat panel (existing chat UI) -->
+                    <Grid Visibility="{Binding IsChatActive, Converter={StaticResource BoolToVis}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>        <!-- Chat -->
+                            <RowDefinition Height="Auto"/>     <!-- Message queue -->
+                            <RowDefinition Height="Auto"/>     <!-- Attachments -->
+                            <RowDefinition Height="Auto"/>     <!-- CTA hint -->
+                            <RowDefinition Height="Auto"/>     <!-- Input -->
+                            <RowDefinition Height="Auto"/>     <!-- Background tasks -->
+                            <RowDefinition Height="Auto"/>     <!-- Changed files -->
+                        </Grid.RowDefinitions>
+
+                <ScrollViewer Grid.Row="0" x:Name="ChatScrollViewer"
                               VerticalScrollBarVisibility="Auto"
                               Padding="12">
                     <ItemsControl ItemsSource="{Binding Messages}" x:Name="MessagesControl">
@@ -854,7 +942,7 @@
                 </ScrollViewer>
 
                 <!-- Rate limit banner -->
-                <Border Grid.Row="1"
+                <Border Grid.Row="0"
                         VerticalAlignment="Top"
                         HorizontalAlignment="Stretch"
                         Panel.ZIndex="15"
@@ -951,7 +1039,7 @@
 
                 <!-- Bookmarks button -->
                 <Border x:Name="BookmarksButton"
-                        Grid.Row="1"
+                        Grid.Row="0"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Bottom"
                         Margin="0,0,24,48"
@@ -978,7 +1066,7 @@
 
                 <!-- Scroll to bottom button -->
                 <Button x:Name="ScrollToBottomButton"
-                        Grid.Row="1"
+                        Grid.Row="0"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Bottom"
                         Margin="0,0,24,12"
@@ -1020,7 +1108,7 @@
 
                 <!-- Finalize Actions popup -->
                 <Border x:Name="FinalizePopupBorder"
-                        Grid.Row="1"
+                        Grid.Row="0"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Bottom"
                         Margin="0,0,24,12"
@@ -1132,7 +1220,7 @@
                 </Border>
 
                 <!-- Welcome overlay (covers full content area incl. inner tab strip) -->
-                <Border Grid.Row="0" Grid.RowSpan="8"
+                <Border Grid.Row="0" Grid.RowSpan="2"
                         Background="{StaticResource BackgroundBrush}"
                         Visibility="{Binding ShowWelcome, Converter={StaticResource BoolToVis}}"
                         Panel.ZIndex="50">
@@ -1516,7 +1604,7 @@
 
 
                 <!-- Message queue -->
-                <Border Grid.Row="2"
+                <Border Grid.Row="1"
                         Background="{StaticResource SurfaceBrush}"
                         Padding="8,4"
                         Visibility="{Binding HasQueuedMessages, Converter={StaticResource BoolToVis}}"
@@ -1586,7 +1674,7 @@
                 </Border>
 
                 <!-- Attachments bar -->
-                <Border Grid.Row="3"
+                <Border Grid.Row="2"
                         Background="{StaticResource SurfaceBrush}"
                         Padding="8,4"
                         Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVis}}"
@@ -1644,7 +1732,7 @@
                 </Border>
 
                 <!-- CTA hint -->
-                <Border Grid.Row="4"
+                <Border Grid.Row="3"
                         Padding="12,6"
                         Visibility="{Binding HasCta, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="{Binding CtaText}"
@@ -1656,7 +1744,7 @@
                 </Border>
 
                 <!-- Input area -->
-                <Grid Grid.Row="5" Margin="8">
+                <Grid Grid.Row="4" Margin="8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
@@ -1775,7 +1863,7 @@
                 </Grid>
 
                 <!-- Background tasks panel -->
-                <Border Grid.Row="6"
+                <Border Grid.Row="5"
                         Background="{StaticResource SurfaceBrush}"
                         Padding="8,3"
                         Visibility="{Binding HasBackgroundTasks, Converter={StaticResource BoolToVis}}"
@@ -1876,7 +1964,7 @@
                 </Border>
 
                 <!-- Changed files indicator -->
-                <Border Grid.Row="7"
+                <Border Grid.Row="6"
                         Background="{StaticResource SurfaceBrush}"
                         Padding="8,3"
                         Visibility="{Binding HasChangedFiles, Converter={StaticResource BoolToVis}}"
@@ -1919,6 +2007,10 @@
                         </ItemsControl>
                     </Expander>
                 </Border>
+
+                    </Grid> <!-- End of chat panel -->
+
+                </Grid> <!-- End of content switching area -->
 
             </Grid> <!-- End of content area -->
 

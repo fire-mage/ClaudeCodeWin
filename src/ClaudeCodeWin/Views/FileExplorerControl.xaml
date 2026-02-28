@@ -1,0 +1,158 @@
+<UserControl x:Class="ClaudeCodeWin.Views.FileExplorerControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="clr-namespace:ClaudeCodeWin.Models">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- Toolbar -->
+            <RowDefinition Height="*"/>     <!-- Tree -->
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <Border Grid.Row="0" Padding="4,2"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="+" ToolTip="New File"
+                        Command="{Binding NewFileCommand}"
+                        Style="{StaticResource ExplorerToolButton}"/>
+                <Button Content="&#x1F4C1;" ToolTip="New Folder"
+                        Command="{Binding NewFolderCommand}"
+                        Style="{StaticResource ExplorerToolButton}"/>
+                <Button Content="&#x21BB;" ToolTip="Refresh"
+                        Command="{Binding RefreshCommand}"
+                        Style="{StaticResource ExplorerToolButton}"/>
+                <Button Content="&#x25BC;" ToolTip="Collapse All"
+                        Command="{Binding CollapseAllCommand}"
+                        Style="{StaticResource ExplorerToolButton}"/>
+            </StackPanel>
+        </Border>
+
+        <!-- File tree -->
+        <TreeView Grid.Row="1"
+                  x:Name="FileTree"
+                  ItemsSource="{Binding RootNodes}"
+                  Background="{StaticResource BackgroundBrush}"
+                  BorderThickness="0"
+                  VirtualizingPanel.IsVirtualizing="True"
+                  VirtualizingPanel.VirtualizationMode="Recycling"
+                  SelectedItemChanged="FileTree_SelectedItemChanged">
+
+            <TreeView.Resources>
+                <!-- Context menu for tree items -->
+                <ContextMenu x:Key="FileNodeContextMenu"
+                             Background="{StaticResource SurfaceBrush}"
+                             BorderBrush="{StaticResource BorderBrush}"
+                             Foreground="{StaticResource TextBrush}">
+                    <MenuItem Header="Open" FontWeight="Bold"
+                              Click="ContextMenu_Open"/>
+                    <Separator/>
+                    <MenuItem Header="New File..."
+                              Click="ContextMenu_NewFile"/>
+                    <MenuItem Header="New Folder..."
+                              Click="ContextMenu_NewFolder"/>
+                    <Separator/>
+                    <MenuItem Header="Rename..."
+                              Click="ContextMenu_Rename"/>
+                    <MenuItem Header="Delete"
+                              Click="ContextMenu_Delete"/>
+                    <Separator/>
+                    <MenuItem Header="Copy Path"
+                              Click="ContextMenu_CopyPath"/>
+                    <MenuItem Header="Reveal in Explorer"
+                              Click="ContextMenu_RevealInExplorer"/>
+                </ContextMenu>
+            </TreeView.Resources>
+
+            <TreeView.ItemContainerStyle>
+                <Style TargetType="TreeViewItem">
+                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                    <Setter Property="FontFamily" Value="Cascadia Code,Consolas,Courier New"/>
+                    <Setter Property="FontSize" Value="12"/>
+                    <Setter Property="Padding" Value="2,1"/>
+                    <Setter Property="ContextMenu" Value="{StaticResource FileNodeContextMenu}"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="TreeViewItem">
+                                <StackPanel>
+                                    <Border x:Name="Bd" Background="Transparent"
+                                            Padding="{TemplateBinding Padding}"
+                                            BorderThickness="0"
+                                            Cursor="Hand">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <ToggleButton x:Name="Expander" Grid.Column="0"
+                                                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"
+                                                          ClickMode="Press"
+                                                          Width="16" Height="16"
+                                                          Margin="0,0,2,0">
+                                                <ToggleButton.Style>
+                                                    <Style TargetType="ToggleButton">
+                                                        <Setter Property="Focusable" Value="False"/>
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="ToggleButton">
+                                                                    <Border Background="Transparent" Padding="2">
+                                                                        <TextBlock x:Name="Arrow" Text="▸"
+                                                                                   FontSize="10"
+                                                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                                                   VerticalAlignment="Center"
+                                                                                   HorizontalAlignment="Center"/>
+                                                                    </Border>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <Trigger Property="IsChecked" Value="True">
+                                                                            <Setter TargetName="Arrow" Property="Text" Value="▾"/>
+                                                                        </Trigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </Style>
+                                                </ToggleButton.Style>
+                                            </ToggleButton>
+                                            <ContentPresenter Grid.Column="1"
+                                                              ContentSource="Header"
+                                                              HorizontalAlignment="Stretch"/>
+                                        </Grid>
+                                    </Border>
+                                    <ItemsPresenter x:Name="ItemsHost" Margin="16,0,0,0"/>
+                                </StackPanel>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="HasItems" Value="False">
+                                        <Setter TargetName="Expander" Property="Visibility" Value="Hidden"/>
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="Bd" Property="Background"
+                                                Value="{StaticResource SurfaceLightBrush}"/>
+                                    </Trigger>
+                                    <Trigger SourceName="Bd" Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background"
+                                                Value="{StaticResource SurfaceBrush}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </TreeView.ItemContainerStyle>
+
+            <TreeView.ItemTemplate>
+                <HierarchicalDataTemplate DataType="{x:Type models:FileNode}"
+                                          ItemsSource="{Binding Children}">
+                    <StackPanel Orientation="Horizontal" Margin="2,1">
+                        <TextBlock Text="{Binding Icon}" FontSize="12" Margin="0,0,6,0"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </HierarchicalDataTemplate>
+            </TreeView.ItemTemplate>
+        </TreeView>
+    </Grid>
+</UserControl>
