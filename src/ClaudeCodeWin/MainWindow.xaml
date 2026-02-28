@@ -236,7 +236,7 @@
                         <views:FileExplorerControl DataContext="{Binding Explorer}"/>
                     </Border>
 
-                    <!-- File editor panel (basic TextBox for Phase 1) -->
+                    <!-- File editor panel -->
                     <Grid Visibility="{Binding IsFileEditorActive, Converter={StaticResource BoolToVis}}">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>  <!-- Editor toolbar -->
@@ -260,23 +260,10 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- TextBox editor -->
-                        <TextBox Grid.Row="1"
-                                 x:Name="FileEditorTextBox"
-                                 Text="{Binding ActiveFileTab.Content, UpdateSourceTrigger=PropertyChanged}"
-                                 AcceptsReturn="True"
-                                 AcceptsTab="True"
-                                 TextWrapping="NoWrap"
-                                 HorizontalScrollBarVisibility="Auto"
-                                 VerticalScrollBarVisibility="Auto"
-                                 FontFamily="Cascadia Code,Consolas,Courier New"
-                                 FontSize="14"
-                                 Background="{StaticResource BackgroundBrush}"
-                                 Foreground="{StaticResource TextBrush}"
-                                 CaretBrush="{StaticResource TextBrush}"
-                                 BorderThickness="0"
-                                 Padding="12,8"
-                                 TextChanged="FileEditor_TextChanged"/>
+                        <!-- Code editor with line numbers, search/replace -->
+                        <views:CodeEditorControl Grid.Row="1"
+                                                 x:Name="FileEditor"
+                                                 Text="{Binding ActiveFileTab.Content, UpdateSourceTrigger=PropertyChanged}"/>
                     </Grid>
 
                     <!-- Chat panel (existing chat UI) -->

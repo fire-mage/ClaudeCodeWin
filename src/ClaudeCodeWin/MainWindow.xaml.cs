@@ -187,10 +187,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void FileEditor_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        // HasUnsavedChanges is tracked automatically via SubTab.Content setter
-    }
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
@@ -492,6 +488,39 @@ public partial class MainWindow : Window
             if (ViewModel.IsFileEditorActive)
             {
                 ViewModel.SaveFileTab();
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // Ctrl+F = Find in editor
+        if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (ViewModel.IsFileEditorActive)
+            {
+                FileEditor.ShowSearch();
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // Ctrl+H = Find and Replace in editor
+        if (e.Key == Key.H && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (ViewModel.IsFileEditorActive)
+            {
+                FileEditor.ShowReplace();
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // Ctrl+G = Go to Line in editor
+        if (e.Key == Key.G && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (ViewModel.IsFileEditorActive)
+            {
+                FileEditor.GoToLine();
                 e.Handled = true;
                 return;
             }
