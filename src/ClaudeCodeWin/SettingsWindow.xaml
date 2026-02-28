@@ -129,7 +129,7 @@
                       Checked="Reviewer_Changed" Unchecked="Reviewer_Changed">
                 <StackPanel>
                     <TextBlock Text="Reviewer" FontWeight="SemiBold"/>
-                    <TextBlock Text="Auto-review code after task completion. A second Claude reviews your work and suggests fixes. Up to 3 automatic re-reviews."
+                    <TextBlock Text="Auto-review code after task completion. A second Claude reviews your work and suggests fixes. Up to 5 automatic re-reviews."
                                FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                 </StackPanel>
             </CheckBox>

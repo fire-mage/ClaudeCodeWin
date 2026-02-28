@@ -2,7 +2,7 @@ namespace ClaudeCodeWin.Services.Highlighting;
 
 public class CSharpTokenizer : ILanguageTokenizer
 {
-    private static readonly HashSet<string> Keywords =
+    internal static readonly HashSet<string> Keywords =
     [
         "abstract", "as", "base", "break", "case", "catch", "checked", "class",
         "const", "continue", "default", "delegate", "do", "enum", "event",
@@ -17,21 +17,21 @@ public class CSharpTokenizer : ILanguageTokenizer
         "value", "add", "remove", "when", "and", "or", "not",
     ];
 
-    private static readonly HashSet<string> ControlKeywords =
+    internal static readonly HashSet<string> ControlKeywords =
     [
         "if", "else", "for", "foreach", "while", "do", "switch", "case",
         "break", "continue", "return", "throw", "try", "catch", "finally",
         "goto", "yield", "default", "when",
     ];
 
-    private static readonly HashSet<string> TypeKeywords =
+    internal static readonly HashSet<string> TypeKeywords =
     [
         "bool", "byte", "sbyte", "char", "decimal", "double", "float",
         "int", "uint", "long", "ulong", "nint", "nuint", "object",
         "short", "ushort", "string", "var", "dynamic", "void",
     ];
 
-    private static readonly HashSet<string> LiteralKeywords =
+    internal static readonly HashSet<string> LiteralKeywords =
     [
         "true", "false", "null",
     ];

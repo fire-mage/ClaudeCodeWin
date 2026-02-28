@@ -235,9 +235,23 @@ public partial class MainViewModel
         if (_reviewAttempt >= _settings.ReviewAutoRetries)
         {
             Messages.Add(new MessageViewModel(MessageRole.System,
-                $"Review found issues after {_reviewAttempt} attempts. Awaiting your decision."));
-            ReviewStatusText = $"Review: Issues after {_reviewAttempt} rounds";
-            TryShowTaskSuggestion();
+                $"Review found issues after {_reviewAttempt} rounds. Sending final feedback to Claude."));
+            ReviewStatusText = $"Review: Final fix (round {_reviewAttempt})";
+
+            // Send the final review feedback to Claude (no further auto-review after this)
+            var finalFixPrompt = $"""
+                A code reviewer found issues after {_reviewAttempt} review rounds. This is the FINAL round — no more automatic reviews will follow.
+                Please carefully fix ALL remaining issues:
+
+                {reviewText}
+
+                After fixing, provide a brief summary of what you changed.
+                """;
+            SendDirectAsync(finalFixPrompt, null, "Final Review Fix").ContinueWith(t =>
+            {
+                if (t.Exception is not null)
+                    DiagnosticLogger.Log("REVIEW_FIX_ERROR", t.Exception.InnerException?.Message ?? t.Exception.Message);
+            }, TaskContinuationOptions.OnlyOnFaulted);
             return;
         }
 

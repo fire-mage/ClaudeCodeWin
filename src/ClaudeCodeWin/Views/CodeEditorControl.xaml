@@ -119,6 +119,81 @@
                          TextChanged="Editor_TextChanged"
                          SelectionChanged="Editor_SelectionChanged"
                          PreviewKeyDown="Editor_PreviewKeyDown"/>
+
+                <!-- IntelliSense completion popup -->
+                <Popup x:Name="CompletionPopup"
+                       PlacementTarget="{Binding ElementName=Editor}"
+                       Placement="Relative"
+                       StaysOpen="True"
+                       AllowsTransparency="True"
+                       PopupAnimation="None"
+                       MaxHeight="240">
+                    <Border Background="{StaticResource SurfaceBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="0,2">
+                        <ListBox x:Name="CompletionList"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Foreground="{StaticResource TextBrush}"
+                                 FontFamily="Cascadia Code,Consolas,Courier New"
+                                 FontSize="13"
+                                 MaxHeight="220"
+                                 Focusable="False"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 MouseDoubleClick="CompletionList_MouseDoubleClick">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Focusable" Value="False"/>
+                                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="Margin" Value="0"/>
+                                    <Setter Property="Cursor" Value="Hand"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="Bd" Background="Transparent" Padding="6,3">
+                                                    <ContentPresenter/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background"
+                                                                Value="{StaticResource SurfaceLightBrush}"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background"
+                                                                Value="{StaticResource MenuHighlightBrush}"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Background="{StaticResource SurfaceLightBrush}"
+                                                CornerRadius="2" Padding="4,1" Margin="0,0,6,0"
+                                                MinWidth="22" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding KindBadge}"
+                                                       FontSize="10" FontWeight="Bold"
+                                                       Foreground="{Binding KindBrush}"
+                                                       HorizontalAlignment="Center"/>
+                                        </Border>
+                                        <TextBlock Text="{Binding Label}"
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding Detail}" Margin="12,0,0,0"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="11" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </Popup>
             </Grid>
         </Grid>
     </Grid>

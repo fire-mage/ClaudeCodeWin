@@ -1,9 +1,11 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using ClaudeCodeWin.Models;
 using ClaudeCodeWin.Services.Highlighting;
 
 namespace ClaudeCodeWin.Views;
@@ -24,6 +26,14 @@ public partial class CodeEditorControl : UserControl
     private (int pos, int matchPos) _bracketHighlight = (-1, -1);
     private bool _fontMetricsMeasured;
 
+    // IntelliSense state
+    private ICompletionProvider? _completionProvider;
+    private List<CompletionItem> _allCompletionItems = [];
+    private int _completionAnchor = -1;
+    private bool _completionActive;
+    private DispatcherTimer? _autoTriggerTimer;
+    private bool _suppressCompletionTrigger;
+
     public CodeEditorControl()
     {
         InitializeComponent();
@@ -32,6 +42,7 @@ public partial class CodeEditorControl : UserControl
             HookScrollViewer();
             MeasureFontMetrics();
         };
+        Editor.LostKeyboardFocus += (_, _) => DismissCompletion();
     }
 
     // Dependency Property: Text (two-way binding to SubTab.Content)
@@ -72,6 +83,7 @@ public partial class CodeEditorControl : UserControl
         var control = (CodeEditorControl)d;
         var path = e.NewValue as string;
         control._tokenizer = LanguageDetector.GetTokenizer(path);
+        control._completionProvider = LanguageDetector.GetCompletionProvider(path);
         control._highlightingActive = control._tokenizer != null;
 
         // Toggle foreground transparency for syntax highlighting
@@ -90,6 +102,7 @@ public partial class CodeEditorControl : UserControl
             control._bracketHighlight = (-1, -1);
             control.HighlightLayer.UpdateState("", [], [0], (-1, -1), 0, 0, 0);
             control.HighlightLayer.InvalidateHighlighting();
+            control.DismissCompletion();
         }
 
         control.UpdateSyntaxHighlighting();
@@ -236,6 +249,9 @@ public partial class CodeEditorControl : UserControl
     {
         SyncLineNumbersScroll();
         SyncHighlightLayer();
+
+        if (_completionActive)
+            DismissCompletion();
     }
 
     private void SyncLineNumbersScroll()
@@ -277,6 +293,46 @@ public partial class CodeEditorControl : UserControl
 
     private void Editor_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // IntelliSense keyboard handling (highest priority when popup is open)
+        if (_completionActive && CompletionPopup.IsOpen)
+        {
+            if (e.Key == Key.Down)
+            {
+                CompletionList.SelectedIndex =
+                    Math.Min(CompletionList.SelectedIndex + 1, CompletionList.Items.Count - 1);
+                CompletionList.ScrollIntoView(CompletionList.SelectedItem);
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.Up)
+            {
+                CompletionList.SelectedIndex = Math.Max(CompletionList.SelectedIndex - 1, 0);
+                CompletionList.ScrollIntoView(CompletionList.SelectedItem);
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.Tab || e.Key == Key.Return)
+            {
+                AcceptCompletion();
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.Escape)
+            {
+                DismissCompletion();
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // Ctrl+Space → manual IntelliSense trigger
+        if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            TriggerCompletion(CompletionTrigger.Manual);
+            e.Handled = true;
+            return;
+        }
+
         // Tab → 4 spaces
         if (e.Key == Key.Tab && Keyboard.Modifiers == ModifierKeys.None)
         {
@@ -632,10 +688,50 @@ public partial class CodeEditorControl : UserControl
                 MatchCountLabel.Text = "No results";
             }
         }
+
+        // IntelliSense hooks
+        if (_completionProvider != null && !_suppressCompletionTrigger)
+        {
+            if (_completionActive)
+            {
+                FilterCompletion();
+            }
+            else
+            {
+                var text = Editor.Text ?? "";
+                var caret = Editor.CaretIndex;
+                var charTrigger = caret > 0 ? _completionProvider!.GetTriggerForCharacter(text[caret - 1]) : null;
+                if (charTrigger.HasValue)
+                {
+                    TriggerCompletion(charTrigger.Value);
+                }
+                else
+                {
+                    ScheduleAutoTrigger();
+                }
+            }
+        }
     }
 
     private void Editor_SelectionChanged(object sender, RoutedEventArgs e)
     {
+        // Dismiss completion if caret moved outside the completion word
+        if (_completionActive)
+        {
+            var caret = Editor.CaretIndex;
+            var text = Editor.Text ?? "";
+            if (caret < _completionAnchor || caret > text.Length)
+            {
+                DismissCompletion();
+            }
+            else
+            {
+                var segment = text[_completionAnchor..caret];
+                if (segment.Length > 0 && !segment.All(c => _completionProvider!.IsIdentifierChar(c)))
+                    DismissCompletion();
+            }
+        }
+
         if (!_highlightingActive) return;
 
         var oldHighlight = _bracketHighlight;
@@ -688,6 +784,277 @@ public partial class CodeEditorControl : UserControl
     private void CloseSearch_Click(object sender, RoutedEventArgs e) => HideSearch();
     private void ReplaceOne_Click(object sender, RoutedEventArgs e) => ReplaceOne();
     private void ReplaceAll_Click(object sender, RoutedEventArgs e) => ReplaceAll();
+    private void CompletionList_MouseDoubleClick(object sender, MouseButtonEventArgs e) => AcceptCompletion();
+
+    #endregion
+
+    #region IntelliSense
+
+    private void TriggerCompletion(CompletionTrigger trigger)
+    {
+        if (_completionProvider == null) return;
+
+        var text = Editor.Text ?? "";
+        var caret = Editor.CaretIndex;
+
+        // Don't trigger inside strings or comments
+        if (IsInsideStringOrComment(caret))
+        {
+            DismissCompletion();
+            return;
+        }
+
+        var items = _completionProvider.GetCompletions(text, caret, trigger, _cachedTokens);
+        if (items.Count == 0)
+        {
+            DismissCompletion();
+            return;
+        }
+
+        var (wordStart, _) = _completionProvider.GetWordAtCaret(text, caret);
+        _completionAnchor = (trigger == CompletionTrigger.Dot || trigger == CompletionTrigger.Angle) ? caret : (wordStart >= 0 ? wordStart : caret);
+
+        _allCompletionItems = items;
+        CompletionList.ItemsSource = items;
+        CompletionList.SelectedIndex = 0;
+
+        PositionCompletionPopup();
+        CompletionPopup.IsOpen = true;
+        _completionActive = true;
+
+        // Keep focus on the editor
+        Editor.Focus();
+    }
+
+    private void DismissCompletion()
+    {
+        CompletionPopup.IsOpen = false;
+        _completionActive = false;
+        _allCompletionItems = [];
+        _autoTriggerTimer?.Stop();
+    }
+
+    private void FilterCompletion()
+    {
+        var text = Editor.Text ?? "";
+        var caret = Editor.CaretIndex;
+
+        // Dismiss if caret moved before anchor
+        if (caret < _completionAnchor)
+        {
+            DismissCompletion();
+            return;
+        }
+
+        var prefix = text[_completionAnchor..caret];
+
+        // Dismiss if prefix contains non-identifier character
+        if (prefix.Length > 0 && _completionProvider != null && !prefix.All(c => _completionProvider.IsIdentifierChar(c)))
+        {
+            DismissCompletion();
+            return;
+        }
+
+        List<CompletionItem> filtered;
+        if (prefix.Length == 0)
+        {
+            filtered = _allCompletionItems;
+        }
+        else
+        {
+            filtered = _allCompletionItems
+                .Where(item => item.Label.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        if (filtered.Count == 0)
+        {
+            DismissCompletion();
+            return;
+        }
+
+        // If exactly one match and it equals the prefix, dismiss (user typed the full word)
+        if (filtered.Count == 1 && filtered[0].Label.Equals(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            DismissCompletion();
+            return;
+        }
+
+        CompletionList.ItemsSource = filtered;
+        CompletionList.SelectedIndex = 0;
+    }
+
+    private void AcceptCompletion()
+    {
+        if (CompletionList.SelectedItem is not CompletionItem item)
+        {
+            DismissCompletion();
+            return;
+        }
+
+        var caret = Editor.CaretIndex;
+        var replaceLength = caret - _completionAnchor;
+
+        // Expand snippet with current line indentation
+        string insertText;
+        int caretOffset;
+        if (item.Kind == CompletionItemKind.Snippet)
+            (insertText, caretOffset) = ExpandSnippet(item);
+        else
+            (insertText, caretOffset) = (item.InsertText, item.CaretOffset);
+
+        // Suppress auto-trigger during insertion
+        _suppressCompletionTrigger = true;
+        try
+        {
+            Editor.Select(_completionAnchor, replaceLength);
+            Editor.SelectedText = insertText;
+
+            if (caretOffset >= 0)
+                Editor.CaretIndex = _completionAnchor + caretOffset;
+            else
+                Editor.CaretIndex = _completionAnchor + insertText.Length;
+        }
+        finally
+        {
+            _suppressCompletionTrigger = false;
+        }
+
+        DismissCompletion();
+    }
+
+    private (string text, int caretOffset) ExpandSnippet(CompletionItem snippet)
+    {
+        // Get current line's leading whitespace
+        var lineIndex = Editor.GetLineIndexFromCharacterIndex(_completionAnchor);
+        var lineText = lineIndex >= 0 ? (Editor.GetLineText(lineIndex) ?? "") : "";
+        var indent = "";
+        foreach (var ch in lineText)
+        {
+            if (ch == ' ' || ch == '\t') indent += ch;
+            else break;
+        }
+
+        var template = snippet.InsertText;
+        var rawCaretOffset = snippet.CaretOffset;
+
+        // Split by \r\n and add indent to each subsequent line
+        var lines = template.Split("\r\n");
+        if (lines.Length <= 1)
+            return (template, rawCaretOffset);
+
+        // Build expanded text and track caret offset
+        var sb = new System.Text.StringBuilder();
+        int expandedCaretOffset = -1;
+        int currentPos = 0;
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (i > 0)
+            {
+                sb.Append("\r\n");
+                sb.Append(indent);
+                currentPos += 2 + indent.Length; // \r\n + indent
+            }
+
+            // Check if rawCaretOffset falls within this line
+            int lineStartInTemplate = GetLineStartInTemplate(lines, i);
+            int lineEndInTemplate = lineStartInTemplate + lines[i].Length;
+            if (rawCaretOffset >= 0 && rawCaretOffset >= lineStartInTemplate && rawCaretOffset <= lineEndInTemplate)
+            {
+                expandedCaretOffset = currentPos + (rawCaretOffset - lineStartInTemplate);
+            }
+
+            sb.Append(lines[i]);
+            currentPos += lines[i].Length;
+        }
+
+        return (sb.ToString(), expandedCaretOffset >= 0 ? expandedCaretOffset : rawCaretOffset);
+    }
+
+    private static int GetLineStartInTemplate(string[] lines, int lineIndex)
+    {
+        int pos = 0;
+        for (int i = 0; i < lineIndex; i++)
+            pos += lines[i].Length + 2; // +2 for \r\n
+        return pos;
+    }
+
+    private void PositionCompletionPopup()
+    {
+        try
+        {
+            var rect = Editor.GetRectFromCharacterIndex(Editor.CaretIndex);
+            CompletionPopup.HorizontalOffset = rect.Left;
+            CompletionPopup.VerticalOffset = rect.Bottom + 2;
+
+            // After layout, check if popup goes below viewport and flip above if needed
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+            {
+                if (CompletionPopup.Child is FrameworkElement child && _editorScrollViewer != null)
+                {
+                    var popupHeight = child.ActualHeight;
+                    var editorHeight = _editorScrollViewer.ViewportHeight;
+                    if (rect.Bottom + popupHeight > editorHeight)
+                    {
+                        CompletionPopup.VerticalOffset = rect.Top - popupHeight - 2;
+                    }
+                }
+            });
+        }
+        catch (Exception)
+        {
+            // GetRectFromCharacterIndex throws when caret position is not yet rendered
+        }
+    }
+
+    private void ScheduleAutoTrigger()
+    {
+        if (_completionProvider == null) return;
+
+        if (_autoTriggerTimer == null)
+        {
+            _autoTriggerTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(200)
+            };
+            _autoTriggerTimer.Tick += AutoTriggerTimer_Tick;
+        }
+
+        _autoTriggerTimer.Stop();
+        _autoTriggerTimer.Start();
+    }
+
+    private void AutoTriggerTimer_Tick(object? sender, EventArgs e)
+    {
+        _autoTriggerTimer!.Stop();
+
+        if (_completionProvider == null || _completionActive) return;
+
+        var text = Editor.Text ?? "";
+        var caret = Editor.CaretIndex;
+        var (_, prefix) = _completionProvider.GetWordAtCaret(text, caret);
+
+        if (prefix.Length >= 2)
+            TriggerCompletion(CompletionTrigger.Typing);
+    }
+
+    private bool IsInsideStringOrComment(int position)
+    {
+        int lo = 0, hi = _cachedTokens.Count - 1;
+        while (lo <= hi)
+        {
+            int mid = (lo + hi) / 2;
+            var token = _cachedTokens[mid];
+            if (token.Start + token.Length <= position)
+                lo = mid + 1;
+            else if (token.Start > position)
+                hi = mid - 1;
+            else // position is inside this token's range
+                return token.Type is SyntaxTokenType.String or SyntaxTokenType.Comment;
+        }
+        return false;
+    }
 
     #endregion
 }

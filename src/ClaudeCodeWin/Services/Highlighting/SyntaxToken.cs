@@ -12,6 +12,8 @@ public enum SyntaxTokenType
     Comment,
     Preprocessor,
     TypeName,
+    Attribute,
+    TagName,
 }
 
 public readonly record struct SyntaxToken(int Start, int Length, SyntaxTokenType Type);

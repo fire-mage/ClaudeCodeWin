@@ -34,6 +34,8 @@ public class SyntaxHighlightLayer : FrameworkElement
     private static readonly Brush CommentBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x6A, 0x99, 0x55)));
     private static readonly Brush PreprocessorBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80)));
     private static readonly Brush LiteralBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x56, 0x9C, 0xD6)));
+    private static readonly Brush AttributeBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x9C, 0xDC, 0xFE)));
+    private static readonly Brush TagNameBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x56, 0x9C, 0xD6)));
     private static readonly Brush BracketMatchBg = Freeze(new SolidColorBrush(Color.FromRgb(0x2a, 0x4a, 0x2a)));
     private static readonly Brush BracketMatchBorder = Freeze(new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50)));
     private static readonly Pen BracketMatchPen = FreezePen(BracketMatchBorder, 1);
@@ -196,6 +198,8 @@ public class SyntaxHighlightLayer : FrameworkElement
         SyntaxTokenType.Number => NumberBrush,
         SyntaxTokenType.Comment => CommentBrush,
         SyntaxTokenType.Preprocessor => PreprocessorBrush,
+        SyntaxTokenType.Attribute => AttributeBrush,
+        SyntaxTokenType.TagName => TagNameBrush,
         _ => PlainTextBrush,
     };
 }
