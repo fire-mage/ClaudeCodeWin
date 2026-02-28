@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -427,13 +426,6 @@ public partial class MarketplaceWindow : Window
         var kbTag = Services.McpRegistryService.GetKbTag(server);
         if (_installedIds.Contains(kbTag))
         {
-            // HTTP servers may need OAuth — offer to launch interactive CLI for authorization
-            if (IsRemoteTransport(server))
-            {
-                LaunchMcpAuthorization(server);
-                return;
-            }
-
             MessageBox.Show($"'{server.DisplayName}' is already installed and documented in your Knowledge Base.",
                 "Already Installed", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
@@ -442,38 +434,6 @@ public partial class MarketplaceWindow : Window
         SelectedMcpServer = server;
         IsMcpInstall = true;
         DialogResult = true;
-    }
-
-    private void LaunchMcpAuthorization(McpRegistryServer server)
-    {
-        try
-        {
-            // Launch interactive CLI in a visible terminal window.
-            // CLAUDECODE env var must be cleared — otherwise nested CLI refuses to start.
-            var psi = new ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                Arguments = "/c \"set CLAUDECODE= && claude\"",
-                UseShellExecute = true,  // opens a new console window
-            };
-            Process.Start(psi);
-
-            MessageBox.Show(
-                $"An interactive Claude CLI window has been opened.\n\n" +
-                $"When prompted about '{server.DisplayName}', follow the OAuth flow in your browser to authorize access.\n\n" +
-                $"After authorization is complete, you can close the CLI window.",
-                "MCP Authorization",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(
-                $"Failed to launch Claude CLI: {ex.Message}",
-                "Authorization Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-        }
     }
 
     private void McpInstallButton_Loaded(object sender, RoutedEventArgs e)
@@ -486,26 +446,10 @@ public partial class MarketplaceWindow : Window
     {
         var server = _mcpServers.FirstOrDefault(s => s.Name == serverName);
         if (server is not null && _installedIds.Contains(Services.McpRegistryService.GetKbTag(server)))
-        {
-            if (IsRemoteTransport(server))
-                MarkButtonAsAuthorize(btn);
-            else
-                MarkButtonAsInstalled(btn);
-        }
+            MarkButtonAsInstalled(btn);
         else
-        {
             ResetButtonToInstall(btn);
-        }
     }
-
-    /// <summary>
-    /// Returns true if the server uses remote transport (streamable-http, http, sse).
-    /// These servers typically need OAuth authorization.
-    /// </summary>
-    private static bool IsRemoteTransport(McpRegistryServer server)
-        => server.Remotes.Count > 0
-           || server.TransportDisplay.Contains("http", StringComparison.OrdinalIgnoreCase)
-           || server.TransportDisplay.Equals("sse", StringComparison.OrdinalIgnoreCase);
 
     private void PluginInstallButton_Loaded(object sender, RoutedEventArgs e)
     {
@@ -524,17 +468,6 @@ public partial class MarketplaceWindow : Window
         btn.Background = System.Windows.Media.Brushes.Transparent;
         btn.BorderBrush = (System.Windows.Media.Brush)Application.Current.FindResource("PrimaryBrush");
         btn.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("PrimaryBrush");
-        btn.BorderThickness = new Thickness(1);
-    }
-
-    private static void MarkButtonAsAuthorize(Button btn)
-    {
-        btn.Content = "Authorize";
-        btn.IsHitTestVisible = true;
-        btn.Opacity = 1.0;
-        btn.Background = System.Windows.Media.Brushes.Transparent;
-        btn.BorderBrush = (System.Windows.Media.Brush)Application.Current.FindResource("AccentBrush");
-        btn.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("AccentBrush");
         btn.BorderThickness = new Thickness(1);
     }
 

@@ -35,7 +35,7 @@ public class McpRegistryService
     {
         var cache = LoadCache();
         if (cache is not null && (DateTime.UtcNow - cache.FetchedAt) < CacheTtl)
-            return (DeduplicateByName(cache.Servers), true);
+            return (DeduplicateByName(cache.Servers.Where(s => s.Packages.Count > 0).ToList()), true);
 
         var servers = await FetchFirstPageAsync(ct);
         SaveCache(new RegistryCache { FetchedAt = DateTime.UtcNow, Servers = servers });
@@ -59,21 +59,7 @@ public class McpRegistryService
     {
         var slug = SanitizeSlug(server.Name.Replace('/', '-'));
 
-        // Remote servers (HTTP/SSE)
-        if (server.Remotes.Count > 0)
-        {
-            var remote = server.Remotes[0];
-            var transport = remote.Type switch
-            {
-                "streamable-http" => "http",
-                "sse" => "sse",
-                _ => "http"
-            };
-            var url = QuoteArg(remote.Url);
-            return $"claude mcp add --transport {transport} {slug} {url}";
-        }
-
-        // Package-based servers (npm, pypi, docker)
+        // Package-based servers (npm, pypi, docker) — preferred over remote
         if (server.Packages.Count > 0)
         {
             var pkg = server.Packages[0];
@@ -118,6 +104,7 @@ public class McpRegistryService
         var servers = response.Servers
             .Where(e => e.Server is not null)
             .Select(e => e.Server!)
+            .Where(s => s.Packages.Count > 0) // Exclude remote-only servers (OAuth not supported by CLI)
             .ToList();
 
         return DeduplicateByName(servers);
