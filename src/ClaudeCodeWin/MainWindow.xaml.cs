@@ -206,6 +206,22 @@ public partial class MainWindow : Window
 
     private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        // Confirm if any tab is currently processing
+        if (TabHost.Tabs.Any(t => t.IsProcessing))
+        {
+            var result = MessageBox.Show(
+                "Claude is currently processing. Are you sure you want to stop and close?",
+                "Close Application",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question,
+                MessageBoxResult.No);
+            if (result != MessageBoxResult.Yes)
+            {
+                e.Cancel = true;
+                return;
+            }
+        }
+
         // Save window state before closing
         if (WindowState == WindowState.Normal)
         {
@@ -379,20 +395,41 @@ public partial class MainWindow : Window
             }
         }
 
-        // Up arrow = recall last sent message (if Claude hasn't started responding yet)
+        // Up arrow: on first line — move caret to line start (or recall last message if empty)
         if (e.Key == Key.Up && InputTextBox.IsFocused && Keyboard.Modifiers == ModifierKeys.None)
         {
-            // Only recall when input is empty or caret is on the first line
             var caretLine = InputTextBox.GetLineIndexFromCharacterIndex(InputTextBox.CaretIndex);
-            if (caretLine <= 0 && string.IsNullOrEmpty(InputTextBox.Text))
+            if (caretLine <= 0)
             {
-                if (ViewModel.RecallLastMessage())
+                if (string.IsNullOrEmpty(InputTextBox.Text))
                 {
-                    // Move caret to end of restored text
-                    InputTextBox.CaretIndex = InputTextBox.Text.Length;
+                    // Empty input: recall last sent message
+                    if (ViewModel.RecallLastMessage())
+                    {
+                        InputTextBox.CaretIndex = InputTextBox.Text.Length;
+                        e.Handled = true;
+                        return;
+                    }
+                }
+                else
+                {
+                    // Has text: move caret to beginning of line
+                    InputTextBox.CaretIndex = 0;
                     e.Handled = true;
                     return;
                 }
+            }
+        }
+
+        // Down arrow: on last line — move caret to end of text
+        if (e.Key == Key.Down && InputTextBox.IsFocused && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            var caretLine = InputTextBox.GetLineIndexFromCharacterIndex(InputTextBox.CaretIndex);
+            if (caretLine >= InputTextBox.LineCount - 1)
+            {
+                InputTextBox.CaretIndex = InputTextBox.Text.Length;
+                e.Handled = true;
+                return;
             }
         }
 
