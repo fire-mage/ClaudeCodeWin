@@ -135,7 +135,8 @@ public partial class CodeEditorControl : UserControl
     private void InsertAtCaret(string text)
     {
         var caretIndex = Editor.CaretIndex;
-        Editor.Text = Editor.Text.Insert(caretIndex, text);
+        Editor.Select(caretIndex, 0);
+        Editor.SelectedText = text;
         Editor.CaretIndex = caretIndex + text.Length;
     }
 
@@ -157,7 +158,8 @@ public partial class CodeEditorControl : UserControl
         if (spacesToRemove > 0)
         {
             var caretOffset = Editor.CaretIndex - lineStart;
-            Editor.Text = Editor.Text.Remove(lineStart, spacesToRemove);
+            Editor.Select(lineStart, spacesToRemove);
+            Editor.SelectedText = "";
             Editor.CaretIndex = lineStart + Math.Max(0, caretOffset - spacesToRemove);
         }
     }
@@ -212,7 +214,9 @@ public partial class CodeEditorControl : UserControl
     private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         UpdateMatchPositions();
-        if (_matchPositions.Count > 0)
+        if (string.IsNullOrEmpty(SearchTextBox.Text))
+            MatchCountLabel.Text = "";
+        else if (_matchPositions.Count > 0)
             NavigateToMatch(0);
         else
             MatchCountLabel.Text = "No results";
@@ -276,7 +280,7 @@ public partial class CodeEditorControl : UserControl
         if (Editor.SelectedText.Equals(query, StringComparison.OrdinalIgnoreCase))
         {
             var selStart = Editor.SelectionStart;
-            Editor.Text = Editor.Text.Remove(selStart, query.Length).Insert(selStart, replacement);
+            Editor.SelectedText = replacement;
             Editor.CaretIndex = selStart + replacement.Length;
 
             UpdateMatchPositions();
@@ -303,11 +307,14 @@ public partial class CodeEditorControl : UserControl
         var replacement = ReplaceTextBox.Text ?? "";
         if (string.IsNullOrEmpty(query)) return;
 
-        var text = Editor.Text ?? "";
-        var newText = text.Replace(query, replacement, StringComparison.OrdinalIgnoreCase);
         var count = _matchPositions.Count;
 
-        Editor.Text = newText;
+        // Replace from end to start to preserve positions
+        for (int i = _matchPositions.Count - 1; i >= 0; i--)
+        {
+            Editor.Select(_matchPositions[i], query.Length);
+            Editor.SelectedText = replacement;
+        }
         UpdateMatchPositions();
         MatchCountLabel.Text = $"Replaced {count}";
     }
@@ -325,8 +332,7 @@ public partial class CodeEditorControl : UserControl
             Height = 140,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Owner = Window.GetWindow(this),
-            Background = new SolidColorBrush(
-                (Color)ColorConverter.ConvertFromString("#161b22")),
+            Background = (Brush)FindResource("SurfaceBrush"),
             ResizeMode = ResizeMode.NoResize,
             WindowStyle = WindowStyle.ToolWindow
         };
@@ -340,20 +346,16 @@ public partial class CodeEditorControl : UserControl
         var label = new TextBlock
         {
             Text = $"Line number (1–{totalLines}):",
-            Foreground = new SolidColorBrush(
-                (Color)ColorConverter.ConvertFromString("#e6edf3")),
+            Foreground = (Brush)FindResource("TextBrush"),
             Margin = new Thickness(0, 0, 0, 8)
         };
         Grid.SetRow(label, 0);
 
         var textBox = new TextBox
         {
-            Background = new SolidColorBrush(
-                (Color)ColorConverter.ConvertFromString("#0d1117")),
-            Foreground = new SolidColorBrush(
-                (Color)ColorConverter.ConvertFromString("#e6edf3")),
-            BorderBrush = new SolidColorBrush(
-                (Color)ColorConverter.ConvertFromString("#30363d")),
+            Background = (Brush)FindResource("BackgroundBrush"),
+            Foreground = (Brush)FindResource("TextBrush"),
+            BorderBrush = (Brush)FindResource("BorderBrush"),
             Padding = new Thickness(8, 4, 8, 4),
             FontFamily = new FontFamily("Cascadia Code,Consolas,Courier New"),
             Margin = new Thickness(0, 0, 0, 12)
