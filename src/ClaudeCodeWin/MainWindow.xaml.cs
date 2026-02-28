@@ -977,12 +977,6 @@ public partial class MainWindow : Window
             container.BringIntoView();
     }
 
-    private void ReduceContext_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        ViewModel.ReduceContextCommand.Execute(null);
-        e.Handled = true;
-    }
-
     private void MenuItem_Settings_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new SettingsWindow(_settings, _settingsService, ViewModel, TabHost.Update, ViewModel.WorkingDirectory) { Owner = this };

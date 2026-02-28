@@ -50,20 +50,6 @@
                     <MenuItem Header="Chat _History..." Click="MenuItem_ChatHistory_Click"
                               ToolTip="Browse and reopen previous conversations."/>
                     <Separator/>
-                    <MenuItem Header="{Binding ActiveTab.ExpandContextMenuHeader}"
-                              Command="{Binding ActiveTab.ExpandContextCommand}"
-                              ToolTip="Toggle between standard (200K) and extended (1M) context window. Starts a new session.">
-                        <MenuItem.Style>
-                            <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveTab.IsContextExpanded}" Value="True">
-                                        <Setter Property="Foreground" Value="#f38ba8"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </MenuItem.Style>
-                    </MenuItem>
-                    <Separator/>
                     <MenuItem Header="E_xit" Click="MenuItem_Exit_Click"
                               ToolTip="Close the application. Window position and size are saved automatically."/>
                 </MenuItem>
@@ -2006,7 +1992,7 @@
                 <!-- Context block — label grey, percentage gold; hidden when no data -->
                 <StackPanel Grid.Column="4" Orientation="Horizontal"
                             VerticalAlignment="Center" Margin="0,0,16,0"
-                            ToolTip="Context window usage. Shows what percentage of Claude's memory is used.&#x0a;At 80%+ consider starting a new session or expanding to 1M tokens."
+                            ToolTip="Context window usage. Shows what percentage of Claude's memory is used.&#x0a;At 80%+ consider starting a new session."
                             Visibility="{Binding ContextPctText, Converter={StaticResource StringToVis}}">
                     <TextBlock Text="Context window used: "
                                FontSize="11"
@@ -2041,15 +2027,6 @@
                                       ToolTip="Start a fresh conversation. Clears history and resets memory usage."/>
                         </ContextMenu>
                     </Border.ContextMenu>
-                </Border>
-                <!-- Reduce Context button — visible only when 1M mode is active -->
-                <Border Grid.Column="6" VerticalAlignment="Center" Margin="0,0,12,0"
-                        Cursor="Hand" Background="Transparent"
-                        MouseLeftButtonUp="ReduceContext_Click"
-                        ToolTip="Switch back to standard context (200K) and start a new chat."
-                        Visibility="{Binding IsContextExpanded, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="Reduce Context" FontSize="11" FontWeight="SemiBold"
-                               Foreground="#f38ba8"/>
                 </Border>
                 <Border Grid.Column="7" VerticalAlignment="Center"
                         Background="Transparent"

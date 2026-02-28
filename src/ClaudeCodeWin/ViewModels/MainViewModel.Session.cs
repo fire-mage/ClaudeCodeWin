@@ -162,52 +162,6 @@ public partial class MainViewModel
         Messages.Add(new MessageViewModel(MessageRole.System, "Switching to Opus. Next message will use claude-opus."));
     }
 
-    private void ExpandContext()
-    {
-        // Get current model base name (strip existing [1m] suffix if any)
-        var currentModel = _modelName;
-        if (string.IsNullOrEmpty(currentModel))
-            currentModel = "sonnet";
-
-        if (currentModel.Contains("[1m]"))
-        {
-            // Already in 1M mode — switch back to standard
-            _cliService.ModelOverride = currentModel.Replace("[1m]", "");
-            StartNewSession();
-            Messages.Add(new MessageViewModel(MessageRole.System, "Switched back to standard context window (200K)."));
-        }
-        else
-        {
-            // Expand to 1M
-            var baseModel = currentModel switch
-            {
-                var m when m.Contains("opus") => "opus",
-                var m when m.Contains("haiku") => "haiku",
-                _ => "sonnet"
-            };
-            _cliService.ModelOverride = $"{baseModel}[1m]";
-            StartNewSession();
-            _contextWarningShown = false;
-            Messages.Add(new MessageViewModel(MessageRole.System, "Expanding context window to 1M tokens. Starting new session."));
-        }
-
-        OnPropertyChanged(nameof(IsContextExpanded));
-        OnPropertyChanged(nameof(ExpandContextMenuHeader));
-    }
-
-    private void ReduceContext()
-    {
-        if (!IsContextExpanded) return;
-
-        // Strip [1m] suffix from current model override
-        var currentOverride = _cliService.ModelOverride ?? "sonnet";
-        _cliService.ModelOverride = currentOverride.Replace("[1m]", "");
-        StartNewSession();
-        Messages.Add(new MessageViewModel(MessageRole.System, "Switched back to standard context window (200K). New session started."));
-
-        OnPropertyChanged(nameof(IsContextExpanded));
-        OnPropertyChanged(nameof(ExpandContextMenuHeader));
-    }
 
     private void RefreshGitStatus()
     {

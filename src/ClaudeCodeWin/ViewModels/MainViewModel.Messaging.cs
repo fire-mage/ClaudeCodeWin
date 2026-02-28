@@ -340,7 +340,7 @@ public partial class MainViewModel
                 {
                     _contextWarningShown = true;
                     Messages.Add(new MessageViewModel(MessageRole.System,
-                        $"Context is {pct}% full ({totalTokens:N0}/{_contextWindowSize:N0} tokens). Consider starting a new session or expanding to 1M."));
+                        $"Context is {pct}% full ({totalTokens:N0}/{_contextWindowSize:N0} tokens). Consider starting a new session."));
                 }
             }
 

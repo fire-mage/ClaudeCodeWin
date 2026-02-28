@@ -267,7 +267,6 @@ public class TabHostViewModel : ViewModelBase
             case nameof(MainViewModel.GitDirtyText):
             case nameof(MainViewModel.HasGitRepo):
             case nameof(MainViewModel.ContextPctText):
-            case nameof(MainViewModel.IsContextExpanded):
             case nameof(MainViewModel.ShowRateLimitBanner):
             case nameof(MainViewModel.RateLimitCountdown):
             case nameof(MainViewModel.TabTitle):
