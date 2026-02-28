@@ -1,7 +1,10 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
+using ClaudeCodeWin.Services.Highlighting;
 
 namespace ClaudeCodeWin.Views;
 
@@ -12,10 +15,23 @@ public partial class CodeEditorControl : UserControl
     private List<int> _matchPositions = [];
     private bool _suppressSearchUpdate;
 
+    // Syntax highlighting state
+    private ILanguageTokenizer? _tokenizer;
+    private List<SyntaxToken> _cachedTokens = [];
+    private int[] _lineStarts = [0];
+    private bool _highlightingActive;
+    private DispatcherTimer? _highlightTimer;
+    private (int pos, int matchPos) _bracketHighlight = (-1, -1);
+    private bool _fontMetricsMeasured;
+
     public CodeEditorControl()
     {
         InitializeComponent();
-        Editor.Loaded += (_, _) => HookScrollViewer();
+        Editor.Loaded += (_, _) =>
+        {
+            HookScrollViewer();
+            MeasureFontMetrics();
+        };
     }
 
     // Dependency Property: Text (two-way binding to SubTab.Content)
@@ -39,6 +55,158 @@ public partial class CodeEditorControl : UserControl
         if (control.Editor.Text != newText)
             control.Editor.Text = newText;
     }
+
+    // Dependency Property: FilePath (determines language for syntax highlighting)
+    public static readonly DependencyProperty FilePathProperty = DependencyProperty.Register(
+        nameof(FilePath), typeof(string), typeof(CodeEditorControl),
+        new PropertyMetadata(null, OnFilePathChanged));
+
+    public string? FilePath
+    {
+        get => (string?)GetValue(FilePathProperty);
+        set => SetValue(FilePathProperty, value);
+    }
+
+    private static void OnFilePathChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var control = (CodeEditorControl)d;
+        var path = e.NewValue as string;
+        control._tokenizer = LanguageDetector.GetTokenizer(path);
+        control._highlightingActive = control._tokenizer != null;
+
+        // Toggle foreground transparency for syntax highlighting
+        if (control._highlightingActive)
+        {
+            control.Editor.Foreground = Brushes.Transparent;
+            control.Editor.SelectionTextBrush = Brushes.Transparent;
+        }
+        else
+        {
+            control.Editor.Foreground = (Brush)control.FindResource("TextBrush");
+            control.Editor.SelectionTextBrush = null; // use default
+
+            // Clear stale highlight layer to prevent ghost rendering
+            control._cachedTokens = [];
+            control._bracketHighlight = (-1, -1);
+            control.HighlightLayer.UpdateState("", [], [0], (-1, -1), 0, 0, 0);
+            control.HighlightLayer.InvalidateHighlighting();
+        }
+
+        control.UpdateSyntaxHighlighting();
+    }
+
+    #region Syntax Highlighting
+
+    private void MeasureFontMetrics()
+    {
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var typeface = new Typeface(Editor.FontFamily, Editor.FontStyle,
+            Editor.FontWeight, Editor.FontStretch);
+
+        var ft = new FormattedText("M",
+            CultureInfo.CurrentUICulture,
+            FlowDirection.LeftToRight,
+            typeface,
+            Editor.FontSize,
+            Brushes.White,
+            dpi.PixelsPerDip);
+
+        HighlightLayer.SetFontMetrics(typeface, Editor.FontSize, ft.Height, ft.WidthIncludingTrailingWhitespace, Editor.Padding);
+        _fontMetricsMeasured = true;
+
+        // Trigger initial highlighting if FilePath was set before Loaded
+        if (_highlightingActive)
+            UpdateSyntaxHighlighting();
+    }
+
+    private void ScheduleHighlightUpdate()
+    {
+        if (!_highlightingActive) return;
+
+        if (_highlightTimer == null)
+        {
+            _highlightTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(50)
+            };
+            _highlightTimer.Tick += HighlightTimer_Tick;
+        }
+
+        _highlightTimer.Stop();
+        _highlightTimer.Start();
+    }
+
+    private void HighlightTimer_Tick(object? sender, EventArgs e)
+    {
+        _highlightTimer!.Stop();
+        UpdateSyntaxHighlighting();
+    }
+
+    private void UpdateSyntaxHighlighting()
+    {
+        if (!_highlightingActive || _tokenizer == null || !_fontMetricsMeasured)
+            return;
+
+        var text = Editor.Text ?? "";
+        _cachedTokens = _tokenizer.Tokenize(text);
+        RebuildLineStarts(text);
+        UpdateBracketHighlight();
+        SyncHighlightLayer();
+    }
+
+    private void RebuildLineStarts(string text)
+    {
+        var starts = new List<int> { 0 };
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '\n')
+                starts.Add(i + 1);
+        }
+        _lineStarts = starts.ToArray();
+    }
+
+    private void SyncHighlightLayer()
+    {
+        if (!_highlightingActive || _editorScrollViewer == null)
+            return;
+
+        HighlightLayer.UpdateState(
+            Editor.Text ?? "",
+            _cachedTokens,
+            _lineStarts,
+            _bracketHighlight,
+            _editorScrollViewer.VerticalOffset,
+            _editorScrollViewer.HorizontalOffset,
+            _editorScrollViewer.ViewportHeight);
+
+        HighlightLayer.InvalidateHighlighting();
+    }
+
+    private void UpdateBracketHighlight()
+    {
+        var text = Editor.Text ?? "";
+        var caret = Editor.CaretIndex;
+        int bracketPos = -1;
+        int matchPos = -1;
+
+        // Check character at caret and before caret
+        if (caret < text.Length && IsBracketChar(text[caret]))
+        {
+            bracketPos = caret;
+            matchPos = BracketMatcher.FindMatch(text, caret, _cachedTokens);
+        }
+        else if (caret > 0 && IsBracketChar(text[caret - 1]))
+        {
+            bracketPos = caret - 1;
+            matchPos = BracketMatcher.FindMatch(text, caret - 1, _cachedTokens);
+        }
+
+        _bracketHighlight = (bracketPos, matchPos);
+    }
+
+    private static bool IsBracketChar(char c) => c is '(' or ')' or '[' or ']' or '{' or '}';
+
+    #endregion
 
     #region Line Numbers
 
@@ -67,6 +235,7 @@ public partial class CodeEditorControl : UserControl
     private void EditorScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         SyncLineNumbersScroll();
+        SyncHighlightLayer();
     }
 
     private void SyncLineNumbersScroll()
@@ -442,6 +611,9 @@ public partial class CodeEditorControl : UserControl
 
         UpdateLineNumbers();
 
+        // Schedule syntax highlighting update (debounced)
+        ScheduleHighlightUpdate();
+
         // Skip search update during batch operations (ReplaceAll)
         if (_suppressSearchUpdate) return;
 
@@ -460,6 +632,18 @@ public partial class CodeEditorControl : UserControl
                 MatchCountLabel.Text = "No results";
             }
         }
+    }
+
+    private void Editor_SelectionChanged(object sender, RoutedEventArgs e)
+    {
+        if (!_highlightingActive) return;
+
+        var oldHighlight = _bracketHighlight;
+        UpdateBracketHighlight();
+
+        // Only re-render if bracket highlight changed
+        if (oldHighlight != _bracketHighlight)
+            SyncHighlightLayer();
     }
 
     private void SearchTextBox_PreviewKeyDown(object sender, KeyEventArgs e)

@@ -25,6 +25,17 @@
     <Color x:Key="ReviewerBubbleColor">#1a1a3a</Color>
     <Color x:Key="ReviewerAccentColor">#5865F2</Color>
 
+    <!-- Syntax Highlighting Colors (VS Code Dark+ inspired) -->
+    <Color x:Key="SyntaxKeywordColor">#569CD6</Color>
+    <Color x:Key="SyntaxControlKeywordColor">#C586C0</Color>
+    <Color x:Key="SyntaxTypeColor">#4EC9B0</Color>
+    <Color x:Key="SyntaxStringColor">#CE9178</Color>
+    <Color x:Key="SyntaxNumberColor">#B5CEA8</Color>
+    <Color x:Key="SyntaxCommentColor">#6A9955</Color>
+    <Color x:Key="SyntaxPreprocessorColor">#808080</Color>
+    <Color x:Key="SyntaxLiteralColor">#569CD6</Color>
+    <Color x:Key="BracketMatchBackgroundColor">#2a4a2a</Color>
+
     <!-- Brushes -->
     <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}"/>
     <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}"/>
@@ -49,6 +60,8 @@
     <!-- Code Review badge / participant brushes -->
     <SolidColorBrush x:Key="ReviewerBubbleBrush" Color="{StaticResource ReviewerBubbleColor}"/>
     <SolidColorBrush x:Key="ReviewerAccentBrush" Color="{StaticResource ReviewerAccentColor}"/>
+
+    <!-- Note: Syntax highlighting brushes are hardcoded as frozen brushes in SyntaxHighlightLayer.cs for render performance -->
 
     <!-- Global TextBlock style -->
     <Style TargetType="TextBlock">

@@ -263,7 +263,8 @@
                         <!-- Code editor with line numbers, search/replace -->
                         <views:CodeEditorControl Grid.Row="1"
                                                  x:Name="FileEditor"
-                                                 Text="{Binding ActiveFileTab.Content, UpdateSourceTrigger=PropertyChanged}"/>
+                                                 Text="{Binding ActiveFileTab.Content, UpdateSourceTrigger=PropertyChanged}"
+                                                 FilePath="{Binding ActiveFileTab.FilePath}"/>
                     </Grid>
 
                     <!-- Chat panel (existing chat UI) -->
