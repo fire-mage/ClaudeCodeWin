@@ -40,6 +40,7 @@ public partial class MainViewModel
 
         // Mark the start of a new task (user-initiated, not queued clarification or review fix)
         _currentTaskStartIndex = Messages.Count; // Will point to the user message about to be added
+        _reviewCycleCompleted = false; // Allow review for the new task
         ChangedFiles.Clear(); // Clear only on user-initiated messages (not queued or review-fix)
         InputText = string.Empty;
 

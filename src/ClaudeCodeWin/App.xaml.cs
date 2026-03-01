@@ -119,6 +119,7 @@ public partial class App : Application
 
             // Create initial tab (always created before mainWindow)
             var initialTab = tabHost.CreateTab();
+            initialTab.ShowWelcome = true;
             if (!string.IsNullOrEmpty(tabPaths[0]))
                 initialTab.SetWorkingDirectoryOnStartup(tabPaths[0]);
 
@@ -186,7 +187,6 @@ public partial class App : Application
             foreach (var path in tabPaths.Skip(1))
             {
                 var tab = tabHost.CreateTab();
-                tab.ShowWelcome = false;
                 if (!string.IsNullOrEmpty(path))
                     tab.SetWorkingDirectoryOnStartup(path);
             }
@@ -298,8 +298,7 @@ public partial class App : Application
         AppSettings settings)
     {
         var history = chatHistory.ListAll();
-        var projectCount = projectRegistry.GetMostRecentProjects(2).Count;
-        if (history.Count == 0 && projectCount < 2)
+        if (history.Count == 0)
             return;
 
         window.ShowWelcomeScreen();

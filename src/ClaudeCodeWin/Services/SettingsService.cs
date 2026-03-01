@@ -25,13 +25,27 @@ public class SettingsService
             var json = File.ReadAllText(SettingsPath);
             var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonDefaults.Options) ?? new AppSettings();
 
+            var needsSave = false;
+
             // Auto-migrate plaintext password to DPAPI-protected
             if (!string.IsNullOrEmpty(settings.SshMasterPassword))
             {
                 settings.SshMasterPasswordProtected = Protect(settings.SshMasterPassword);
                 settings.SshMasterPassword = null;
-                Save(settings);
+                needsSave = true;
             }
+
+            // One-time migrations (gated by SettingsVersion)
+            if (settings.SettingsVersion < 1)
+            {
+                if (settings.ReviewAutoRetries == 3)
+                    settings.ReviewAutoRetries = 5;
+                settings.SettingsVersion = 1;
+                needsSave = true;
+            }
+
+            if (needsSave)
+                Save(settings);
 
             return settings;
         }

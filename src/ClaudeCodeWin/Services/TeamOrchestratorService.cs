@@ -409,6 +409,27 @@ public class TeamOrchestratorService : IDisposable
 
     private void HandleDevCompletedLocked(DevReviewSession session)
     {
+        // If developer was fixing review issues and dismissed the reviewer, skip re-review
+        if (session.CurrentPhase == SessionPhase.FixingIssues
+            && ReviewService.DetectReviewDismiss(session.DevResponse.ToString()))
+        {
+            RaiseLog($"Developer dismissed reviewer for [{session.PhaseTitle}] — low quality feedback.");
+
+            var commitHash = _gitService.RunGit("rev-parse --short HEAD", _workingDirectory)?.Trim();
+            _backlogService.MarkPhaseStatus(
+                session.FeatureId, session.PhaseId, PhaseStatus.Done,
+                summary: TruncateSummary(session.DevResponse.ToString()) +
+                    "\n[Reviewer dismissed by developer — low quality feedback]",
+                changedFiles: session.ChangedFiles,
+                commitHash: commitHash);
+
+            RaisePhaseCompleted(session.FeatureId, session.PhaseId, PhaseStatus.Done);
+
+            CleanupSessionLocked();
+            AfterPhaseEndedLocked();
+            return;
+        }
+
         _backlogService.MarkPhaseStatus(
             session.FeatureId, session.PhaseId,
             PhaseStatus.InReview,
@@ -614,6 +635,10 @@ public class TeamOrchestratorService : IDisposable
             {reviewText}
 
             Please fix all the issues identified above. After fixing, provide a summary of changes.
+
+            Then evaluate the reviewer's feedback quality:
+            - If the issues were genuine bugs, security problems, or logic errors → end with `REVIEW_QUALITY: HIGH`
+            - If the issues were mostly style preferences, minor suggestions without real impact, or false positives → end with `REVIEW_QUALITY: LOW`
             """;
 
         // Re-create dev CLI and resume the session

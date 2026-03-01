@@ -188,6 +188,17 @@ public class ReviewService
     }
 
     /// <summary>
+    /// Checks if the developer's fix response signals that reviewer feedback was low quality (noise).
+    /// The developer includes REVIEW_QUALITY: LOW when reviewer issues are mostly style nitpicks or false positives.
+    /// </summary>
+    public static bool DetectReviewDismiss(string text)
+    {
+        var tail = text.Length > 500 ? text[^500..] : text;
+        var upper = tail.ToUpperInvariant();
+        return upper.Contains("REVIEW_QUALITY: LOW") || upper.Contains("REVIEW_QUALITY:LOW");
+    }
+
+    /// <summary>
     /// Collects review context from the current session state.
     /// </summary>
     public static string BuildReviewContext(
@@ -228,10 +239,10 @@ public class ReviewService
         if (!string.IsNullOrEmpty(gitDiff))
         {
             sb.AppendLine("## Git Diff");
-            // Truncate very large diffs
-            if (gitDiff.Length > 10000)
+            // Truncate very large diffs (50K chars ≈ 12.5K tokens)
+            if (gitDiff.Length > 50_000)
             {
-                sb.AppendLine(gitDiff[..10000]);
+                sb.AppendLine(gitDiff[..50_000]);
                 sb.AppendLine($"\n... (truncated, {gitDiff.Length} chars total)");
             }
             else

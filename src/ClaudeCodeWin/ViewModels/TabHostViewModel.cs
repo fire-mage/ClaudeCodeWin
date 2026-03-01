@@ -33,6 +33,7 @@ public class TabHostViewModel : ViewModelBase
     private string _sessionExtraText = "";
     private string _weekPctText = "";
     private string _usageText = "";
+    private bool _isTabPanelCompact;
 
     // CLI executable path (shared across all tabs)
     public string ClaudeExePath { get; set; } = "claude";
@@ -100,13 +101,30 @@ public class TabHostViewModel : ViewModelBase
     // UpdateViewModel is global (app updates apply to the whole app, not per-tab)
     public UpdateViewModel Update { get; }
 
-    public RelayCommand NewTabCommand { get; }
+    public bool IsTabPanelCompact
+    {
+        get => _isTabPanelCompact;
+        set
+        {
+            if (SetProperty(ref _isTabPanelCompact, value))
+                OnPropertyChanged(nameof(IsTabPanelFull));
+        }
+    }
+
+    public bool IsTabPanelFull => !_isTabPanelCompact;
+
     public RelayCommand CloseTabCommand { get; }
+    public RelayCommand ToggleTabPanelCompactCommand { get; }
 
     /// <summary>
     /// Raised when the active tab changes, so MainWindow can re-subscribe to per-tab events.
     /// </summary>
     public event Action? OnActiveTabChanged;
+
+    /// <summary>
+    /// Raised before compact mode toggle, so MainWindow can save the current panel width.
+    /// </summary>
+    public event Action? OnBeforeCompactToggle;
 
     public TabHostViewModel(
         NotificationService notificationService,
@@ -133,6 +151,8 @@ public class TabHostViewModel : ViewModelBase
         _usageService = usageService;
         _backlogService = backlogService;
 
+        _isTabPanelCompact = settings.TabPanelCompact;
+
         Update = new UpdateViewModel(updateService, settings);
         Update.OnStatusTextChange += text =>
         {
@@ -140,13 +160,19 @@ public class TabHostViewModel : ViewModelBase
                 _activeTab.StatusText = text;
         };
 
-        NewTabCommand = new RelayCommand(() => CreateTab());
         CloseTabCommand = new RelayCommand(p =>
         {
             if (p is MainViewModel tab)
                 CloseTab(tab);
             else if (ActiveTab is not null)
                 CloseTab(ActiveTab);
+        });
+        ToggleTabPanelCompactCommand = new RelayCommand(() =>
+        {
+            OnBeforeCompactToggle?.Invoke();
+            IsTabPanelCompact = !IsTabPanelCompact;
+            _settings.TabPanelCompact = IsTabPanelCompact;
+            _settingsService.Save(_settings);
         });
 
         Tabs.CollectionChanged += (_, _) => OnPropertyChanged(nameof(ShowTabStrip));
@@ -186,9 +212,6 @@ public class TabHostViewModel : ViewModelBase
         Tabs.Add(tab);
         ActiveTab = tab;
 
-        // New tabs always show the welcome screen so the user can pick a project/session
-        tab.ShowWelcome = true;
-
         return tab;
     }
 
@@ -211,7 +234,8 @@ public class TabHostViewModel : ViewModelBase
         if (Tabs.Count == 0)
         {
             // Cannot have zero tabs — create a fresh one
-            CreateTab();
+            var fresh = CreateTab();
+            fresh.ShowWelcome = true;
         }
         else if (ActiveTab == tab || ActiveTab is null)
         {

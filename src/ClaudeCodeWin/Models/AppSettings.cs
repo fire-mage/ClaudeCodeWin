@@ -2,6 +2,9 @@ namespace ClaudeCodeWin.Models;
 
 public class AppSettings
 {
+    // Schema version for one-time migrations (bump when adding new migrations)
+    public int SettingsVersion { get; set; }
+
     public string? ClaudeExePath { get; set; }
     public string? WorkingDirectory { get; set; }
     public List<string> RecentFolders { get; set; } = [];
@@ -63,6 +66,9 @@ public class AppSettings
 
     // Left panel width (vertical project tabs, GridSplitter position)
     public double? ProjectTabPanelWidth { get; set; }
+
+    // Left tab panel compact mode (narrow with rotated labels)
+    public bool TabPanelCompact { get; set; }
 
     // Development Team: auto-review after task completion
     public bool ReviewerEnabled { get; set; } = true;

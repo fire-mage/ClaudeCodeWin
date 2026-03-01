@@ -113,11 +113,40 @@
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="0,0,1,0">
                 <DockPanel>
-                    <Button DockPanel.Dock="Bottom" Content="+" FontSize="14"
+                    <!-- Bottom: compact/expand toggle -->
+                    <Button DockPanel.Dock="Bottom"
+                            FontSize="12" Padding="6,6" Margin="2,2"
+                            Command="{Binding ToggleTabPanelCompactCommand}"
+                            ToolTip="Toggle compact panel"
+                            Style="{StaticResource TabAddButton}">
+                        <Button.Content>
+                            <Grid>
+                                <TextBlock Text="«" FontSize="14"
+                                           Visibility="{Binding IsTabPanelFull, Converter={StaticResource BoolToVis}}"/>
+                                <TextBlock Text="»" FontSize="14"
+                                           Visibility="{Binding IsTabPanelCompact, Converter={StaticResource BoolToVis}}"/>
+                            </Grid>
+                        </Button.Content>
+                    </Button>
+
+                    <!-- Top: Open Project button -->
+                    <Button x:Name="OpenProjectButton"
+                            DockPanel.Dock="Top"
+                            Click="OpenProjectTab_Click"
                             Padding="10,8" Margin="4,4"
-                            Command="{Binding NewTabCommand}"
-                            ToolTip="New tab (Ctrl+T)"
-                            Style="{StaticResource TabAddButton}"/>
+                            ToolTip="Open a project in a new tab (Ctrl+T)"
+                            Style="{StaticResource TabAddButton}">
+                        <Button.Content>
+                            <Grid>
+                                <TextBlock Text="Open Project" FontSize="12"
+                                           Visibility="{Binding IsTabPanelFull, Converter={StaticResource BoolToVis}}"/>
+                                <TextBlock Text="+" FontSize="14" FontWeight="Bold"
+                                           Visibility="{Binding IsTabPanelCompact, Converter={StaticResource BoolToVis}}"/>
+                            </Grid>
+                        </Button.Content>
+                    </Button>
+
+                    <!-- Tab list -->
                     <ItemsControl ItemsSource="{Binding Tabs}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -131,38 +160,84 @@
                                         Background="{StaticResource SurfaceBrush}"
                                         MouseLeftButtonUp="TabHeader_Click" Tag="{Binding}">
                                     <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <!-- Status dots: processing (green) + notification (bright green) -->
-                                        <StackPanel Grid.Column="0" Orientation="Horizontal"
-                                                    Margin="0,0,6,0" VerticalAlignment="Center">
-                                            <Ellipse Width="6" Height="6" Margin="0,0,3,0"
-                                                     Fill="{StaticResource PrimaryBrush}"
-                                                     Visibility="{Binding IsProcessing, Converter={StaticResource BoolToVis}}"/>
-                                            <Ellipse Width="6" Height="6"
-                                                     Fill="{StaticResource SuccessBrush}"
-                                                     Visibility="{Binding HasNotification, Converter={StaticResource BoolToVis}}"/>
+                                        <!-- Full mode: horizontal layout -->
+                                        <Grid x:Name="FullModeLayout"
+                                              Visibility="{Binding DataContext.IsTabPanelFull,
+                                                           RelativeSource={RelativeSource AncestorType=Window},
+                                                           Converter={StaticResource BoolToVis}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Orientation="Horizontal"
+                                                        Margin="0,0,6,0" VerticalAlignment="Center">
+                                                <Ellipse Width="6" Height="6" Margin="0,0,3,0"
+                                                         Fill="{StaticResource PrimaryBrush}"
+                                                         Visibility="{Binding IsProcessing, Converter={StaticResource BoolToVis}}"/>
+                                                <Ellipse Width="6" Height="6"
+                                                         Fill="{StaticResource SuccessBrush}"
+                                                         Visibility="{Binding HasNotification, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" Text="{Binding TabTitle}" FontSize="12"
+                                                       Foreground="{StaticResource TextBrush}"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <Border Grid.Column="2" Padding="6,0,0,0" Cursor="Hand"
+                                                    Background="Transparent"
+                                                    MouseLeftButtonUp="TabClose_Click" Tag="{Binding}"
+                                                    VerticalAlignment="Center">
+                                                <TextBlock Text="x" FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            </Border>
+                                        </Grid>
+
+                                        <!-- Compact mode: rotated vertical text -->
+                                        <StackPanel x:Name="CompactModeLayout"
+                                                    HorizontalAlignment="Center" MaxHeight="120"
+                                                    Visibility="{Binding DataContext.IsTabPanelCompact,
+                                                                 RelativeSource={RelativeSource AncestorType=Window},
+                                                                 Converter={StaticResource BoolToVis}}">
+                                            <!-- Close button -->
+                                            <Border Padding="4,2" Cursor="Hand"
+                                                    Background="Transparent" HorizontalAlignment="Center"
+                                                    MouseLeftButtonUp="TabClose_Click" Tag="{Binding}">
+                                                <TextBlock Text="x" FontSize="9"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           HorizontalAlignment="Center"/>
+                                            </Border>
+                                            <!-- Status dots -->
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                                                        Margin="0,0,0,4">
+                                                <Ellipse Width="5" Height="5" Margin="0,0,2,0"
+                                                         Fill="{StaticResource PrimaryBrush}"
+                                                         Visibility="{Binding IsProcessing, Converter={StaticResource BoolToVis}}"/>
+                                                <Ellipse Width="5" Height="5"
+                                                         Fill="{StaticResource SuccessBrush}"
+                                                         Visibility="{Binding HasNotification, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                            <!-- Rotated title (MaxWidth limits pre-rotation width = post-rotation height) -->
+                                            <TextBlock Text="{Binding TabTitle}" FontSize="11"
+                                                       Foreground="{StaticResource TextBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       MaxWidth="100">
+                                                <TextBlock.LayoutTransform>
+                                                    <RotateTransform Angle="-90"/>
+                                                </TextBlock.LayoutTransform>
+                                            </TextBlock>
                                         </StackPanel>
-                                        <TextBlock Grid.Column="1" Text="{Binding TabTitle}" FontSize="12"
-                                                   Foreground="{StaticResource TextBrush}"
-                                                   VerticalAlignment="Center"
-                                                   TextTrimming="CharacterEllipsis"/>
-                                        <Border Grid.Column="2" Padding="6,0,0,0" Cursor="Hand"
-                                                Background="Transparent"
-                                                MouseLeftButtonUp="TabClose_Click" Tag="{Binding}"
-                                                VerticalAlignment="Center">
-                                            <TextBlock Text="x" FontSize="10"
-                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
-                                        </Border>
                                     </Grid>
                                 </Border>
                                 <DataTemplate.Triggers>
                                     <DataTrigger Binding="{Binding IsActiveTab}" Value="True">
                                         <Setter TargetName="VTabBorder" Property="Background"
                                                 Value="{StaticResource SurfaceLightBrush}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding DataContext.IsTabPanelCompact,
+                                                           RelativeSource={RelativeSource AncestorType=Window}}"
+                                                 Value="True">
+                                        <Setter TargetName="VTabBorder" Property="Padding" Value="4,4"/>
+                                        <Setter TargetName="VTabBorder" Property="Margin" Value="1,1,1,0"/>
                                     </DataTrigger>
                                 </DataTemplate.Triggers>
                             </DataTemplate>
@@ -172,7 +247,8 @@
             </Border>
 
             <!-- GridSplitter between left panel and content -->
-            <GridSplitter Grid.Column="1" Width="4" ResizeDirection="Columns"
+            <GridSplitter x:Name="MainBodyGridSplitter"
+                          Grid.Column="1" Width="4" ResizeDirection="Columns"
                           HorizontalAlignment="Stretch" Cursor="SizeWE"
                           Style="{StaticResource ProjectPanelSplitter}"/>
 
@@ -1355,131 +1431,6 @@
                                             </Style.Triggers>
                                         </Style>
                                     </Border.Style>
-                                </Border>
-
-                                <!-- Section 2: Switch Project -->
-                                <Border x:Name="WbSwitchProjectSection"
-                                        Background="{StaticResource SurfaceBrush}"
-                                        CornerRadius="6" Padding="14,12" Margin="0,0,0,16">
-                                    <StackPanel>
-                                        <TextBlock x:Name="WbSwitchProjectHeader"
-                                                   Text="Switch Project"
-                                                   FontSize="14" FontWeight="SemiBold"
-                                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                                   Margin="0,0,0,10"/>
-
-                                        <ScrollViewer MaxHeight="250" VerticalScrollBarVisibility="Auto"
-                                                      HorizontalScrollBarVisibility="Disabled">
-                                            <ListBox x:Name="WbProjectList"
-                                                     Background="Transparent"
-                                                     BorderThickness="0"
-                                                     SelectionChanged="WbProjectList_SelectionChanged"
-                                                     MouseDoubleClick="WbProjectList_DoubleClick">
-                                                <ListBox.ItemContainerStyle>
-                                                    <Style TargetType="ListBoxItem">
-                                                        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-                                                        <Setter Property="Padding" Value="0"/>
-                                                        <Setter Property="Margin" Value="0,0,0,4"/>
-                                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                                        <Setter Property="Template">
-                                                            <Setter.Value>
-                                                                <ControlTemplate TargetType="ListBoxItem">
-                                                                    <Border x:Name="Bd" Background="{StaticResource BackgroundBrush}"
-                                                                            Padding="12,8" CornerRadius="6"
-                                                                            BorderThickness="2" BorderBrush="Transparent"
-                                                                            Cursor="Hand">
-                                                                        <ContentPresenter/>
-                                                                    </Border>
-                                                                    <ControlTemplate.Triggers>
-                                                                        <Trigger Property="IsSelected" Value="True">
-                                                                            <Setter TargetName="Bd" Property="BorderBrush"
-                                                                                    Value="{StaticResource PrimaryBrush}"/>
-                                                                        </Trigger>
-                                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                                            <Setter TargetName="Bd" Property="Background"
-                                                                                    Value="{StaticResource SurfaceLightBrush}"/>
-                                                                        </Trigger>
-                                                                    </ControlTemplate.Triggers>
-                                                                </ControlTemplate>
-                                                            </Setter.Value>
-                                                        </Setter>
-                                                    </Style>
-                                                </ListBox.ItemContainerStyle>
-                                                <ListBox.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Grid>
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="*"/>
-                                                                <ColumnDefinition Width="Auto"/>
-                                                            </Grid.ColumnDefinitions>
-                                                            <Grid.RowDefinitions>
-                                                                <RowDefinition Height="Auto"/>
-                                                                <RowDefinition Height="Auto"/>
-                                                            </Grid.RowDefinitions>
-
-                                                            <TextBlock Grid.Row="0" Grid.Column="0"
-                                                                       Text="{Binding Name}"
-                                                                       FontSize="14" FontWeight="SemiBold"
-                                                                       Foreground="{StaticResource TextBrush}"/>
-
-                                                            <StackPanel Grid.Row="0" Grid.Column="1"
-                                                                        Orientation="Horizontal" VerticalAlignment="Center">
-                                                                <Border Background="{StaticResource PrimaryBrush}"
-                                                                        CornerRadius="3" Padding="5,1" Margin="8,0,0,0"
-                                                                        Visibility="{Binding IsCurrent, Converter={StaticResource BoolToVis}}">
-                                                                    <TextBlock Text="Current" FontSize="10" FontWeight="SemiBold"
-                                                                               Foreground="{StaticResource BackgroundBrush}"/>
-                                                                </Border>
-                                                                <TextBlock Text="{Binding TechStack}"
-                                                                           FontSize="11"
-                                                                           Foreground="{StaticResource PrimaryBrush}"
-                                                                           VerticalAlignment="Center"
-                                                                           Margin="8,0,0,0"/>
-                                                            </StackPanel>
-
-                                                            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                                                                       Text="{Binding Path}"
-                                                                       FontSize="11"
-                                                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                                                       TextTrimming="CharacterEllipsis"
-                                                                       Margin="0,2,0,0"/>
-                                                        </Grid>
-                                                    </DataTemplate>
-                                                </ListBox.ItemTemplate>
-                                            </ListBox>
-                                        </ScrollViewer>
-
-                                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                            <Button x:Name="WbStartWithProjectBtn"
-                                                    Content="Start with selected project"
-                                                    Style="{StaticResource PrimaryButton}"
-                                                    Click="WbStartWithProject_Click"
-                                                    Padding="16,6" Margin="0,0,8,0"
-                                                    IsEnabled="False"/>
-                                            <Button Content="Browse..."
-                                                    Click="WbBrowseProject_Click"
-                                                    Padding="16,6"
-                                                    Background="{StaticResource SurfaceLightBrush}"
-                                                    Foreground="{StaticResource TextBrush}"
-                                                    BorderThickness="0"
-                                                    Cursor="Hand">
-                                                <Button.Template>
-                                                    <ControlTemplate TargetType="Button">
-                                                        <Border Background="{TemplateBinding Background}"
-                                                                CornerRadius="6"
-                                                                Padding="{TemplateBinding Padding}">
-                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                        </Border>
-                                                        <ControlTemplate.Triggers>
-                                                            <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter Property="Background" Value="{StaticResource BorderBrush}"/>
-                                                            </Trigger>
-                                                        </ControlTemplate.Triggers>
-                                                    </ControlTemplate>
-                                                </Button.Template>
-                                            </Button>
-                                        </StackPanel>
-                                    </StackPanel>
                                 </Border>
 
                                 <!-- Section 3: Continue Previous Chat -->

@@ -8,6 +8,7 @@ public partial class MainViewModel
     private ReviewService? _reviewService;
     private int _reviewAttempt;
     private bool _isAutoReviewPending;
+    private bool _reviewCycleCompleted; // prevents re-triggering after cycle ends; reset on new user message
     private MessageViewModel? _currentReviewerMessage;
     private string? _lastReviewCriticalSnippet;
     private int _currentTaskStartIndex;
@@ -27,8 +28,30 @@ public partial class MainViewModel
         if (_isAutoReviewPending)
         {
             _isAutoReviewPending = false;
+
+            // Check if developer dismissed the reviewer (low quality feedback)
+            if (DetectReviewDismissInLastMessage())
+            {
+                _reviewCycleCompleted = true;
+                DiagnosticLogger.Log("AUTO_REVIEW_CHECK", "developer dismissed reviewer — REVIEW_QUALITY: LOW");
+                Messages.Add(new MessageViewModel(MessageRole.System,
+                    "Developer dismissed reviewer — low quality feedback. Skipping further reviews."));
+                ReviewStatusText = "";
+                TryShowTaskSuggestion();
+                return;
+            }
+
             DiagnosticLogger.Log("AUTO_REVIEW_CHECK", "re-review path: _isAutoReviewPending was true");
             TryStartAutoReview();
+            return;
+        }
+
+        // Don't start a new review cycle if the previous one already completed
+        // (consensus, max retries, or loop detected). Reset on next user message.
+        if (_reviewCycleCompleted)
+        {
+            DiagnosticLogger.Log("AUTO_REVIEW_CHECK", "skipped: review cycle already completed for this task");
+            TryShowTaskSuggestion();
             return;
         }
 
@@ -217,6 +240,7 @@ public partial class MainViewModel
 
         if (verdict == ReviewVerdict.Consensus)
         {
+            _reviewCycleCompleted = true;
             Messages.Add(new MessageViewModel(MessageRole.System, "Review passed — no issues found."));
             ReviewStatusText = "Review Passed";
             // Auto-clear status after 5 seconds (stored as field for cancellation)
@@ -234,6 +258,7 @@ public partial class MainViewModel
 
         if (_reviewAttempt >= _settings.ReviewAutoRetries)
         {
+            _reviewCycleCompleted = true;
             Messages.Add(new MessageViewModel(MessageRole.System,
                 $"Review found issues after {_reviewAttempt} rounds. Sending final feedback to Claude."));
             ReviewStatusText = $"Review: Final fix (round {_reviewAttempt})";
@@ -259,6 +284,7 @@ public partial class MainViewModel
         var criticalSnippet = ExtractFirstCritical(reviewText);
         if (criticalSnippet is not null && criticalSnippet == _lastReviewCriticalSnippet)
         {
+            _reviewCycleCompleted = true;
             Messages.Add(new MessageViewModel(MessageRole.System,
                 "Review loop detected — same critical issue repeated. Stopping auto-review."));
             ReviewStatusText = "Review: Loop detected";
@@ -275,6 +301,10 @@ public partial class MainViewModel
             {reviewText}
 
             Please fix the issues identified above. After fixing, provide a brief summary of what you changed.
+
+            Then evaluate the reviewer's feedback quality:
+            - If the issues were genuine bugs, security problems, or logic errors → end with `REVIEW_QUALITY: HIGH`
+            - If the issues were mostly style preferences, minor suggestions without real impact, or false positives → end with `REVIEW_QUALITY: LOW`
             """;
         SendDirectAsync(fixPrompt, null, "Auto-Review").ContinueWith(t =>
         {
@@ -296,6 +326,7 @@ public partial class MainViewModel
         }
         _isAutoReviewPending = false;
         _reviewAttempt = 0;
+        _reviewCycleCompleted = false;
         _lastReviewCriticalSnippet = null;
         _reviewStatusClearTimer?.Stop();
         _reviewStatusClearTimer = null;
@@ -327,6 +358,22 @@ public partial class MainViewModel
                 $"no match: wd={wd} files=[{string.Join(", ", ChangedFiles.Take(5))}]");
         }
         return match;
+    }
+
+    /// <summary>
+    /// Checks if the last non-reviewer assistant message contains REVIEW_QUALITY: LOW,
+    /// indicating the developer considers the reviewer's feedback to be noise.
+    /// </summary>
+    private bool DetectReviewDismissInLastMessage()
+    {
+        for (var i = Messages.Count - 1; i >= 0; i--)
+        {
+            if (Messages[i].Role != MessageRole.Assistant) continue;
+            if (Messages[i].IsReviewerMessage) continue;
+            return !string.IsNullOrEmpty(Messages[i].Text)
+                && ReviewService.DetectReviewDismiss(Messages[i].Text);
+        }
+        return false;
     }
 
     /// <summary>

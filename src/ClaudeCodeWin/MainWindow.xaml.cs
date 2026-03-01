@@ -51,6 +51,21 @@ public partial class MainWindow : Window
         // Subscribe to tab changes
         tabHost.OnActiveTabChanged += OnActiveTabChanged;
 
+        // Save panel width before compact toggle (while ActualWidth still reflects full mode)
+        tabHost.OnBeforeCompactToggle += () =>
+        {
+            var w = ProjectTabColumn.ActualWidth;
+            if (!tabHost.IsTabPanelCompact && w >= MinFullPanelWidth)
+                _settings.ProjectTabPanelWidth = w;
+        };
+
+        // React to compact mode toggle
+        tabHost.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(TabHostViewModel.IsTabPanelCompact))
+                Dispatcher.BeginInvoke(ApplyTabPanelMode);
+        };
+
         // Wire up initial tab
         SubscribeToActiveTab();
 
@@ -75,6 +90,9 @@ public partial class MainWindow : Window
         ChatScrollViewer.ScrollChanged += ChatScrollViewer_ScrollChanged;
 
         // Auto-scroll is handled per-tab via SubscribeToActiveTab()
+
+        // Apply compact mode before first render to prevent visual jump
+        ApplyTabPanelMode();
 
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
@@ -218,11 +236,36 @@ public partial class MainWindow : Window
             WindowState = WindowState.Maximized;
         }
 
-        // Restore left panel width
-        if (_settings.ProjectTabPanelWidth.HasValue && _settings.ProjectTabPanelWidth.Value > 60)
-            ProjectTabColumn.Width = new GridLength(_settings.ProjectTabPanelWidth.Value);
+        // Save default width on first launch so compact→full toggle restores correctly
+        if (!_settings.ProjectTabPanelWidth.HasValue && !TabHost.IsTabPanelCompact
+            && ProjectTabColumn.ActualWidth >= MinFullPanelWidth)
+            _settings.ProjectTabPanelWidth = ProjectTabColumn.ActualWidth;
 
         InputTextBox.Focus();
+    }
+
+    private const double CompactPanelWidth = 44;
+    private const double MinFullPanelWidth = 80;
+    private const double DefaultFullPanelWidth = 180;
+
+    private void ApplyTabPanelMode()
+    {
+        if (TabHost.IsTabPanelCompact)
+        {
+            ProjectTabColumn.Width = new GridLength(CompactPanelWidth);
+            ProjectTabColumn.MinWidth = CompactPanelWidth;
+            ProjectTabColumn.MaxWidth = CompactPanelWidth;
+            MainBodyGridSplitter.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            ProjectTabColumn.MinWidth = MinFullPanelWidth;
+            ProjectTabColumn.MaxWidth = double.PositiveInfinity;
+            var savedWidth = _settings.ProjectTabPanelWidth ?? DefaultFullPanelWidth;
+            if (savedWidth < MinFullPanelWidth) savedWidth = DefaultFullPanelWidth;
+            ProjectTabColumn.Width = new GridLength(savedWidth);
+            MainBodyGridSplitter.Visibility = Visibility.Visible;
+        }
     }
 
     private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -269,8 +312,9 @@ public partial class MainWindow : Window
             .ToList();
         _settings.ActiveTabPath = TabHost.ActiveTab?.WorkingDirectory;
 
-        // Save left panel width
-        _settings.ProjectTabPanelWidth = ProjectTabColumn.ActualWidth;
+        // Save left panel width (only in full mode — compact is fixed width)
+        if (!TabHost.IsTabPanelCompact)
+            _settings.ProjectTabPanelWidth = ProjectTabColumn.ActualWidth;
 
         _settingsService.Save(_settings);
 
@@ -341,7 +385,6 @@ public partial class MainWindow : Window
         if (ReturningPanel.Visibility == Visibility.Visible && ViewModel.ShowWelcome)
         {
             if (e.Key == Key.Enter
-                && WbProjectList.SelectedItem is null
                 && WbRecentChatsList.SelectedItem is null)
             {
                 DismissWelcomeScreen();
@@ -454,10 +497,10 @@ public partial class MainWindow : Window
             }
         }
 
-        // Ctrl+T = New tab
+        // Ctrl+T = Open project in new tab
         if (e.Key == Key.T && Keyboard.Modifiers == ModifierKeys.Control)
         {
-            TabHost.CreateTab();
+            OpenProjectInNewTab();
             e.Handled = true;
             return;
         }
@@ -931,33 +974,37 @@ public partial class MainWindow : Window
         previewWindow.ShowDialog();
     }
 
-    private void MenuItem_OpenProject_Click(object sender, RoutedEventArgs e)
+    private void MenuItem_OpenProject_Click(object sender, RoutedEventArgs e) => OpenProjectInNewTab();
+
+    private void OpenProjectTab_Click(object sender, RoutedEventArgs e) => OpenProjectInNewTab();
+
+    private void OpenProjectInNewTab()
     {
         var dialog = new ProjectSwitchDialog(_projectRegistry, ViewModel.WorkingDirectory)
         {
             Owner = this
         };
 
-        if (dialog.ShowDialog() == true && dialog.SelectedProjectPath is not null)
-        {
-            // If the project is already open in another tab, switch to it instead of creating an orphan.
-            // Normalize both sides so "C:\Foo" and "c:\foo\" resolve to the same tab.
-            if (TabHost.IsProjectOpen(dialog.SelectedProjectPath))
-            {
-                var normalized = System.IO.Path.GetFullPath(dialog.SelectedProjectPath);
-                var existing = TabHost.Tabs.FirstOrDefault(t =>
-                    !string.IsNullOrEmpty(t.WorkingDirectory) &&
-                    string.Equals(System.IO.Path.GetFullPath(t.WorkingDirectory), normalized,
-                        StringComparison.OrdinalIgnoreCase));
-                if (existing is not null)
-                    TabHost.ActiveTab = existing;
-                return;
-            }
+        if (dialog.ShowDialog() != true || dialog.SelectedProjectPath is null)
+            return;
 
-            var newTab = TabHost.CreateTab();
-            newTab.ShowWelcome = false;
-            newTab.SetWorkingDirectory(dialog.SelectedProjectPath);
+        // If the project is already open in another tab, switch to it instead of creating a duplicate.
+        if (TabHost.IsProjectOpen(dialog.SelectedProjectPath))
+        {
+            var normalized = System.IO.Path.GetFullPath(dialog.SelectedProjectPath);
+            var existing = TabHost.Tabs.FirstOrDefault(t =>
+                !string.IsNullOrEmpty(t.WorkingDirectory) &&
+                string.Equals(System.IO.Path.GetFullPath(t.WorkingDirectory), normalized,
+                    StringComparison.OrdinalIgnoreCase));
+            if (existing is not null)
+                TabHost.ActiveTab = existing;
+            return;
         }
+
+        var newTab = TabHost.CreateTab();
+        newTab.SetWorkingDirectory(dialog.SelectedProjectPath);
+        newTab.ShowWelcome = true;
+        ShowWelcomeScreen();
     }
 
     private void MenuItem_Exit_Click(object sender, RoutedEventArgs e)
@@ -1292,24 +1339,11 @@ public partial class MainWindow : Window
 
     public void ShowWelcomeScreen()
     {
-        // Populate project name in subtitle
-        var projectName = ExtractProjectName(_settings.WorkingDirectory);
+        // Populate project name in subtitle (use active tab's path, fall back to global)
+        var projectName = ExtractProjectName(ViewModel?.WorkingDirectory ?? _settings.WorkingDirectory);
         WbNewChatSubtitle.Text = string.IsNullOrEmpty(projectName)
             ? "Start a fresh conversation"
             : $"Start a fresh conversation in {projectName}";
-
-        // Load projects
-        var projects = _projectRegistry.GetFilteredProjects(50, _settings.WorkingDirectory);
-        if (projects.Count < 2)
-        {
-            WbSwitchProjectSection.Visibility = Visibility.Collapsed;
-        }
-        else
-        {
-            WbSwitchProjectSection.Visibility = Visibility.Visible;
-            WbSwitchProjectHeader.Text = $"Switch Project ({projects.Count})";
-            WbProjectList.ItemsSource = projects;
-        }
 
         // Load recent chats
         var summaries = _chatHistoryService.ListAll();
@@ -1363,54 +1397,11 @@ public partial class MainWindow : Window
         ViewModel.NewSessionCommand.Execute(null);
     }
 
-    // --- Section 2: Switch Project ---
-
-    private void WbProjectList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        WbStartWithProjectBtn.IsEnabled = WbProjectList.SelectedItem is ProjectInfo;
-        if (WbProjectList.SelectedItem is not null)
-            WbRecentChatsList.SelectedItem = null;
-    }
-
-    private void WbProjectList_DoubleClick(object sender, MouseButtonEventArgs e)
-    {
-        if (WbProjectList.SelectedItem is ProjectInfo project)
-        {
-            DismissWelcomeScreen();
-            ViewModel.SetWorkingDirectory(project.Path);
-        }
-    }
-
-    private void WbStartWithProject_Click(object sender, RoutedEventArgs e)
-    {
-        if (WbProjectList.SelectedItem is ProjectInfo project)
-        {
-            DismissWelcomeScreen();
-            ViewModel.SetWorkingDirectory(project.Path);
-        }
-    }
-
-    private void WbBrowseProject_Click(object sender, RoutedEventArgs e)
-    {
-        var dialog = new Microsoft.Win32.OpenFolderDialog
-        {
-            Title = "Select Project Folder"
-        };
-
-        if (dialog.ShowDialog() == true)
-        {
-            DismissWelcomeScreen();
-            ViewModel.SetWorkingDirectory(dialog.FolderName);
-        }
-    }
-
     // --- Section 3: Continue Previous Chat ---
 
     private void WbRecentChats_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         WbContinueChatBtn.IsEnabled = WbRecentChatsList.SelectedItem is SessionDisplayItem;
-        if (WbRecentChatsList.SelectedItem is not null)
-            WbProjectList.SelectedItem = null;
     }
 
     private void WbRecentChats_DoubleClick(object sender, MouseButtonEventArgs e)
