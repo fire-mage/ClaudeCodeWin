@@ -28,6 +28,54 @@ public class GitService
         return (branch.Trim(), dirtyCount, unpushedCount);
     }
 
+    /// <summary>
+    /// Commits a set of files with the given message. Returns (success, commitHash or error).
+    /// Resets the staging area first to avoid committing unrelated pre-staged files.
+    /// Uses a temp file for the commit message to avoid shell escaping issues.
+    /// </summary>
+    public (bool Success, string Message) CommitFiles(
+        List<string> files, string commitMessage, string? workingDir)
+    {
+        if (string.IsNullOrEmpty(workingDir) || files.Count == 0)
+            return (false, "No files or working directory");
+
+        // Unstage only OUR files to ensure we don't pick up pre-staged changes
+        // for these paths, while preserving any other files the user staged manually
+        foreach (var file in files)
+            RunGit($"reset HEAD -- \"{file}\"", workingDir);
+
+        // Stage each file individually (handles both modified and untracked)
+        foreach (var file in files)
+        {
+            RunGit($"add -- \"{file}\"", workingDir);
+            // Silently skip files that don't exist (already deleted, etc.)
+        }
+
+        // Check if anything was staged
+        var staged = RunGit("diff --cached --name-only", workingDir);
+        if (string.IsNullOrWhiteSpace(staged))
+            return (false, "No changes to commit (files may already be committed)");
+
+        // Commit using temp file for message (safe for any characters)
+        string? tempFile = null;
+        try
+        {
+            tempFile = Path.GetTempFileName();
+            File.WriteAllText(tempFile, commitMessage);
+            var commitResult = RunGit($"commit -F \"{tempFile}\"", workingDir);
+            if (commitResult is null)
+                return (false, "Git commit failed");
+        }
+        finally
+        {
+            if (tempFile is not null && File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+
+        var hash = RunGit("rev-parse --short HEAD", workingDir)?.Trim() ?? "unknown";
+        return (true, hash);
+    }
+
     public string? RunGit(string arguments, string? workingDir)
     {
         if (string.IsNullOrEmpty(workingDir))

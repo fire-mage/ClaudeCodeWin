@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
 
@@ -12,6 +13,7 @@ public class BacklogService
         "ClaudeCodeWin");
 
     private static readonly string BacklogPath = Path.Combine(BacklogDir, "backlog.json");
+    private static readonly string ArchivePath = Path.Combine(BacklogDir, "archive.json");
 
     private readonly object _lock = new();
     private List<BacklogFeature> _features = [];
@@ -29,13 +31,28 @@ public class BacklogService
             try
             {
                 var json = File.ReadAllText(BacklogPath);
-                _features = JsonSerializer.Deserialize<List<BacklogFeature>>(json, JsonDefaults.ReadOptions) ?? [];
+                var migrated = MigrateJson(json);
+                _features = JsonSerializer.Deserialize<List<BacklogFeature>>(migrated, JsonDefaults.ReadOptions) ?? [];
+                if (migrated != json)
+                    SaveLocked();
             }
             catch
             {
                 _features = [];
             }
         }
+    }
+
+    /// <summary>
+    /// Migrate old enum values in JSON: Raw→Analyzing, Planned→PlanApproved.
+    /// Matches "status": "value" patterns to only replace enum values, not arbitrary strings.
+    /// Remove after a few versions.
+    /// </summary>
+    private static string MigrateJson(string json)
+    {
+        json = Regex.Replace(json, @"""[Ss]tatus""\s*:\s*""[Rr]aw""", @"""status"": ""Analyzing""");
+        json = Regex.Replace(json, @"""[Ss]tatus""\s*:\s*""[Pp]lanned""", @"""status"": ""PlanApproved""");
+        return json;
     }
 
     private void SaveLocked()
@@ -54,6 +71,18 @@ public class BacklogService
 
             return _features
                 .Where(f => f.ProjectPath.PathEquals(projectPath))
+                .ToList();
+        }
+    }
+
+    public List<BacklogFeature> GetFeaturesByStatus(string projectPath, FeatureStatus status)
+    {
+        lock (_lock)
+        {
+            return _features
+                .Where(f => f.ProjectPath.PathEquals(projectPath) && f.Status == status)
+                .OrderBy(f => f.Priority)
+                .ThenBy(f => f.CreatedAt)
                 .ToList();
         }
     }
@@ -115,19 +144,21 @@ public class BacklogService
     }
 
     /// <summary>
-    /// Gets the next pending phase from the highest-priority planned feature for the given project.
+    /// Gets the next pending phase from the highest-priority feature in Queued or InProgress status.
+    /// Only features explicitly added to the queue (status=Queued) are picked up.
+    /// PlanApproved features sit in backlog until user moves them to queue.
     /// </summary>
     public (BacklogFeature Feature, BacklogPhase Phase)? GetNextPendingPhase(string projectPath)
     {
         lock (_lock)
         {
-            var planned = _features
+            var candidates = _features
                 .Where(f => f.ProjectPath.PathEquals(projectPath)
-                            && f.Status is FeatureStatus.Planned or FeatureStatus.InProgress)
+                            && f.Status is FeatureStatus.Queued or FeatureStatus.InProgress)
                 .OrderBy(f => f.Priority)
                 .ThenBy(f => f.CreatedAt);
 
-            foreach (var feature in planned)
+            foreach (var feature in candidates)
             {
                 var phase = feature.Phases
                     .Where(p => p.Status == PhaseStatus.Pending)
@@ -144,7 +175,7 @@ public class BacklogService
 
     public void MarkPhaseStatus(string featureId, string phaseId, PhaseStatus status,
         string? summary = null, List<string>? changedFiles = null, string? commitHash = null,
-        string? errorMessage = null)
+        string? errorMessage = null, List<string>? userActions = null)
     {
         lock (_lock)
         {
@@ -158,6 +189,7 @@ public class BacklogService
             if (changedFiles is not null) phase.ChangedFiles = changedFiles;
             if (commitHash is not null) phase.CommitHash = commitHash;
             if (errorMessage is not null) phase.ErrorMessage = errorMessage;
+            if (userActions is not null) phase.UserActions = userActions;
 
             if (status == PhaseStatus.InProgress && phase.StartedAt is null)
                 phase.StartedAt = DateTime.Now;
@@ -194,6 +226,68 @@ public class BacklogService
                 .OrderBy(f => f.Priority)
                 .ToList();
         }
+    }
+
+    /// <summary>
+    /// Move a feature to archive.json with a timestamp.
+    /// </summary>
+    public void ArchiveFeature(string featureId)
+    {
+        lock (_lock)
+        {
+            var feature = _features.FirstOrDefault(f => f.Id == featureId);
+            if (feature is null) return;
+
+            feature.ArchivedAt = DateTime.Now;
+
+            // Write to archive FIRST (duplicate is recoverable; loss is not)
+            var archived = LoadArchivedLocked();
+            // Prevent duplicates if archive already contains this feature (e.g. partial failure retry)
+            archived.RemoveAll(f => f.Id == featureId);
+            archived.Add(feature);
+            SaveArchivedLocked(archived);
+
+            // Then remove from active backlog
+            _features.RemoveAll(f => f.Id == featureId);
+            SaveLocked();
+        }
+    }
+
+    public List<BacklogFeature> GetArchivedFeatures(string? projectPath = null)
+    {
+        lock (_lock)
+        {
+            var archived = LoadArchivedLocked();
+            if (string.IsNullOrEmpty(projectPath))
+                return archived;
+
+            return archived
+                .Where(f => f.ProjectPath.PathEquals(projectPath))
+                .ToList();
+        }
+    }
+
+    private List<BacklogFeature> LoadArchivedLocked()
+    {
+        if (!File.Exists(ArchivePath))
+            return [];
+
+        try
+        {
+            var json = File.ReadAllText(ArchivePath);
+            return JsonSerializer.Deserialize<List<BacklogFeature>>(json, JsonDefaults.ReadOptions) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private void SaveArchivedLocked(List<BacklogFeature> archived)
+    {
+        Directory.CreateDirectory(BacklogDir);
+        var json = JsonSerializer.Serialize(archived, JsonDefaults.Options);
+        File.WriteAllText(ArchivePath, json);
     }
 
     private static void UpdateFeatureStatusFromPhases(BacklogFeature feature)

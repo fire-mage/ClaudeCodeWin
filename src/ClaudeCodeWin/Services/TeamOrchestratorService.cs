@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net.Http;
 using System.Text;
 using ClaudeCodeWin.Models;
@@ -28,13 +29,17 @@ public class TeamOrchestratorService : IDisposable
     private bool _softPauseRequested;
     private int _reviewAttempt;
     private string? _lastReviewCriticalSnippet;
-    private const int MaxReviewRetries = 5;
+    // KEEP IN SYNC with AppSettings.ReviewAutoRetries
+    private const int MaxReviewRetries = 11;
 
     // Health monitoring (Phase 6)
     private System.Timers.Timer? _healthTimer;
     private const int HealthCheckIntervalMs = 10_000;
     private const int StallNudgeThresholdSeconds = 60;
-    private const int StallKillThresholdSeconds = 600;
+    // Stall detector (no output for N seconds), NOT an absolute timeout.
+    // Main chat uses AppSettings.ReviewTimeoutSeconds as an absolute timer instead.
+    // KEEP IN SYNC with AppSettings.ReviewTimeoutSeconds
+    private const int StallKillThresholdSeconds = 660;
     private const int MaxSessionRetries = 3;
     private int _healthTickCount;
     private int _internetCheckPending; // 0=idle, 1=in-flight (Interlocked)
@@ -279,7 +284,7 @@ public class TeamOrchestratorService : IDisposable
 
         _backlogService.MarkPhaseStatus(feature.Id, phase.Id, PhaseStatus.InProgress);
 
-        if (feature.Status is FeatureStatus.Planned or FeatureStatus.Raw)
+        if (feature.Status == FeatureStatus.Queued)
             _backlogService.MarkFeatureStatus(feature.Id, FeatureStatus.InProgress);
 
         _reviewAttempt = 0;
@@ -415,14 +420,20 @@ public class TeamOrchestratorService : IDisposable
         {
             RaiseLog($"Developer dismissed reviewer for [{session.PhaseTitle}] — low quality feedback.");
 
+            var devText = session.DevResponse.ToString();
             var commitHash = _gitService.RunGit("rev-parse --short HEAD", _workingDirectory)?.Trim();
             _backlogService.MarkPhaseStatus(
                 session.FeatureId, session.PhaseId, PhaseStatus.Done,
-                summary: TruncateSummary(session.DevResponse.ToString()) +
+                summary: TruncateSummary(devText) +
                     "\n[Reviewer dismissed by developer — low quality feedback]",
                 changedFiles: session.ChangedFiles,
-                commitHash: commitHash);
+                commitHash: commitHash,
+                userActions: ExtractUserActions(devText));
 
+            // Track review dismiss on the feature
+            _backlogService.ModifyFeature(session.FeatureId, f => f.ReviewDismissed = true);
+
+            SaveSessionHistory(session);
             RaisePhaseCompleted(session.FeatureId, session.PhaseId, PhaseStatus.Done);
 
             CleanupSessionLocked();
@@ -453,6 +464,15 @@ public class TeamOrchestratorService : IDisposable
             session.FeatureId, session.PhaseId, PhaseStatus.Failed,
             errorMessage: error);
 
+        // Return feature to backlog (PlanApproved) with error info
+        _backlogService.ModifyFeature(session.FeatureId, f =>
+        {
+            f.Status = FeatureStatus.PlanApproved;
+            f.ErrorSummary = $"Dev failed: {error}";
+            f.ErrorDetails = TruncateErrorDetails(session.DevResponse.ToString());
+        });
+
+        SaveSessionHistory(session);
         RaisePhaseCompleted(session.FeatureId, session.PhaseId, PhaseStatus.Failed);
 
         CleanupSessionLocked();
@@ -568,14 +588,17 @@ public class TeamOrchestratorService : IDisposable
 
         if (verdict == ReviewVerdict.Consensus)
         {
+            var devText = session.DevResponse.ToString();
             var commitHash = _gitService.RunGit("rev-parse --short HEAD", _workingDirectory)?.Trim();
 
             _backlogService.MarkPhaseStatus(
                 session.FeatureId, session.PhaseId, PhaseStatus.Done,
-                summary: TruncateSummary(session.DevResponse.ToString()),
+                summary: TruncateSummary(devText),
                 changedFiles: session.ChangedFiles,
-                commitHash: commitHash);
+                commitHash: commitHash,
+                userActions: ExtractUserActions(devText));
 
+            SaveSessionHistory(session);
             RaiseLog($"Phase [{session.PhaseTitle}] completed with CONSENSUS.");
             RaisePhaseCompleted(session.FeatureId, session.PhaseId, PhaseStatus.Done);
 
@@ -595,6 +618,15 @@ public class TeamOrchestratorService : IDisposable
                 session.FeatureId, session.PhaseId, PhaseStatus.Failed,
                 errorMessage: $"Review failed after {_reviewAttempt} retries");
 
+            // Return feature to backlog with error info
+            _backlogService.ModifyFeature(session.FeatureId, f =>
+            {
+                f.Status = FeatureStatus.PlanApproved;
+                f.ErrorSummary = $"Review failed after {_reviewAttempt} retries";
+                f.ErrorDetails = TruncateErrorDetails(reviewText);
+            });
+
+            SaveSessionHistory(session);
             RaisePhaseCompleted(session.FeatureId, session.PhaseId, PhaseStatus.Failed);
 
             CleanupSessionLocked();
@@ -608,12 +640,15 @@ public class TeamOrchestratorService : IDisposable
         {
             RaiseLog($"Review loop detected for [{session.PhaseTitle}]. Marking done with warning.");
 
+            var loopDevText = session.DevResponse.ToString();
             _backlogService.MarkPhaseStatus(
                 session.FeatureId, session.PhaseId, PhaseStatus.Done,
-                summary: TruncateSummary(session.DevResponse.ToString()) +
+                summary: TruncateSummary(loopDevText) +
                     "\n[Review loop detected - passed with warning]",
-                changedFiles: session.ChangedFiles);
+                changedFiles: session.ChangedFiles,
+                userActions: ExtractUserActions(loopDevText));
 
+            SaveSessionHistory(session);
             RaisePhaseCompleted(session.FeatureId, session.PhaseId, PhaseStatus.Done);
 
             CleanupSessionLocked();
@@ -823,7 +858,7 @@ public class TeamOrchestratorService : IDisposable
                     return;
                 }
 
-                // 3. Review stall: nudge at 60s, kill at 600s (treat as consensus)
+                // 3. Review stall: nudge at 60s, kill at 660s (treat as consensus)
                 if (session.CurrentPhase == SessionPhase.Review)
                 {
                     if (session.ReviewStallSeconds >= StallKillThresholdSeconds)
@@ -856,6 +891,16 @@ public class TeamOrchestratorService : IDisposable
 
             _backlogService.MarkPhaseStatus(session.FeatureId, session.PhaseId,
                 PhaseStatus.Failed, errorMessage: $"Dev failed: {reason}");
+
+            // Return feature to backlog with error info
+            _backlogService.ModifyFeature(session.FeatureId, f =>
+            {
+                f.Status = FeatureStatus.PlanApproved;
+                f.ErrorSummary = $"Dev failed: {reason} after {MaxSessionRetries} retries";
+                f.ErrorDetails = TruncateErrorDetails(session.DevResponse.ToString());
+            });
+
+            SaveSessionHistory(session);
             RaisePhaseCompleted(session.FeatureId, session.PhaseId, PhaseStatus.Failed);
 
             CleanupSessionLocked();
@@ -942,7 +987,88 @@ public class TeamOrchestratorService : IDisposable
         }
     }
 
+    // ── Session history ────────────────────────────────────────────
+
+    private static readonly string SessionHistoryDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "ClaudeCodeWin", "session-history");
+
+    /// <summary>
+    /// Prepare session history data under lock, then defer file I/O to after lock release.
+    /// Must be called under _lock.
+    /// </summary>
+    private void SaveSessionHistory(DevReviewSession session)
+    {
+        // Capture all data under lock (strings are immutable snapshots)
+        var featureId = session.FeatureId;
+        var featureTitle = session.FeatureTitle;
+        var phaseId = session.PhaseId;
+        var phaseTitle = session.PhaseTitle;
+        var startedAt = session.StartedAt;
+        var devText = session.DevResponse.ToString();
+        var reviewText = session.ReviewResponse.ToString();
+        var timestamp = DateTime.Now;
+
+        // Defer file I/O — runs after _lock is released via FlushDeferredEvents
+        _deferredEvents.Add(() => WriteSessionHistoryFile(
+            featureId, phaseId, featureTitle, phaseTitle, startedAt, timestamp, devText, reviewText));
+    }
+
+    private void WriteSessionHistoryFile(string featureId, string phaseId,
+        string featureTitle, string phaseTitle, DateTime startedAt, DateTime endedAt,
+        string devText, string reviewText)
+    {
+        try
+        {
+            Directory.CreateDirectory(SessionHistoryDir);
+            var fileName = $"{featureId}_{phaseId}_{endedAt:yyyyMMdd_HHmmss}.txt";
+            var filePath = Path.Combine(SessionHistoryDir, fileName);
+
+            var sb = new StringBuilder();
+            sb.AppendLine("=== Session History ===");
+            sb.AppendLine($"Feature: {featureTitle}");
+            sb.AppendLine($"Phase: {phaseTitle}");
+            sb.AppendLine($"Started: {startedAt:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"Ended: {endedAt:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine();
+
+            if (devText.Length > 0)
+            {
+                sb.AppendLine("--- Developer Output ---");
+                sb.AppendLine(devText);
+                sb.AppendLine();
+            }
+
+            if (reviewText.Length > 0)
+            {
+                sb.AppendLine("--- Review Output ---");
+                sb.AppendLine(reviewText);
+                sb.AppendLine();
+            }
+
+            File.WriteAllText(filePath, sb.ToString());
+
+            _backlogService.ModifyFeature(featureId, f =>
+            {
+                if (!f.SessionHistoryPaths.Contains(filePath))
+                    f.SessionHistoryPaths.Add(filePath);
+            });
+        }
+        catch (Exception ex)
+        {
+            OnLog?.Invoke($"Failed to save session history: {ex.Message}");
+        }
+    }
+
     // ── Utilities ──────────────────────────────────────────────────
+
+    private const int MaxErrorDetailsLength = 10_000;
+
+    private static string TruncateErrorDetails(string text)
+    {
+        if (text.Length <= MaxErrorDetailsLength) return text;
+        return text[..MaxErrorDetailsLength] + "\n\n[truncated — see session history for full output]";
+    }
 
     private static string TruncateSummary(string text)
     {
@@ -953,6 +1079,36 @@ public class TeamOrchestratorService : IDisposable
             return text[(sepIdx + 3)..].Trim();
 
         return text[^500..];
+    }
+
+    /// <summary>
+    /// Extracts userActions JSON array from dev output, if present.
+    /// Developer is instructed to output: {"userActions": ["action1", "action2"]}
+    /// </summary>
+    private static List<string>? ExtractUserActions(string devOutput)
+    {
+        var json = JsonBlockExtractor.Extract(devOutput, "userActions");
+        if (json is null) return null;
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("userActions", out var arr)
+                && arr.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                var actions = new List<string>();
+                foreach (var item in arr.EnumerateArray())
+                {
+                    var text = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(text))
+                        actions.Add(text);
+                }
+                return actions.Count > 0 ? actions : null;
+            }
+        }
+        catch { /* ignore parse errors */ }
+
+        return null;
     }
 
     private static string? ExtractFirstCritical(string reviewText)

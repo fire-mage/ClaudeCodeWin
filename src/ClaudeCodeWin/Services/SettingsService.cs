@@ -43,6 +43,15 @@ public class SettingsService
                 settings.SettingsVersion = 1;
                 needsSave = true;
             }
+            if (settings.SettingsVersion < 2)
+            {
+                if (settings.ReviewAutoRetries <= 5)
+                    settings.ReviewAutoRetries = 11;
+                if (settings.ReviewTimeoutSeconds <= 600)
+                    settings.ReviewTimeoutSeconds = 660;
+                settings.SettingsVersion = 2;
+                needsSave = true;
+            }
 
             if (needsSave)
                 Save(settings);

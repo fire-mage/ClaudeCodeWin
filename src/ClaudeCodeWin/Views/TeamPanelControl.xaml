@@ -8,6 +8,81 @@
         <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
         <converters:ExpandArrowConverter x:Key="ExpandArrow"/>
 
+        <!-- Pipeline section accent colors -->
+        <SolidColorBrush x:Key="IdeasAccent" Color="#FFAB1A"/>
+        <SolidColorBrush x:Key="AnalysisAccent" Color="#5865F2"/>
+        <SolidColorBrush x:Key="PlanningAccent" Color="#4EC9B0"/>
+        <SolidColorBrush x:Key="ApprovalAccent" Color="#C586C0"/>
+        <SolidColorBrush x:Key="BacklogAccent" Color="#569CD6"/>
+        <SolidColorBrush x:Key="QueueAccent" Color="#4CAF50"/>
+        <SolidColorBrush x:Key="CompletedAccent" Color="#56d364"/>
+
+        <!-- Dim background brushes for pipeline pills -->
+        <SolidColorBrush x:Key="IdeasDimBg" Color="#1a1a0a"/>
+        <SolidColorBrush x:Key="AnalysisDimBg" Color="#0f0f2a"/>
+        <SolidColorBrush x:Key="PlanningDimBg" Color="#0f1a1a"/>
+        <SolidColorBrush x:Key="ApprovalDimBg" Color="#1a0f1a"/>
+        <SolidColorBrush x:Key="BacklogDimBg" Color="#0f1a2a"/>
+        <SolidColorBrush x:Key="QueueDimBg" Color="#0f1a0f"/>
+        <SolidColorBrush x:Key="CompletedDimBg" Color="#0f1a0f"/>
+
+        <!-- Pipeline Expander style -->
+        <Style x:Key="PipelineExpander" TargetType="Expander">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="IsExpanded" Value="True"/>
+            <Setter Property="Margin" Value="0,0,0,2"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Expander">
+                        <StackPanel>
+                            <ToggleButton IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Content="{TemplateBinding Header}"
+                                          OverridesDefaultStyle="True"
+                                          Cursor="Hand">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="HeaderBorder"
+                                                Background="{StaticResource SurfaceBrush}"
+                                                CornerRadius="4"
+                                                Padding="10,6"
+                                                BorderBrush="{StaticResource BorderBrush}"
+                                                BorderThickness="1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ContentPresenter Grid.Column="0" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="Arrow" Grid.Column="1"
+                                                           Text="&#x25BE;" FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="False">
+                                                <Setter TargetName="Arrow" Property="Text" Value="&#x25B8;"/>
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="HeaderBorder" Property="Background"
+                                                        Value="{StaticResource SurfaceLightBrush}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="ExpandContent" Visibility="Collapsed" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="True">
+                                <Setter TargetName="ExpandContent" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Phase item template -->
         <DataTemplate x:Key="PhaseItemTemplate">
             <Grid Margin="0,1">
@@ -44,7 +119,7 @@
             </Grid>
         </DataTemplate>
 
-        <!-- Feature item template -->
+        <!-- Feature card template -->
         <DataTemplate x:Key="FeatureItemTemplate" DataType="{x:Type vm:BacklogFeatureVM}">
             <Border Margin="0,2" Padding="8,6"
                     Background="{StaticResource SurfaceBrush}"
@@ -69,7 +144,6 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
-                            <!-- Expand/collapse arrow -->
                             <TextBlock Grid.Column="0"
                                        Text="{Binding IsExpanded, Converter={StaticResource ExpandArrow}}"
                                        FontSize="10"
@@ -77,7 +151,6 @@
                                        VerticalAlignment="Center"
                                        Visibility="{Binding HasPhases, Converter={StaticResource BoolToVis}}"/>
 
-                            <!-- Feature title -->
                             <TextBlock Grid.Column="1"
                                        Text="{Binding DisplayTitle}"
                                        FontSize="12"
@@ -86,7 +159,6 @@
                                        VerticalAlignment="Center"
                                        Margin="2,0,0,0"/>
 
-                            <!-- Phase progress -->
                             <TextBlock Grid.Column="2"
                                        Text="{Binding PhaseProgressText}"
                                        FontSize="11"
@@ -141,12 +213,11 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Toolbar: Add Idea input + buttons -->
-        <Border Grid.Row="0" Padding="8,6"
+        <!-- Row 0: Compact toolbar — Add Idea + Orchestrator controls -->
+        <Border Grid.Row="0" Padding="8,4"
                 Background="{StaticResource SurfaceBrush}"
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="0,0,0,1">
@@ -155,8 +226,16 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="16"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
+                <!-- Add idea input -->
                 <Grid Grid.Column="0">
                     <TextBox x:Name="IdeaBox"
                              Text="{Binding AddIdeaText, UpdateSourceTrigger=PropertyChanged}"
@@ -164,211 +243,1469 @@
                              Foreground="{StaticResource TextBrush}"
                              CaretBrush="{StaticResource TextBrush}"
                              BorderBrush="{StaticResource BorderBrush}"
-                             FontSize="12" Padding="8,4"
+                             FontSize="11" Padding="6,3"
                              VerticalContentAlignment="Center"
                              KeyDown="AddIdeaTextBox_KeyDown"/>
-                    <TextBlock Text="Add a new idea..."
+                    <TextBlock Text="Add idea..."
                                IsHitTestVisible="False"
                                Foreground="{StaticResource TextSecondaryBrush}"
-                               FontSize="12"
+                               FontSize="11"
                                VerticalAlignment="Center"
-                               Margin="10,0,0,0"
+                               Margin="8,0,0,0"
                                Visibility="{Binding Text.Length, ElementName=IdeaBox,
                                             Converter={StaticResource BoolToVis},
                                             ConverterParameter=Invert}"/>
                 </Grid>
 
                 <Button Grid.Column="1" Content="+ Add"
-                        Padding="8,4" Margin="4,0,0,0"
+                        Padding="6,3" Margin="4,0,0,0" FontSize="11"
                         Style="{StaticResource SubTabToolButton}"
                         Command="{Binding AddIdeaCommand}"/>
 
                 <Button Grid.Column="2" Content="&#x21BB;"
-                        ToolTip="Refresh"
-                        Padding="6,4" Margin="4,0,0,0"
+                        ToolTip="Refresh" Padding="4,3" Margin="2,0,0,0"
                         Style="{StaticResource ExplorerToolButton}"
                         Command="{Binding RefreshCommand}"/>
+
+                <!-- Separator -->
+                <Border Grid.Column="3" Width="1" Background="{StaticResource BorderBrush}"
+                        Margin="4,2"/>
+
+                <!-- Orchestrator controls -->
+                <TextBlock Grid.Column="4" Text="{Binding OrchestratorStatusText}"
+                           FontSize="10"
+                           Foreground="{StaticResource AccentBrush}"
+                           VerticalAlignment="Center"
+                           Margin="0,0,6,0"/>
+
+                <Button Grid.Column="5" Content="&#x25B6;"
+                        ToolTip="Run orchestrator"
+                        Padding="4,3" Margin="0,0,2,0" FontSize="10"
+                        Style="{StaticResource ExplorerToolButton}"
+                        Command="{Binding StartOrchestratorCommand}"/>
+
+                <Button Grid.Column="6" Content="&#x23F8;"
+                        ToolTip="Soft pause"
+                        Padding="4,3" Margin="0,0,2,0" FontSize="10"
+                        Style="{StaticResource ExplorerToolButton}"
+                        Command="{Binding PauseOrchestratorCommand}"/>
+
+                <Button Grid.Column="7" Content="&#x23E9;"
+                        ToolTip="Hard pause"
+                        Padding="4,3" Margin="0,0,2,0" FontSize="10"
+                        Style="{StaticResource ExplorerToolButton}"
+                        Command="{Binding HardPauseOrchestratorCommand}"/>
+
+                <Button Grid.Column="8" Content="&#x23F9;"
+                        ToolTip="Stop orchestrator"
+                        Padding="4,3" Margin="0,0,2,0" FontSize="10"
+                        Style="{StaticResource ExplorerToolButton}"
+                        Command="{Binding StopOrchestratorCommand}"/>
+
+                <Button Grid.Column="9" Content="Mgr"
+                        ToolTip="Toggle Manager"
+                        Padding="4,3" Margin="2,0,0,0" FontSize="10"
+                        Style="{StaticResource ExplorerToolButton}"
+                        Click="ToggleManager_Click"/>
             </Grid>
         </Border>
 
-        <!-- Orchestrator control bar -->
-        <Border Grid.Row="1" Padding="8,4"
-                Background="{StaticResource SurfaceBrush}"
+        <!-- Row 1: Pipeline progress bar -->
+        <Border Grid.Row="1" Padding="6,5"
+                Background="{StaticResource BackgroundBrush}"
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="0,0,0,1">
-            <Grid>
+            <Grid HorizontalAlignment="Center">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0" Text="Orchestrator"
-                           FontSize="11" FontWeight="SemiBold"
-                           Foreground="{StaticResource PrimaryBrush}"
-                           VerticalAlignment="Center"
-                           Margin="0,0,8,0"/>
+                <!-- 1: Ideas -->
+                <Border Grid.Column="0" CornerRadius="10" Padding="7,2"
+                        Background="{StaticResource IdeasDimBg}" BorderBrush="{StaticResource IdeasAccent}" BorderThickness="1">
+                    <TextBlock Text="&#x2460; Ideas" FontSize="10" Foreground="{StaticResource IdeasAccent}"/>
+                </Border>
+                <TextBlock Grid.Column="1" Text="&#x2192;" FontSize="9"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           VerticalAlignment="Center" Margin="3,0"/>
 
-                <Button Grid.Column="1" Content="&#x25B6; Run"
-                        ToolTip="Start executing planned phases (Dev + Review cycle)"
-                        Padding="8,3" Margin="0,0,4,0"
-                        FontSize="11"
-                        Style="{StaticResource SubTabToolButton}"
-                        Command="{Binding StartOrchestratorCommand}"/>
+                <!-- 2: Analysis -->
+                <Border Grid.Column="2" CornerRadius="10" Padding="7,2"
+                        Background="{StaticResource AnalysisDimBg}" BorderBrush="{StaticResource AnalysisAccent}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#x2461; Analysis" FontSize="10" Foreground="{StaticResource AnalysisAccent}"/>
+                        <TextBlock Text="{Binding AnalyzingCount}" FontSize="9"
+                                   Foreground="{StaticResource AnalysisAccent}"
+                                   Margin="4,0,0,0" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AnalyzingCount}" Value="0">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+                <TextBlock Grid.Column="3" Text="&#x2192;" FontSize="9"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           VerticalAlignment="Center" Margin="3,0"/>
 
-                <Button Grid.Column="2" Content="&#x23F8; Pause"
-                        ToolTip="Finish current phase, then pause"
-                        Padding="8,3" Margin="0,0,4,0"
-                        FontSize="11"
-                        Style="{StaticResource SubTabToolButton}"
-                        Command="{Binding PauseOrchestratorCommand}"/>
+                <!-- 3: Planning -->
+                <Border Grid.Column="4" CornerRadius="10" Padding="7,2"
+                        Background="{StaticResource PlanningDimBg}" BorderBrush="{StaticResource PlanningAccent}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#x2462; Planning" FontSize="10" Foreground="{StaticResource PlanningAccent}"/>
+                        <TextBlock Text="{Binding PlanningCount}" FontSize="9"
+                                   Foreground="{StaticResource PlanningAccent}"
+                                   Margin="4,0,0,0" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding PlanningCount}" Value="0">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+                <TextBlock Grid.Column="5" Text="&#x2192;" FontSize="9"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           VerticalAlignment="Center" Margin="3,0"/>
 
-                <Button Grid.Column="3" Content="&#x23E9; Hard Pause"
-                        ToolTip="Stop current session immediately (phase restarts on resume)"
-                        Padding="8,3" Margin="0,0,4,0"
-                        FontSize="11"
-                        Style="{StaticResource SubTabToolButton}"
-                        Command="{Binding HardPauseOrchestratorCommand}"/>
+                <!-- 4: Approval -->
+                <Border Grid.Column="6" CornerRadius="10" Padding="7,2"
+                        Background="{StaticResource ApprovalDimBg}" BorderBrush="{StaticResource ApprovalAccent}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#x2463; Approval" FontSize="10" Foreground="{StaticResource ApprovalAccent}"/>
+                        <TextBlock Text="{Binding ApprovalCount}" FontSize="9"
+                                   Foreground="{StaticResource ApprovalAccent}"
+                                   Margin="4,0,0,0" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ApprovalCount}" Value="0">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+                <TextBlock Grid.Column="7" Text="&#x2192;" FontSize="9"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           VerticalAlignment="Center" Margin="3,0"/>
 
-                <Button Grid.Column="4" Content="&#x23F9; Stop"
-                        ToolTip="Stop orchestrator completely"
-                        Padding="8,3" Margin="0,0,4,0"
-                        FontSize="11"
-                        Style="{StaticResource SubTabToolButton}"
-                        Command="{Binding StopOrchestratorCommand}"/>
+                <!-- 5: Backlog -->
+                <Border Grid.Column="8" CornerRadius="10" Padding="7,2"
+                        Background="{StaticResource BacklogDimBg}" BorderBrush="{StaticResource BacklogAccent}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#x2464; Backlog" FontSize="10" Foreground="{StaticResource BacklogAccent}"/>
+                        <TextBlock Text="{Binding BacklogCount}" FontSize="9"
+                                   Foreground="{StaticResource BacklogAccent}"
+                                   Margin="4,0,0,0" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding BacklogCount}" Value="0">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+                <TextBlock Grid.Column="9" Text="&#x2192;" FontSize="9"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           VerticalAlignment="Center" Margin="3,0"/>
 
-                <TextBlock Grid.Column="6"
-                           Text="{Binding OrchestratorStatusText}"
-                           FontSize="11"
-                           Foreground="{StaticResource AccentBrush}"
-                           VerticalAlignment="Center"/>
+                <!-- 6: Queue -->
+                <Border Grid.Column="10" CornerRadius="10" Padding="7,2"
+                        Background="{StaticResource QueueDimBg}" BorderBrush="{StaticResource QueueAccent}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#x2465; Queue" FontSize="10" Foreground="{StaticResource QueueAccent}"/>
+                        <TextBlock Text="{Binding QueuedCount}" FontSize="9"
+                                   Foreground="{StaticResource QueueAccent}"
+                                   Margin="4,0,0,0" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding QueuedCount}" Value="0">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+                <TextBlock Grid.Column="11" Text="&#x2192;" FontSize="9"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           VerticalAlignment="Center" Margin="3,0"/>
+
+                <!-- 7: Completed -->
+                <Border Grid.Column="12" CornerRadius="10" Padding="7,2"
+                        Background="{StaticResource CompletedDimBg}" BorderBrush="{StaticResource CompletedAccent}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#x2466; Done" FontSize="10" Foreground="{StaticResource CompletedAccent}"/>
+                        <TextBlock Text="{Binding CompletedCount}" FontSize="9"
+                                   Foreground="{StaticResource CompletedAccent}"
+                                   Margin="4,0,0,0" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CompletedCount}" Value="0">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
 
-        <!-- Health strip (active sessions) -->
-        <Border Grid.Row="2" Padding="8,3"
-                Background="{StaticResource BackgroundBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="0,0,0,1"
-                Visibility="{Binding HasActiveSession, Converter={StaticResource BoolToVis}}">
-            <ItemsControl ItemsSource="{Binding SessionHealthItems}">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <StackPanel Orientation="Horizontal"/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
-                            <TextBlock Text="{Binding HealthIcon}"
-                                       FontSize="11"
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,4,0">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding HasIssue}" Value="True">
-                                                <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                            <TextBlock Text="{Binding Role}"
-                                       FontSize="11" FontWeight="SemiBold"
-                                       Foreground="{StaticResource TextBrush}"
-                                       VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding Detail}"
-                                       FontSize="10" Margin="4,0,0,0"
-                                       Foreground="{StaticResource WarningBrush}"
-                                       VerticalAlignment="Center"
-                                       Visibility="{Binding HasIssue, Converter={StaticResource BoolToVis}}"/>
-                            <TextBlock Text="{Binding Elapsed}"
-                                       FontSize="10" Margin="4,0,0,0"
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </Border>
-
-        <!-- Feature list grouped by status -->
-        <ScrollViewer Grid.Row="3"
+        <!-- Row 2: Scrollable 7-section pipeline -->
+        <ScrollViewer Grid.Row="2"
                       VerticalScrollBarVisibility="Auto"
                       Background="{StaticResource BackgroundBrush}">
-            <StackPanel Margin="8,4">
+            <StackPanel Margin="8,6">
 
                 <!-- Empty state -->
                 <TextBlock Text="No features yet. Add an idea above to get started."
                            FontSize="12"
                            Foreground="{StaticResource TextSecondaryBrush}"
                            HorizontalAlignment="Center"
-                           Margin="0,32,0,0"
+                           Margin="0,24,0,0"
                            Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}"/>
 
-                <!-- In Progress -->
-                <StackPanel Visibility="{Binding HasInProgress, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="In Progress" FontSize="11"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource PrimaryBrush}"
-                               Margin="0,8,0,4"/>
-                    <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding InProgressFeatures}"
-                                  ItemTemplate="{StaticResource FeatureItemTemplate}"/>
-                </StackPanel>
+                <!-- ================================================ -->
+                <!-- Section 1: Ideas Notepad -->
+                <!-- ================================================ -->
+                <Expander Style="{StaticResource PipelineExpander}" IsExpanded="True">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#x2460;" Foreground="{StaticResource IdeasAccent}"
+                                       FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="Ideas" FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Expander.Header>
+                    <StackPanel Margin="4,2,4,8">
+                        <!-- Toolbar: Save, Clear, Save status -->
+                        <DockPanel Margin="0,0,0,4">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <TextBlock Text="{Binding IdeasSaveStatus}"
+                                           FontSize="10" VerticalAlignment="Center"
+                                           Margin="0,0,8,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IdeasSaveStatus}" Value="Unsaved">
+                                                    <Setter Property="Foreground" Value="{StaticResource IdeasAccent}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <Button Content="Save" Padding="6,2" Margin="0,0,2,0"
+                                        FontSize="10"
+                                        Style="{StaticResource SubTabToolButton}"
+                                        Command="{Binding SaveIdeasCommand}"/>
+                                <Button Content="Clear" Padding="6,2"
+                                        FontSize="10"
+                                        Style="{StaticResource SubTabToolButton}"
+                                        Command="{Binding ClearIdeasCommand}"/>
+                            </StackPanel>
+                            <TextBlock Text="Use - / * / 1. markers or double-newline to separate ideas"
+                                       FontSize="10"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center"/>
+                        </DockPanel>
 
-                <!-- Awaiting Your Input -->
-                <StackPanel Visibility="{Binding HasAwaitingUser, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="Awaiting Your Input" FontSize="11"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource AccentBrush}"
-                               Margin="0,12,0,4"/>
-                    <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding AwaitingUserFeatures}"
-                                  ItemTemplate="{StaticResource FeatureItemTemplate}"/>
-                </StackPanel>
+                        <!-- Notepad TextBox -->
+                        <TextBox Text="{Binding IdeasText, UpdateSourceTrigger=PropertyChanged}"
+                                 Background="{StaticResource BackgroundBrush}"
+                                 Foreground="{StaticResource TextBrush}"
+                                 CaretBrush="{StaticResource TextBrush}"
+                                 BorderBrush="{StaticResource BorderBrush}"
+                                 BorderThickness="1"
+                                 FontSize="12" Padding="8,6"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 MinHeight="80" MaxHeight="200"
+                                 VerticalScrollBarVisibility="Auto"/>
 
-                <!-- Planned -->
-                <StackPanel Visibility="{Binding HasPlanned, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="Planned" FontSize="11"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               Margin="0,12,0,4"/>
-                    <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding PlannedFeatures}"
-                                  ItemTemplate="{StaticResource FeatureItemTemplate}"/>
-                </StackPanel>
+                        <!-- Submit button -->
+                        <Button Margin="0,6,0,0"
+                                Padding="10,5"
+                                HorizontalAlignment="Left"
+                                FontSize="11"
+                                Command="{Binding SubmitIdeasCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource SubTabToolButton}">
+                                    <Setter Property="Content" Value="Submit for Analysis &#x25B6;"/>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </StackPanel>
+                </Expander>
 
-                <!-- New Ideas -->
-                <StackPanel Visibility="{Binding HasRaw, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="New Ideas" FontSize="11"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               Margin="0,12,0,4"/>
-                    <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding RawFeatures}"
-                                  ItemTemplate="{StaticResource FeatureItemTemplate}"/>
-                </StackPanel>
+                <!-- ================================================ -->
+                <!-- Section 2: Analysis -->
+                <!-- ================================================ -->
+                <Expander Style="{StaticResource PipelineExpander}" IsExpanded="True">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#x2461;" Foreground="{StaticResource AnalysisAccent}"
+                                       FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="Analysis" FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" VerticalAlignment="Center"/>
+                            <Border CornerRadius="8" Padding="5,1" Margin="8,0,0,0"
+                                    Background="{StaticResource AnalysisDimBg}" VerticalAlignment="Center">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding AnalyzingCount}" Value="0">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding AnalyzingCount}" FontSize="10"
+                                           Foreground="{StaticResource AnalysisAccent}"/>
+                            </Border>
+                        </StackPanel>
+                    </Expander.Header>
+                    <ItemsControl ItemsSource="{Binding AnalyzingFeatures}" Margin="4,0,4,8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:BacklogFeatureVM}">
+                                <Border Margin="0,2" Padding="8,6"
+                                        Background="{StaticResource SurfaceBrush}"
+                                        CornerRadius="4"
+                                        BorderThickness="1">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsAnalysisRejected}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="#C94040"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsAnalysisDone}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{StaticResource AnalysisAccent}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <Border.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Cancel" Click="ContextMenu_CancelFeature"/>
+                                            <Separator/>
+                                            <MenuItem Header="Delete" Click="ContextMenu_DeleteFeature"/>
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
+                                    <StackPanel>
+                                        <!-- Feature header with status indicator -->
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="20"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
 
-                <!-- Completed -->
-                <StackPanel Visibility="{Binding HasCompleted, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="Completed" FontSize="11"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource SuccessBrush}"
-                               Margin="0,12,0,4"/>
-                    <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding CompletedFeatures}"
-                                  ItemTemplate="{StaticResource FeatureItemTemplate}"/>
-                </StackPanel>
+                                            <!-- Status indicator: spinner / checkmark / X -->
+                                            <TextBlock Grid.Column="0" FontSize="12" VerticalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="..."/>
+                                                        <Setter Property="Foreground" Value="{StaticResource AnalysisAccent}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsAnalysisDone}" Value="True">
+                                                                <Setter Property="Text" Value="&#x2713;"/>
+                                                                <Setter Property="Foreground" Value="#4CAF50"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsAnalysisRejected}" Value="True">
+                                                                <Setter Property="Text" Value="&#x2717;"/>
+                                                                <Setter Property="Foreground" Value="#C94040"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding NeedsUserInput}" Value="True">
+                                                                <Setter Property="Text" Value="?"/>
+                                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
 
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding DisplayTitle}"
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource TextBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center"
+                                                       Margin="2,0,0,0"/>
+
+                                            <!-- Status text -->
+                                            <TextBlock Grid.Column="2" FontSize="10"
+                                                       VerticalAlignment="Center" Margin="8,0,0,0">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="Analyzing..."/>
+                                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsAnalysisDone}" Value="True">
+                                                                <Setter Property="Text" Value="Approved"/>
+                                                                <Setter Property="Foreground" Value="#4CAF50"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsAnalysisRejected}" Value="True">
+                                                                <Setter Property="Text" Value="Rejected"/>
+                                                                <Setter Property="Foreground" Value="#C94040"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding NeedsUserInput}" Value="True">
+                                                                <Setter Property="Text" Value="Needs input"/>
+                                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Grid>
+
+                                        <!-- Analysis result text -->
+                                        <TextBlock Text="{Binding AnalysisResult}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="22,4,0,0"
+                                                   Visibility="{Binding HasAnalysisResult, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- Rejection reason -->
+                                        <TextBlock Text="{Binding RejectionReason}"
+                                                   FontSize="11" FontStyle="Italic"
+                                                   Foreground="#C94040"
+                                                   TextWrapping="Wrap"
+                                                   Margin="22,4,0,0"
+                                                   Visibility="{Binding IsAnalysisRejected, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- Cross-project info banner -->
+                                        <Border Margin="22,4,0,0" Padding="6,3"
+                                                Background="#1a1a3a" CornerRadius="3"
+                                                BorderBrush="{StaticResource AnalysisAccent}"
+                                                BorderThickness="1,0,0,0"
+                                                Visibility="{Binding HasCrossProjectHint, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding CrossProjectText}"
+                                                       FontSize="10"
+                                                       Foreground="{StaticResource AnalysisAccent}"/>
+                                        </Border>
+
+                                        <!-- Question/discussion area -->
+                                        <TextBlock Text="{Binding PlannerQuestion}"
+                                                   FontSize="11" FontStyle="Italic"
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="22,4,0,0"
+                                                   Visibility="{Binding NeedsUserInput, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- Answer input for discussion -->
+                                        <Grid Margin="22,4,0,0"
+                                              Visibility="{Binding NeedsUserInput, Converter={StaticResource BoolToVis}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0"
+                                                     Text="{Binding AnswerText, UpdateSourceTrigger=PropertyChanged}"
+                                                     Background="{StaticResource BackgroundBrush}"
+                                                     Foreground="{StaticResource TextBrush}"
+                                                     CaretBrush="{StaticResource TextBrush}"
+                                                     BorderBrush="{StaticResource BorderBrush}"
+                                                     FontSize="11" Padding="6,3"
+                                                     VerticalContentAlignment="Center"
+                                                     KeyDown="AnalysisAnswerTextBox_KeyDown"/>
+                                            <Button Grid.Column="1" Content="Send"
+                                                    Padding="8,3" Margin="4,0,0,0"
+                                                    FontSize="11"
+                                                    Style="{StaticResource SubTabToolButton}"
+                                                    Click="SendAnalysisAnswer_Click"/>
+                                        </Grid>
+
+                                        <!-- Action buttons -->
+                                        <StackPanel Orientation="Horizontal" Margin="22,6,0,0">
+                                            <Button Content="&#x2713; Approve" Padding="8,3" Margin="0,0,4,0"
+                                                    FontSize="10"
+                                                    Style="{StaticResource SubTabToolButton}"
+                                                    Click="ApproveAnalysis_Click"
+                                                    Visibility="{Binding ShowAnalysisActions, Converter={StaticResource BoolToVis}}"/>
+
+                                            <Button Content="&#x2717; Reject" Padding="8,3" Margin="0,0,4,0"
+                                                    FontSize="10"
+                                                    Style="{StaticResource SubTabToolButton}"
+                                                    Click="RejectAnalysis_Click"
+                                                    Visibility="{Binding ShowAnalysisActions, Converter={StaticResource BoolToVis}}"/>
+
+                                            <!-- Send to Planning (only for AnalysisDone) -->
+                                            <Button Content="Send to Planning &#x2192;" Padding="8,3"
+                                                    FontSize="10"
+                                                    Style="{StaticResource SubTabToolButton}"
+                                                    Click="SendToPlanning_Click"
+                                                    Visibility="{Binding IsAnalysisDone, Converter={StaticResource BoolToVis}}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Expander>
+
+                <!-- ================================================ -->
+                <!-- Section 3: Planning -->
+                <!-- ================================================ -->
+                <Expander Style="{StaticResource PipelineExpander}" IsExpanded="True">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#x2462;" Foreground="{StaticResource PlanningAccent}"
+                                       FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="Planning" FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" VerticalAlignment="Center"/>
+                            <Border CornerRadius="8" Padding="5,1" Margin="8,0,0,0"
+                                    Background="{StaticResource PlanningDimBg}" VerticalAlignment="Center">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding PlanningCount}" Value="0">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding PlanningCount}" FontSize="10"
+                                           Foreground="{StaticResource PlanningAccent}"/>
+                            </Border>
+                        </StackPanel>
+                    </Expander.Header>
+                    <ItemsControl ItemsSource="{Binding PlanningFeatures}" Margin="4,0,4,8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:BacklogFeatureVM}">
+                                <Border Margin="0,2" Padding="8,6"
+                                        Background="{StaticResource SurfaceBrush}"
+                                        CornerRadius="4"
+                                        BorderThickness="1">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsPlanningFailed}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="#C94040"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsPlanningQuestion}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <Border.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Cancel" Click="ContextMenu_CancelFeature"/>
+                                            <Separator/>
+                                            <MenuItem Header="Delete" Click="ContextMenu_DeleteFeature"/>
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
+                                    <StackPanel>
+                                        <!-- Feature header with status indicator -->
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="20"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- Status: spinner / question / failed -->
+                                            <TextBlock Grid.Column="0" FontSize="12" VerticalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="..."/>
+                                                        <Setter Property="Foreground" Value="{StaticResource PlanningAccent}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsPlanningFailed}" Value="True">
+                                                                <Setter Property="Text" Value="&#x2717;"/>
+                                                                <Setter Property="Foreground" Value="#C94040"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding NeedsUserInput}" Value="True">
+                                                                <Setter Property="Text" Value="?"/>
+                                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding DisplayTitle}"
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource TextBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center"
+                                                       Margin="2,0,0,0"/>
+
+                                            <TextBlock Grid.Column="2" FontSize="10"
+                                                       VerticalAlignment="Center" Margin="8,0,0,0">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="Planning..."/>
+                                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsPlanningFailed}" Value="True">
+                                                                <Setter Property="Text" Value="Failed"/>
+                                                                <Setter Property="Foreground" Value="#C94040"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding NeedsUserInput}" Value="True">
+                                                                <Setter Property="Text" Value="Needs input"/>
+                                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Grid>
+
+                                        <!-- Failure reason -->
+                                        <TextBlock Text="{Binding RejectionReason}"
+                                                   FontSize="11" FontStyle="Italic"
+                                                   Foreground="#C94040"
+                                                   TextWrapping="Wrap"
+                                                   Margin="22,4,0,0"
+                                                   Visibility="{Binding IsPlanningFailed, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- Retry button for failed planning -->
+                                        <Button Content="Retry Planning" Padding="8,3" Margin="22,4,0,0"
+                                                FontSize="10" HorizontalAlignment="Left"
+                                                Style="{StaticResource SubTabToolButton}"
+                                                Click="RetryPlanning_Click"
+                                                Visibility="{Binding IsPlanningFailed, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- Planner question (Q&A area) -->
+                                        <TextBlock Text="{Binding PlannerQuestion}"
+                                                   FontSize="11" FontStyle="Italic"
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="22,4,0,0"
+                                                   Visibility="{Binding NeedsUserInput, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- Answer input for planner questions -->
+                                        <Grid Margin="22,4,0,0"
+                                              Visibility="{Binding NeedsUserInput, Converter={StaticResource BoolToVis}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0"
+                                                     Text="{Binding AnswerText, UpdateSourceTrigger=PropertyChanged}"
+                                                     Background="{StaticResource BackgroundBrush}"
+                                                     Foreground="{StaticResource TextBrush}"
+                                                     CaretBrush="{StaticResource TextBrush}"
+                                                     BorderBrush="{StaticResource BorderBrush}"
+                                                     FontSize="11" Padding="6,3"
+                                                     VerticalContentAlignment="Center"
+                                                     KeyDown="AnswerTextBox_KeyDown"/>
+                                            <Button Grid.Column="1" Content="Send"
+                                                    Padding="8,3" Margin="4,0,0,0"
+                                                    FontSize="11"
+                                                    Style="{StaticResource SubTabToolButton}"
+                                                    Click="SendAnswer_Click"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Expander>
+
+                <!-- ================================================ -->
+                <!-- Section 4: Plan Approval -->
+                <!-- ================================================ -->
+                <Expander Style="{StaticResource PipelineExpander}" IsExpanded="True">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#x2463;" Foreground="{StaticResource ApprovalAccent}"
+                                       FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="Plan Approval" FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" VerticalAlignment="Center"/>
+                            <Border CornerRadius="8" Padding="5,1" Margin="8,0,0,0"
+                                    Background="{StaticResource ApprovalDimBg}" VerticalAlignment="Center">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ApprovalCount}" Value="0">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding ApprovalCount}" FontSize="10"
+                                           Foreground="{StaticResource ApprovalAccent}"/>
+                            </Border>
+                            <!-- Auto-approve toggle -->
+                            <CheckBox Content="Auto-approve" Margin="12,0,0,0"
+                                      IsChecked="{Binding AutoApprovePlans}"
+                                      Foreground="{StaticResource TextSecondaryBrush}"
+                                      FontSize="10" VerticalAlignment="Center"
+                                      ToolTip="Automatically approve plans without manual review"/>
+                        </StackPanel>
+                    </Expander.Header>
+                    <ItemsControl ItemsSource="{Binding AwaitingApprovalFeatures}" Margin="4,0,4,8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:BacklogFeatureVM}">
+                                <Border Margin="0,2" Padding="8,6"
+                                        Background="{StaticResource SurfaceBrush}"
+                                        CornerRadius="4"
+                                        BorderBrush="{StaticResource ApprovalAccent}"
+                                        BorderThickness="1">
+                                    <Border.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Cancel" Click="ContextMenu_CancelFeature"/>
+                                            <Separator/>
+                                            <MenuItem Header="Delete" Click="ContextMenu_DeleteFeature"/>
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
+                                    <StackPanel>
+                                        <!-- Feature title -->
+                                        <TextBlock Text="{Binding DisplayTitle}"
+                                                   FontSize="12" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   TextTrimming="CharacterEllipsis"/>
+
+                                        <!-- Phase count -->
+                                        <TextBlock Text="{Binding PhaseProgressText}"
+                                                   FontSize="10"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   Margin="0,2,0,0"/>
+
+                                        <!-- Expandable phases list -->
+                                        <Border Background="Transparent" Cursor="Hand"
+                                                MouseLeftButtonUp="Feature_Click" Margin="0,4,0,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding IsExpanded, Converter={StaticResource ExpandArrow}}"
+                                                           FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBlock Text="Show phases" FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           Margin="4,0,0,0"
+                                                           VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <ItemsControl ItemsSource="{Binding PhaseItems}"
+                                                      ItemTemplate="{StaticResource PhaseItemTemplate}"
+                                                      Margin="16,2,0,0"
+                                                      Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- AI Review verdict (inline) -->
+                                        <Border Margin="0,6,0,0" Padding="6,4"
+                                                CornerRadius="3"
+                                                Visibility="{Binding HasPlanReview, Converter={StaticResource BoolToVis}}">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="#1a2a1a"/>
+                                                    <Setter Property="BorderBrush" Value="#4CAF50"/>
+                                                    <Setter Property="BorderThickness" Value="1,0,0,0"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsPlanReviewRejected}" Value="True">
+                                                            <Setter Property="Background" Value="#2a1a1a"/>
+                                                            <Setter Property="BorderBrush" Value="#C94040"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsPlanReviewError}" Value="True">
+                                                            <Setter Property="Background" Value="#2a2a1a"/>
+                                                            <Setter Property="BorderBrush" Value="#FFAB1A"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock FontSize="11" FontWeight="SemiBold">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Text" Value="&#x2713; AI: Approved"/>
+                                                                <Setter Property="Foreground" Value="#4CAF50"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsPlanReviewRejected}" Value="True">
+                                                                        <Setter Property="Text" Value="&#x2717; AI: Rejected"/>
+                                                                        <Setter Property="Foreground" Value="#C94040"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding IsPlanReviewError}" Value="True">
+                                                                        <Setter Property="Text" Value="&#x26A0; AI: Review Error"/>
+                                                                        <Setter Property="Foreground" Value="#FFAB1A"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding PlanReviewComments}"
+                                                           FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,2,0,0"/>
+                                                <!-- Suggestions list -->
+                                                <TextBlock Text="{Binding PlanReviewSuggestionsText}"
+                                                           FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,2,0,0"
+                                                           Visibility="{Binding HasPlanReviewSuggestions, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- Review in progress indicator -->
+                                        <TextBlock Text="AI review in progress..."
+                                                   FontSize="10" FontStyle="Italic"
+                                                   Foreground="{StaticResource ApprovalAccent}"
+                                                   Margin="0,4,0,0"
+                                                   Visibility="{Binding IsReviewInProgress, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- Action buttons -->
+                                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                            <Button Content="&#x2713; Approve" Padding="8,3" Margin="0,0,4,0"
+                                                    FontSize="10"
+                                                    Style="{StaticResource SubTabToolButton}"
+                                                    Click="ApprovePlan_Click"/>
+                                            <Button Content="&#x2717; Reject" Padding="8,3" Margin="0,0,4,0"
+                                                    FontSize="10"
+                                                    Style="{StaticResource SubTabToolButton}"
+                                                    Click="RejectPlan_Click"/>
+                                            <Button Content="Request AI Review" Padding="8,3"
+                                                    FontSize="10"
+                                                    Style="{StaticResource SubTabToolButton}"
+                                                    Click="RequestAIReview_Click"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Expander>
+
+                <!-- ================================================ -->
+                <!-- Section 5: Backlog -->
+                <!-- ================================================ -->
+                <Expander Style="{StaticResource PipelineExpander}" IsExpanded="True">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#x2464;" Foreground="{StaticResource BacklogAccent}"
+                                       FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="Backlog" FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" VerticalAlignment="Center"/>
+                            <Border CornerRadius="8" Padding="5,1" Margin="8,0,0,0"
+                                    Background="{StaticResource BacklogDimBg}" VerticalAlignment="Center">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding BacklogCount}" Value="0">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding BacklogCount}" FontSize="10"
+                                           Foreground="{StaticResource BacklogAccent}"/>
+                            </Border>
+                        </StackPanel>
+                    </Expander.Header>
+                    <ItemsControl ItemsSource="{Binding BacklogFeatures}" Margin="4,0,4,8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:BacklogFeatureVM}">
+                                <Border Margin="0,2" Padding="8,6"
+                                        Background="{StaticResource SurfaceBrush}"
+                                        CornerRadius="4"
+                                        BorderBrush="{StaticResource BorderBrush}"
+                                        BorderThickness="1">
+                                    <Border.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Cancel" Click="ContextMenu_CancelFeature"/>
+                                            <Separator/>
+                                            <MenuItem Header="Delete" Click="ContextMenu_DeleteFeature"/>
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
+                                    <StackPanel>
+                                        <!-- Feature header -->
+                                        <Border Background="Transparent" Cursor="Hand"
+                                                MouseLeftButtonUp="Feature_Click">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="16"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <TextBlock Grid.Column="0"
+                                                           Text="{Binding IsExpanded, Converter={StaticResource ExpandArrow}}"
+                                                           FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Visibility="{Binding HasPhases, Converter={StaticResource BoolToVis}}"/>
+
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding DisplayTitle}"
+                                                           FontSize="12"
+                                                           Foreground="{StaticResource TextBrush}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Center"
+                                                           Margin="2,0,0,0"/>
+
+                                                <!-- Phase count -->
+                                                <TextBlock Grid.Column="2"
+                                                           Text="{Binding PhaseProgressText}"
+                                                           FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="6,0,0,0"/>
+
+                                                <!-- Priority badge -->
+                                                <Border Grid.Column="3" CornerRadius="3" Padding="4,1"
+                                                        Margin="6,0,0,0"
+                                                        Background="{StaticResource BacklogDimBg}"
+                                                        VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding PriorityText}"
+                                                               FontSize="9"
+                                                               Foreground="{StaticResource BacklogAccent}"/>
+                                                </Border>
+
+                                                <!-- Review dismissed badge -->
+                                                <TextBlock Grid.Column="4"
+                                                           Text="[RD]"
+                                                           FontSize="9"
+                                                           ToolTip="Review was dismissed by developer"
+                                                           Foreground="{StaticResource WarningBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="4,0,0,0"
+                                                           Visibility="{Binding ReviewDismissed, Converter={StaticResource BoolToVis}}"/>
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- Error summary (for features returned from failed implementation) -->
+                                        <Border Margin="18,4,0,0" Padding="6,4" CornerRadius="3"
+                                                Background="#1a2020"
+                                                BorderBrush="{StaticResource ErrorBrush}"
+                                                BorderThickness="1"
+                                                Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                                            <StackPanel>
+                                                <Border Background="Transparent" Cursor="Hand"
+                                                        MouseLeftButtonUp="ErrorExpand_Click">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="!"
+                                                                   FontSize="11" FontWeight="Bold"
+                                                                   Foreground="{StaticResource ErrorBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   Margin="0,0,6,0"/>
+                                                        <TextBlock Text="{Binding ErrorSummary}"
+                                                                   FontSize="11"
+                                                                   Foreground="{StaticResource ErrorBrush}"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   MaxWidth="500"
+                                                                   VerticalAlignment="Center"/>
+                                                        <TextBlock Text="(click to expand)"
+                                                                   FontSize="9"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   Margin="6,0,0,0"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <!-- Expandable error details -->
+                                                <TextBlock Text="{Binding ErrorDetails}"
+                                                           FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           TextWrapping="Wrap"
+                                                           MaxHeight="150"
+                                                           Margin="0,4,0,0"
+                                                           Visibility="{Binding IsErrorExpanded, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- Action buttons -->
+                                        <StackPanel Orientation="Horizontal" Margin="18,4,0,0">
+                                            <Button Content="Add to Queue &#x2192;"
+                                                    Padding="8,3" FontSize="11"
+                                                    Style="{StaticResource SubTabToolButton}"
+                                                    Click="AddToQueue_Click"/>
+                                            <Button Content="View History"
+                                                    Padding="8,3" Margin="6,0,0,0" FontSize="11"
+                                                    Style="{StaticResource SubTabToolButton}"
+                                                    Click="ViewHistory_Click"
+                                                    Visibility="{Binding HasSessionHistory, Converter={StaticResource BoolToVis}}"/>
+                                        </StackPanel>
+
+                                        <!-- Expandable phases list -->
+                                        <ItemsControl ItemsSource="{Binding PhaseItems}"
+                                                      ItemTemplate="{StaticResource PhaseItemTemplate}"
+                                                      Margin="18,4,0,0"
+                                                      Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Expander>
+
+                <!-- ================================================ -->
+                <!-- Section 6: Implementation Queue -->
+                <!-- ================================================ -->
+                <Expander Style="{StaticResource PipelineExpander}" IsExpanded="True">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#x2465;" Foreground="{StaticResource QueueAccent}"
+                                       FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="Queue" FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" VerticalAlignment="Center"/>
+                            <Border CornerRadius="8" Padding="5,1" Margin="8,0,0,0"
+                                    Background="{StaticResource QueueDimBg}" VerticalAlignment="Center">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding QueuedCount}" Value="0">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding QueuedCount}" FontSize="10"
+                                           Foreground="{StaticResource QueueAccent}"/>
+                            </Border>
+                        </StackPanel>
+                    </Expander.Header>
+                    <StackPanel Margin="4,0,4,8">
+                        <!-- Health strip (active sessions) -->
+                        <Border Padding="6,3" Margin="0,0,0,4"
+                                Background="{StaticResource SurfaceBrush}"
+                                CornerRadius="4"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1"
+                                Visibility="{Binding HasActiveSession, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl ItemsSource="{Binding SessionHealthItems}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                                            <TextBlock Text="{Binding HealthIcon}"
+                                                       FontSize="11"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,4,0">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasIssue}" Value="True">
+                                                                <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding Role}"
+                                                       FontSize="11" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextBrush}"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding Detail}"
+                                                       FontSize="10" Margin="4,0,0,0"
+                                                       Foreground="{StaticResource WarningBrush}"
+                                                       VerticalAlignment="Center"
+                                                       Visibility="{Binding HasIssue, Converter={StaticResource BoolToVis}}"/>
+                                            <TextBlock Text="{Binding Elapsed}"
+                                                       FontSize="10" Margin="4,0,0,0"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+
+                        <!-- Queue feature cards -->
+                        <ItemsControl ItemsSource="{Binding QueuedFeatures}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:BacklogFeatureVM}">
+                                    <Border Margin="0,2" Padding="8,6"
+                                            Background="{StaticResource SurfaceBrush}"
+                                            CornerRadius="4"
+                                            BorderBrush="{StaticResource BorderBrush}"
+                                            BorderThickness="1">
+                                        <Border.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Cancel" Click="ContextMenu_CancelFeature"/>
+                                                <Separator/>
+                                                <MenuItem Header="Delete" Click="ContextMenu_DeleteFeature"/>
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
+                                        <StackPanel>
+                                            <!-- Feature header -->
+                                            <Border Background="Transparent" Cursor="Hand"
+                                                    MouseLeftButtonUp="Feature_Click">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="16"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <TextBlock Grid.Column="0"
+                                                               Text="{Binding IsExpanded, Converter={StaticResource ExpandArrow}}"
+                                                               FontSize="10"
+                                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                                               VerticalAlignment="Center"
+                                                               Visibility="{Binding HasPhases, Converter={StaticResource BoolToVis}}"/>
+
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="{Binding DisplayTitle}"
+                                                               FontSize="12"
+                                                               Foreground="{StaticResource TextBrush}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center"
+                                                               Margin="2,0,0,0"/>
+
+                                                    <!-- Phase progress -->
+                                                    <TextBlock Grid.Column="2"
+                                                               Text="{Binding PhaseProgressText}"
+                                                               FontSize="10"
+                                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                                               VerticalAlignment="Center"
+                                                               Margin="6,0,0,0"/>
+
+                                                    <!-- Status indicator -->
+                                                    <Border Grid.Column="3" CornerRadius="3" Padding="4,1"
+                                                            Margin="6,0,0,0" VerticalAlignment="Center">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="{StaticResource QueueDimBg}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsInProgress}" Value="True">
+                                                                        <Setter Property="Background" Value="#1a2a1a"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock FontSize="9">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Text" Value="Queued"/>
+                                                                    <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsInProgress}" Value="True">
+                                                                            <Setter Property="Text" Value="In Progress"/>
+                                                                            <Setter Property="Foreground" Value="{StaticResource QueueAccent}"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Border>
+
+                                                    <!-- Review dismissed badge -->
+                                                    <TextBlock Grid.Column="4"
+                                                               Text="[RD]"
+                                                               FontSize="9"
+                                                               ToolTip="Review was dismissed by developer"
+                                                               Foreground="{StaticResource WarningBrush}"
+                                                               VerticalAlignment="Center"
+                                                               Margin="4,0,0,0"
+                                                               Visibility="{Binding ReviewDismissed, Converter={StaticResource BoolToVis}}"/>
+                                                </Grid>
+                                            </Border>
+
+                                            <!-- Active phase progress indicator -->
+                                            <TextBlock Text="{Binding ActivePhaseText}"
+                                                       FontSize="10" FontStyle="Italic"
+                                                       Foreground="{StaticResource QueueAccent}"
+                                                       Margin="18,2,0,0"
+                                                       Visibility="{Binding IsInProgress, Converter={StaticResource BoolToVis}}"/>
+
+                                            <!-- Action buttons (Queued and InProgress) -->
+                                            <StackPanel Orientation="Horizontal" Margin="18,4,0,0"
+                                                        Visibility="{Binding IsQueuedOrInProgress, Converter={StaticResource BoolToVis}}">
+                                                <Button Content="&#x2190; Return to Backlog"
+                                                        Padding="8,3" FontSize="11"
+                                                        Style="{StaticResource SubTabToolButton}"
+                                                        Click="ReturnToBacklog_Click"/>
+                                                <Button Content="View History"
+                                                        Padding="8,3" Margin="6,0,0,0" FontSize="11"
+                                                        Style="{StaticResource SubTabToolButton}"
+                                                        Click="ViewHistory_Click"
+                                                        Visibility="{Binding HasSessionHistory, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+
+                                            <!-- Expandable phases list -->
+                                            <ItemsControl ItemsSource="{Binding PhaseItems}"
+                                                          ItemTemplate="{StaticResource PhaseItemTemplate}"
+                                                          Margin="18,4,0,0"
+                                                          Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Expander>
+
+                <!-- ================================================ -->
+                <!-- Section 7: Completed -->
+                <!-- ================================================ -->
+                <Expander Style="{StaticResource PipelineExpander}" IsExpanded="False">
+                    <Expander.Header>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="&#x2466;" Foreground="{StaticResource CompletedAccent}"
+                                       FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Grid.Column="1" Text="Completed" FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" VerticalAlignment="Center"/>
+                            <Border Grid.Column="2" CornerRadius="8" Padding="5,1" Margin="8,0,0,0"
+                                    Background="{StaticResource CompletedDimBg}" VerticalAlignment="Center">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CompletedCount}" Value="0">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding CompletedCount}" FontSize="10"
+                                           Foreground="{StaticResource CompletedAccent}"/>
+                            </Border>
+                            <!-- Batch action buttons -->
+                            <Button Grid.Column="4" Content="Commit All"
+                                    Padding="6,2" Margin="4,0,0,0" FontSize="10"
+                                    Style="{StaticResource SubTabToolButton}"
+                                    Command="{Binding CommitAllCommand}"/>
+                            <Button Grid.Column="5" Content="Archive All"
+                                    Padding="6,2" Margin="4,0,0,0" FontSize="10"
+                                    Style="{StaticResource SubTabToolButton}"
+                                    Command="{Binding ArchiveAllCommand}"/>
+                        </Grid>
+                    </Expander.Header>
+                    <StackPanel>
+                        <ItemsControl ItemsSource="{Binding CompletedFeatures}" Margin="4,0,4,4">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#1a1a2e" CornerRadius="4" Margin="0,2"
+                                            Padding="10,6" BorderBrush="{StaticResource BorderBrush}"
+                                            BorderThickness="1" Cursor="Hand"
+                                            MouseLeftButtonUp="Feature_Click">
+                                        <Border.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Delete" Click="ContextMenu_DeleteFeature"/>
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
+                                        <StackPanel>
+                                            <!-- Header row: title + status + user actions warning -->
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding DisplayTitle}"
+                                                           FontSize="12" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextBrush}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <!-- User Actions Required warning -->
+                                                <Border Grid.Column="1" Cursor="Hand"
+                                                        Margin="6,0,0,0" VerticalAlignment="Center"
+                                                        Visibility="{Binding HasUserActions, Converter={StaticResource BoolToVis}}"
+                                                        MouseLeftButtonUp="UserActions_Click">
+                                                    <Border.ToolTip>
+                                                        <ToolTip MaxWidth="400">
+                                                            <TextBlock Text="{Binding UserActionsText}"
+                                                                       TextWrapping="Wrap"
+                                                                       FontSize="11"/>
+                                                        </ToolTip>
+                                                    </Border.ToolTip>
+                                                    <TextBlock Text="&#x26A0;" FontSize="14"
+                                                               Foreground="{StaticResource WarningBrush}"/>
+                                                </Border>
+                                                <!-- Done/Cancelled indicator -->
+                                                <Border Grid.Column="2" CornerRadius="3" Padding="4,1"
+                                                        Margin="6,0,0,0" VerticalAlignment="Center">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="{StaticResource CompletedDimBg}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsCancelled}" Value="True">
+                                                                    <Setter Property="Background" Value="#2a1a1a"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock FontSize="9">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Text" Value="Done"/>
+                                                                <Setter Property="Foreground" Value="{StaticResource CompletedAccent}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsCancelled}" Value="True">
+                                                                        <Setter Property="Text" Value="Cancelled"/>
+                                                                        <Setter Property="Foreground" Value="#f38ba8"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </Border>
+                                            </Grid>
+
+                                            <!-- Info row: phases + changed files -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                                <TextBlock Text="{Binding CompletedPhasesText}"
+                                                           FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <TextBlock Text=" | " FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <TextBlock Text="{Binding ChangedFilesSummary}"
+                                                           FontSize="10"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            </StackPanel>
+
+                                            <!-- Action buttons -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                <Button Content="Commit Changes"
+                                                        Padding="8,3" FontSize="11"
+                                                        Style="{StaticResource SubTabToolButton}"
+                                                        Click="CommitFeature_Click"
+                                                        Visibility="{Binding HasChangedFiles, Converter={StaticResource BoolToVis}}"/>
+                                                <Button Content="View Details"
+                                                        Padding="8,3" Margin="6,0,0,0" FontSize="11"
+                                                        Style="{StaticResource SubTabToolButton}"
+                                                        Click="ViewDetails_Click"
+                                                        Visibility="{Binding HasPhases, Converter={StaticResource BoolToVis}}"/>
+                                                <Button Content="Ask in Chat"
+                                                        Padding="8,3" Margin="6,0,0,0" FontSize="11"
+                                                        Style="{StaticResource SubTabToolButton}"
+                                                        Click="AskInChat_Click"/>
+                                                <Button Content="View History"
+                                                        Padding="8,3" Margin="6,0,0,0" FontSize="11"
+                                                        Style="{StaticResource SubTabToolButton}"
+                                                        Click="ViewHistory_Click"
+                                                        Visibility="{Binding HasSessionHistory, Converter={StaticResource BoolToVis}}"/>
+                                                <Button Content="Archive &#x2713;"
+                                                        Padding="8,3" Margin="6,0,0,0" FontSize="11"
+                                                        Style="{StaticResource SubTabToolButton}"
+                                                        Click="ArchiveFeature_Click"/>
+                                            </StackPanel>
+
+                                            <!-- Expandable phases list -->
+                                            <ItemsControl ItemsSource="{Binding PhaseItems}"
+                                                          ItemTemplate="{StaticResource PhaseItemTemplate}"
+                                                          Margin="0,4,0,0"
+                                                          Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}"/>
+
+                                            <!-- Changed files list (when expanded) -->
+                                            <StackPanel Margin="0,2,0,0"
+                                                        Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="Changed Files:" FontSize="10"
+                                                           FontWeight="SemiBold" Margin="0,4,0,2"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <ItemsControl ItemsSource="{Binding AllChangedFiles}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding}" FontSize="10"
+                                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                                       Margin="12,0,0,0"/>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+
+                                            <!-- User actions detail (when expanded) -->
+                                            <StackPanel Margin="0,2,0,0"
+                                                        Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="User Actions Required:" FontSize="10"
+                                                           FontWeight="SemiBold" Margin="0,4,0,2"
+                                                           Foreground="{StaticResource WarningBrush}"
+                                                           Visibility="{Binding HasUserActions, Converter={StaticResource BoolToVis}}"/>
+                                                <TextBlock Text="{Binding UserActionsText}" FontSize="10"
+                                                           Foreground="{StaticResource WarningBrush}"
+                                                           TextWrapping="Wrap" Margin="12,0,0,0"
+                                                           Visibility="{Binding HasUserActions, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- View Archive toggle -->
+                        <StackPanel Margin="4,4,4,0">
+                            <Button Content="View Archive" FontSize="10"
+                                    Padding="6,3"
+                                    HorizontalAlignment="Left"
+                                    Style="{StaticResource SubTabToolButton}"
+                                    Command="{Binding ToggleArchiveCommand}"/>
+
+                            <!-- Archived features list -->
+                            <ItemsControl ItemsSource="{Binding ArchivedFeatures}"
+                                          Margin="0,4,0,4"
+                                          Visibility="{Binding ShowArchive, Converter={StaticResource BoolToVis}}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#141420" CornerRadius="3" Margin="0,1"
+                                                Padding="8,4" Opacity="0.7">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding DisplayTitle}" FontSize="11"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding CompletedPhasesText}"
+                                                           FontSize="9" Margin="8,0,0,0"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
+                </Expander>
+
+                <!-- ================================================ -->
                 <!-- Manager Chat (collapsible) -->
-                <Border Background="Transparent" Cursor="Hand" Margin="0,12,0,0"
+                <!-- ================================================ -->
+                <Border Background="Transparent" Cursor="Hand" Margin="0,8,0,0"
                         MouseLeftButtonUp="ManagerHeader_Click">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -398,7 +1735,6 @@
                     </Grid>
                 </Border>
                 <StackPanel x:Name="ManagerPanel" Visibility="Collapsed" Margin="0,4,0,0">
-                    <!-- Chat log -->
                     <TextBox x:Name="ManagerChatBox"
                              Text="{Binding ManagerChatLog, Mode=OneWay}"
                              Background="{StaticResource BackgroundBrush}"
@@ -413,7 +1749,6 @@
                              MaxHeight="200"
                              VerticalScrollBarVisibility="Auto"/>
 
-                    <!-- Streaming response -->
                     <TextBlock Text="{Binding ManagerResponse}"
                                FontSize="11" FontStyle="Italic"
                                Foreground="{StaticResource AccentBrush}"
@@ -421,7 +1756,6 @@
                                Margin="0,2,0,0"
                                Visibility="{Binding IsManagerActive, Converter={StaticResource BoolToVis}}"/>
 
-                    <!-- Input -->
                     <Grid Margin="0,4,0,0"
                           Visibility="{Binding IsManagerActive, Converter={StaticResource BoolToVis}}">
                         <Grid.ColumnDefinitions>
@@ -445,8 +1779,10 @@
                     </Grid>
                 </StackPanel>
 
+                <!-- ================================================ -->
                 <!-- Orchestrator Log (collapsible) -->
-                <Border Background="Transparent" Cursor="Hand" Margin="0,12,0,0"
+                <!-- ================================================ -->
+                <Border Background="Transparent" Cursor="Hand" Margin="0,8,0,0"
                         MouseLeftButtonUp="LogHeader_Click">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock x:Name="LogArrow" Text="&#x25B8;"

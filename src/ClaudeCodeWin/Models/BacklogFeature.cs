@@ -1,6 +1,14 @@
 namespace ClaudeCodeWin.Models;
 
-public enum FeatureStatus { Raw, Planning, AwaitingUser, Planned, InProgress, Done, Cancelled }
+public enum FeatureStatus
+{
+    Analyzing, AnalysisDone, AnalysisRejected,
+    Planning, PlanningFailed, AwaitingUser,
+    PlanReady, PlanApproved,
+    Queued, InProgress, Done, Cancelled
+}
+
+public enum AwaitingUserReason { AnalysisQuestion, PlanningQuestion }
 
 public class BacklogFeature
 {
@@ -9,12 +17,37 @@ public class BacklogFeature
     public string RawIdea { get; set; } = "";
     public string? UserContext { get; set; }
     public string? Title { get; set; }
-    public FeatureStatus Status { get; set; } = FeatureStatus.Raw;
+    public FeatureStatus Status { get; set; } = FeatureStatus.Analyzing;
     public string? PlannerSessionId { get; set; }
     public bool NeedsUserInput { get; set; }
     public string? PlannerQuestion { get; set; }
+    public AwaitingUserReason? AwaitingReason { get; set; }
     public int Priority { get; set; } = 100;
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
     public List<BacklogPhase> Phases { get; set; } = [];
+
+    // Analysis fields
+    public string? AnalysisResult { get; set; }
+    public string? AnalysisSessionId { get; set; }
+    public string? RejectionReason { get; set; }
+    public List<string> AffectedProjects { get; set; } = [];
+
+    // Plan review fields
+    public string? PlanReviewVerdict { get; set; }
+    public string? PlanReviewComments { get; set; }
+    public List<string> PlanReviewSuggestions { get; set; } = [];
+
+    // Session history (dev/review transcripts)
+    public List<string> SessionHistoryPaths { get; set; } = [];
+
+    // Error info (when feature returns to backlog after failure)
+    public string? ErrorSummary { get; set; }
+    public string? ErrorDetails { get; set; }
+
+    // Review dismiss tracking
+    public bool ReviewDismissed { get; set; }
+
+    // Archive
+    public DateTime? ArchivedAt { get; set; }
 }

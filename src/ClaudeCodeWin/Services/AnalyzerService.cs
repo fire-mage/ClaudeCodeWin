@@ -6,40 +6,49 @@ using ClaudeCodeWin.Models;
 namespace ClaudeCodeWin.Services;
 
 /// <summary>
-/// Manages CLI sessions for planning features.
-/// Each feature gets its own CLI session with a planner system prompt.
+/// Manages CLI sessions for analyzing feature ideas.
+/// Each feature gets its own CLI session with an analyzer system prompt.
+/// Evaluates feasibility, identifies affected projects, flags risks.
 /// </summary>
-public class PlannerService
+public class AnalyzerService
 {
-    private readonly ConcurrentDictionary<string, PlannerSession> _sessions = new();
+    private readonly ConcurrentDictionary<string, AnalyzerSession> _sessions = new();
     private string? _claudeExePath;
     private string? _workingDirectory;
+    private string? _systemPrompt;
 
-    public event Action<string, string, string?, List<BacklogPhase>>? OnPlanReady; // featureId, title, sessionId, phases
+    public event Action<string, AnalysisResult>? OnAnalysisComplete; // featureId, result
     public event Action<string, string>? OnQuestionAsked; // featureId, question
-    public event Action<string, string>? OnPlannerError; // featureId, error
-    public event Action<string, string>? OnPlannerTextDelta; // featureId, text
+    public event Action<string, string>? OnAnalysisError; // featureId, error
+    public event Action<string, string>? OnAnalysisTextDelta; // featureId, text
 
-    public void Configure(string claudeExePath, string? workingDirectory)
+    public void Configure(string claudeExePath, string? workingDirectory,
+        string systemPrompt)
     {
         _claudeExePath = claudeExePath;
         _workingDirectory = workingDirectory;
+        _systemPrompt = systemPrompt;
+    }
+
+    public void UpdateSystemPrompt(string systemPrompt)
+    {
+        _systemPrompt = systemPrompt;
     }
 
     /// <summary>
-    /// Start a planning session for a feature.
+    /// Start an analysis session for a feature.
     /// </summary>
-    public void StartPlanning(BacklogFeature feature)
+    public void StartAnalysis(BacklogFeature feature)
     {
         if (_sessions.ContainsKey(feature.Id)) return;
 
         var cli = CreateCliService(feature.ProjectPath);
 
         // Resume existing session if available
-        if (!string.IsNullOrEmpty(feature.PlannerSessionId))
-            cli.RestoreSession(feature.PlannerSessionId);
+        if (!string.IsNullOrEmpty(feature.AnalysisSessionId))
+            cli.RestoreSession(feature.AnalysisSessionId);
 
-        var session = new PlannerSession
+        var session = new AnalyzerSession
         {
             Cli = cli,
             FeatureId = feature.Id
@@ -52,21 +61,20 @@ public class PlannerService
         }
 
         WireEvents(session);
-        var prompt = $"Plan this feature:\n\n{feature.RawIdea}";
+        var prompt = $"Analyze this feature idea:\n\n{feature.RawIdea}";
         if (!string.IsNullOrEmpty(feature.UserContext))
             prompt += $"\n\nAdditional context from user:\n{feature.UserContext}";
         cli.SendMessage(prompt);
     }
 
     /// <summary>
-    /// Send the user's answer to a planner's question (via control_response).
-    /// If the session crashed, starts a new planning session with the answer appended.
-    /// Returns false if session was not found (caller should handle restart).
+    /// Send the user's answer to an analyzer's question (via control_response).
+    /// Returns false if session was not found.
     /// </summary>
-    public bool ResumePlanning(BacklogFeature feature, string userAnswer)
+    public bool ResumeAnalysis(BacklogFeature feature, string userAnswer)
     {
         if (!_sessions.TryGetValue(feature.Id, out var session))
-            return false; // Session not found — caller decides how to handle
+            return false;
 
         if (string.IsNullOrEmpty(session.PendingRequestId)) return false;
 
@@ -75,7 +83,6 @@ public class PlannerService
         session.PendingRequestId = null;
         session.PendingToolUseId = null;
 
-        // Build updatedInput with the answer
         var answersDict = new Dictionary<string, string>();
         if (!string.IsNullOrEmpty(session.PendingQuestionText))
             answersDict[session.PendingQuestionText] = userAnswer;
@@ -93,20 +100,19 @@ public class PlannerService
     }
 
     /// <summary>
-    /// Stop planning for a specific feature.
+    /// Stop analysis for a specific feature.
     /// </summary>
-    public void StopPlanning(string featureId)
+    public void StopAnalysis(string featureId)
     {
         if (!_sessions.TryRemove(featureId, out var session)) return;
         session.Cli.StopSession();
     }
 
     /// <summary>
-    /// Stop all active planning sessions.
+    /// Stop all active analysis sessions.
     /// </summary>
     public void StopAll()
     {
-        // Atomically drain sessions one by one via TryRemove
         while (!_sessions.IsEmpty)
         {
             foreach (var key in _sessions.Keys)
@@ -117,7 +123,7 @@ public class PlannerService
         }
     }
 
-    public bool IsPlanning(string featureId) => _sessions.ContainsKey(featureId);
+    public bool IsAnalyzing(string featureId) => _sessions.ContainsKey(featureId);
 
     public string? GetSessionId(string featureId)
     {
@@ -130,13 +136,13 @@ public class PlannerService
         {
             ClaudeExePath = _claudeExePath ?? "claude",
             WorkingDirectory = projectPath ?? _workingDirectory,
-            SystemPrompt = TeamPrompts.PlannerSystemPrompt,
+            SystemPrompt = _systemPrompt ?? "",
             DangerouslySkipPermissions = false
         };
         return cli;
     }
 
-    private void WireEvents(PlannerSession session)
+    private void WireEvents(AnalyzerSession session)
     {
         var cli = session.Cli;
         var featureId = session.FeatureId;
@@ -144,7 +150,7 @@ public class PlannerService
         cli.OnTextDelta += text =>
         {
             session.Response.Append(text);
-            OnPlannerTextDelta?.Invoke(featureId, text);
+            OnAnalysisTextDelta?.Invoke(featureId, text);
         };
 
         cli.OnSessionStarted += (sessionId, _, _) =>
@@ -154,33 +160,32 @@ public class PlannerService
 
         cli.OnCompleted += result =>
         {
-            // Capture session ID for resume
             if (result.SessionId is not null)
                 session.SessionId = result.SessionId;
 
             var fullText = session.Response.ToString();
-            var (title, phases) = ParsePlan(fullText);
+            var analysisResult = ParseAnalysis(fullText);
             var savedSessionId = session.SessionId;
+            analysisResult.SessionId = savedSessionId;
 
-            // Only StopSession if we won the TryRemove race — prevents double-stop
-            // when StopPlanning() is called concurrently
+            // Only fire event if we still own the session (not stopped externally)
             if (_sessions.TryRemove(featureId, out _))
+            {
                 session.Cli.StopSession();
-
-            if (phases.Count > 0)
-                OnPlanReady?.Invoke(featureId, title, savedSessionId, phases);
-            else
-                OnPlannerError?.Invoke(featureId, "Planner did not produce a valid plan");
+                OnAnalysisComplete?.Invoke(featureId, analysisResult);
+            }
         };
 
         cli.OnError += error =>
         {
+            // Only fire event if we still own the session
             if (_sessions.TryRemove(featureId, out _))
+            {
                 session.Cli.StopSession();
-            OnPlannerError?.Invoke(featureId, error);
+                OnAnalysisError?.Invoke(featureId, error);
+            }
         };
 
-        // Handle permission/tool requests — planner is read-only
         cli.OnControlRequest += (requestId, toolName, toolUseId, input) =>
         {
             if (toolName == "AskUserQuestion")
@@ -189,7 +194,7 @@ public class PlannerService
             }
             else
             {
-                // Allow read-only tools only, deny everything else
+                // Allow read-only tools, deny everything else
                 var allowed = toolName is "Read" or "Glob" or "Grep" or "WebFetch"
                     or "WebSearch";
                 cli.SendControlResponse(requestId, allowed ? "allow" : "deny",
@@ -198,17 +203,15 @@ public class PlannerService
         };
     }
 
-    private void HandleAskUserQuestion(PlannerSession session, string requestId,
+    private void HandleAskUserQuestion(AnalyzerSession session, string requestId,
         string toolUseId, JsonElement input)
     {
         session.PendingRequestId = requestId;
         session.PendingToolUseId = toolUseId;
 
-        // Extract question text from the AskUserQuestion input
         var questionText = ExtractQuestionText(input);
         session.PendingQuestionText = questionText;
 
-        // Store original questions JSON for building the response later
         try
         {
             if (input.TryGetProperty("questions", out var qa))
@@ -234,7 +237,6 @@ public class PlannerService
                         if (sb.Length > 0) sb.AppendLine();
                         sb.Append(qText.GetString() ?? "");
 
-                        // Include options if present
                         if (q.TryGetProperty("options", out var opts)
                             && opts.ValueKind == JsonValueKind.Array)
                         {
@@ -259,58 +261,52 @@ public class PlannerService
         }
         catch { }
 
-        return "Planner needs your input";
+        return "Analyzer needs your input";
     }
 
     /// <summary>
-    /// Parse the planner's response to extract the JSON plan.
-    /// Looks for a JSON object with "title" and "phases" keys.
+    /// Parse the analyzer's response to extract the JSON analysis result.
     /// </summary>
-    internal static (string title, List<BacklogPhase> phases) ParsePlan(string text)
+    internal static AnalysisResult ParseAnalysis(string text)
     {
-        // Try to find JSON block in the text (may be wrapped in ```json ... ```)
-        var jsonText = JsonBlockExtractor.Extract(text, "phases");
+        var jsonText = JsonBlockExtractor.Extract(text);
         if (jsonText is null)
-            return ("", []);
+            return new AnalysisResult { Verdict = "needs_discussion", Summary = text, RawText = text };
 
         try
         {
             using var doc = JsonDocument.Parse(jsonText);
             var root = doc.RootElement;
 
-            var title = root.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
-            var phases = new List<BacklogPhase>();
-
-            if (root.TryGetProperty("phases", out var phasesArr)
-                && phasesArr.ValueKind == JsonValueKind.Array)
+            var result = new AnalysisResult
             {
-                var order = 1;
-                foreach (var p in phasesArr.EnumerateArray())
+                Verdict = root.TryGetProperty("verdict", out var v) ? v.GetString() ?? "needs_discussion" : "needs_discussion",
+                Title = root.TryGetProperty("title", out var t) ? t.GetString() : null,
+                Summary = root.TryGetProperty("summary", out var s) ? s.GetString() ?? "" : "",
+                Reason = root.TryGetProperty("reason", out var r) ? r.GetString() : null,
+                RawText = text
+            };
+
+            if (root.TryGetProperty("affectedProjects", out var projects)
+                && projects.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var p in projects.EnumerateArray())
                 {
-                    var phase = new BacklogPhase
-                    {
-                        Order = order++,
-                        Title = p.TryGetProperty("title", out var pt)
-                            ? pt.GetString() ?? $"Phase {order - 1}" : $"Phase {order - 1}",
-                        Plan = p.TryGetProperty("plan", out var pp)
-                            ? pp.GetString() ?? "" : "",
-                        AcceptanceCriteria = p.TryGetProperty("acceptanceCriteria", out var ac)
-                            ? ac.GetString() : null
-                    };
-                    phases.Add(phase);
+                    var name = p.GetString();
+                    if (!string.IsNullOrEmpty(name))
+                        result.AffectedProjects.Add(name);
                 }
             }
 
-            return (title, phases);
+            return result;
         }
         catch (JsonException)
         {
-            return ("", []);
+            return new AnalysisResult { Verdict = "needs_discussion", Summary = text, RawText = text };
         }
     }
 
-
-    private class PlannerSession
+    private class AnalyzerSession
     {
         public required ClaudeCliService Cli;
         public required string FeatureId;
@@ -321,4 +317,18 @@ public class PlannerService
         public string? PendingQuestionText;
         public string? PendingQuestionsJson;
     }
+}
+
+/// <summary>
+/// Result of an idea analysis by the AnalyzerService.
+/// </summary>
+public class AnalysisResult
+{
+    public string Verdict { get; set; } = "needs_discussion";
+    public string? Title { get; set; }
+    public string Summary { get; set; } = "";
+    public string? Reason { get; set; }
+    public List<string> AffectedProjects { get; set; } = [];
+    public string? SessionId { get; set; }
+    public string RawText { get; set; } = "";
 }

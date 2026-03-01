@@ -17,4 +17,5 @@ public class BacklogPhase
     public string? ErrorMessage { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+    public List<string>? UserActions { get; set; }
 }

@@ -70,10 +70,13 @@ public class AppSettings
     // Left tab panel compact mode (narrow with rotated labels)
     public bool TabPanelCompact { get; set; }
 
+    // Development Team: auto-approve plans (skip manual plan approval gate)
+    public bool AutoApprovePlans { get; set; }
+
     // Development Team: auto-review after task completion
     public bool ReviewerEnabled { get; set; } = true;
-    public int ReviewAutoRetries { get; set; } = 5;
-    public int ReviewTimeoutSeconds { get; set; } = 600;
+    public int ReviewAutoRetries { get; set; } = 11;
+    public int ReviewTimeoutSeconds { get; set; } = 660;
 
     // Legacy migration: map old ExtremeCodeEnabled to ReviewerEnabled
     [System.Text.Json.Serialization.JsonIgnore]
