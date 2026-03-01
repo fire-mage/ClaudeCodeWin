@@ -1,5 +1,6 @@
 using System.Text;
 using ClaudeCodeWin.Models;
+using ClaudeCodeWin.ViewModels;
 
 namespace ClaudeCodeWin.Services;
 
@@ -211,5 +212,103 @@ public static class TeamPrompts
         sb.AppendLine($"## Orchestrator State: {orchestratorState}");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Builds a human-readable snapshot of the current Team tab state for Claude to analyze.
+    /// </summary>
+    public static string BuildTeamStateSnapshot(TeamViewModel team, List<BacklogFeature> features)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"## Team State ({DateTime.Now:yyyy-MM-dd HH:mm:ss})");
+        sb.AppendLine();
+        sb.AppendLine($"### Orchestrator: {team.OrchestratorStatusText}");
+
+        // Health
+        if (team.SessionHealthItems.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Session Health");
+            foreach (var h in team.SessionHealthItems)
+            {
+                var detail = string.IsNullOrEmpty(h.Detail) ? "" : $" — {h.Detail}";
+                sb.AppendLine($"{h.HealthIcon} {h.Role}{detail} ({h.Elapsed})");
+            }
+        }
+
+        // Group features by status
+        var inProgress = features.Where(f => f.Status == FeatureStatus.InProgress).ToList();
+        var awaiting = features.Where(f => f.Status == FeatureStatus.AwaitingUser).ToList();
+        var planned = features.Where(f => f.Status == FeatureStatus.Planned).ToList();
+        var raw = features.Where(f => f.Status is FeatureStatus.Raw or FeatureStatus.Planning).ToList();
+        var completed = features.Where(f => f.Status is FeatureStatus.Done or FeatureStatus.Cancelled).ToList();
+
+        AppendFeatureGroup(sb, "In Progress", inProgress, showActivePhase: true);
+        AppendFeatureGroup(sb, "Awaiting Your Input", awaiting, showQuestion: true);
+        AppendFeatureGroup(sb, "Planned", planned);
+        AppendFeatureGroup(sb, "New Ideas", raw);
+        AppendFeatureGroup(sb, "Completed", completed, showStatus: true);
+
+        // Recent orchestrator log
+        var log = team.OrchestratorLog;
+        if (!string.IsNullOrEmpty(log))
+        {
+            var lines = log.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            var recent = lines.Length > 15 ? lines[^15..] : lines;
+            sb.AppendLine();
+            sb.AppendLine("### Recent Log (last 15 lines)");
+            foreach (var line in recent)
+                sb.AppendLine(line);
+        }
+
+        // Manager
+        if (team.IsManagerActive)
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Manager: Active");
+        }
+
+        return sb.ToString();
+    }
+
+    private static void AppendFeatureGroup(StringBuilder sb, string header, List<BacklogFeature> features,
+        bool showActivePhase = false, bool showQuestion = false, bool showStatus = false)
+    {
+        if (features.Count == 0) return;
+
+        sb.AppendLine();
+        sb.AppendLine($"### {header} ({features.Count})");
+
+        foreach (var f in features.OrderBy(f => f.Priority))
+        {
+            var title = f.Title ?? f.RawIdea;
+            if (title.Length > 80) title = title[..77] + "...";
+
+            var donePhases = f.Phases.Count(p => p.Status == PhaseStatus.Done);
+            var totalPhases = f.Phases.Count;
+            var progress = totalPhases > 0 ? $" [{donePhases}/{totalPhases} phases]" : "";
+            var status = showStatus ? $" — {f.Status}" : "";
+
+            sb.AppendLine($"[{f.Id}] P{f.Priority} \"{title}\"{progress}{status}");
+
+            if (showActivePhase)
+            {
+                var activePhase = f.Phases
+                    .FirstOrDefault(p => p.Status is PhaseStatus.InProgress or PhaseStatus.InReview);
+                if (activePhase != null)
+                {
+                    var elapsed = activePhase.StartedAt.HasValue
+                        ? $" ({(DateTime.Now - activePhase.StartedAt.Value).TotalMinutes:F0}m)"
+                        : "";
+                    sb.AppendLine($"  -> Phase {activePhase.Order}: \"{activePhase.Title}\" — {activePhase.Status}{elapsed}");
+
+                    if (activePhase.Status == PhaseStatus.Failed && !string.IsNullOrEmpty(activePhase.ErrorMessage))
+                        sb.AppendLine($"  Error: {activePhase.ErrorMessage}");
+                }
+            }
+
+            if (showQuestion && f.NeedsUserInput && !string.IsNullOrEmpty(f.PlannerQuestion))
+                sb.AppendLine($"  ? \"{f.PlannerQuestion}\"");
+        }
     }
 }

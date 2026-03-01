@@ -4,11 +4,11 @@ namespace ClaudeCodeWin.Services.Highlighting;
 
 public class PythonCompletionProvider : ICompletionProvider
 {
-    private static readonly List<CompletionItem> s_keywordItems = BuildKeywordItems();
-    private static readonly List<CompletionItem> s_builtinItems = BuildBuiltinItems();
-
     private static readonly HashSet<string> s_snippetLabels =
         new(PythonSnippets.All.Select(s => s.Label), StringComparer.Ordinal);
+
+    private static readonly List<CompletionItem> s_keywordItems = BuildKeywordItems();
+    private static readonly List<CompletionItem> s_builtinItems = BuildBuiltinItems();
 
     public (int start, string prefix) GetWordAtCaret(string text, int caretPosition)
     {

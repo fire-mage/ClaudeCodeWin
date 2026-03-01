@@ -49,7 +49,8 @@ public partial class ScriptService
     }
 
     public void PopulateMenu(MainWindow mainWindow, Func<MainViewModel> getActiveTab, GitService gitService,
-        AppSettings? settings = null, ProjectRegistryService? projectRegistry = null)
+        AppSettings? settings = null, ProjectRegistryService? projectRegistry = null,
+        BacklogService? backlogService = null)
     {
         var scripts = LoadScripts();
         var scriptsMenu = mainWindow.ScriptsMenu;
@@ -68,7 +69,7 @@ public partial class ScriptService
             menuItem.Click += (_, _) =>
             {
                 var vm = getActiveTab();
-                var resolved = ResolveVariables(prompt, vm.WorkingDirectory, gitService, settings, projectRegistry);
+                var resolved = ResolveVariables(prompt, vm, gitService, settings, projectRegistry, backlogService);
                 vm.InputText = resolved;
 
                 if (vm.SendCommand.CanExecute(null))
@@ -98,17 +99,19 @@ public partial class ScriptService
             Header = "Reload Scripts",
             ToolTip = "Re-read scripts.json and refresh this menu after manual edits."
         };
-        reload.Click += (_, _) => PopulateMenu(mainWindow, getActiveTab, gitService, settings, projectRegistry);
+        reload.Click += (_, _) => PopulateMenu(mainWindow, getActiveTab, gitService, settings, projectRegistry, backlogService);
         scriptsMenu.Items.Add(reload);
 
         // Register hotkeys
-        RegisterHotkeys(mainWindow, scripts, getActiveTab, gitService, settings, projectRegistry);
+        RegisterHotkeys(mainWindow, scripts, getActiveTab, gitService, settings, projectRegistry, backlogService);
     }
 
-    private string ResolveVariables(string prompt, string? workingDir, GitService gitService,
-        AppSettings? settings = null, ProjectRegistryService? projectRegistry = null)
+    private string ResolveVariables(string prompt, MainViewModel mainVm, GitService gitService,
+        AppSettings? settings = null, ProjectRegistryService? projectRegistry = null,
+        BacklogService? backlogService = null)
     {
         var result = prompt;
+        var workingDir = mainVm.WorkingDirectory;
 
         // {clipboard}
         result = result.Replace("{clipboard}", GetClipboardText());
@@ -159,6 +162,21 @@ public partial class ScriptService
             result = result.Replace("{project-notes}", string.Join("\n", notes));
         }
 
+        // {team-state}
+        if (result.Contains("{team-state}"))
+        {
+            if (mainVm.Team is { } team && backlogService is not null)
+            {
+                var features = backlogService.GetFeatures(workingDir);
+                var snapshot = TeamPrompts.BuildTeamStateSnapshot(team, features);
+                result = result.Replace("{team-state}", snapshot);
+            }
+            else
+            {
+                result = result.Replace("{team-state}", "(Team tab not available)");
+            }
+        }
+
         // {file:path}
         result = FileVariableRegex().Replace(result, match =>
         {
@@ -181,7 +199,8 @@ public partial class ScriptService
 
     private void RegisterHotkeys(Window window, List<ScriptDefinition> scripts,
         Func<MainViewModel> getActiveTab, GitService gitService,
-        AppSettings? settings, ProjectRegistryService? projectRegistry)
+        AppSettings? settings, ProjectRegistryService? projectRegistry,
+        BacklogService? backlogService)
     {
         foreach (var script in scripts.Where(s => !string.IsNullOrEmpty(s.HotKey)))
         {
@@ -211,7 +230,7 @@ public partial class ScriptService
                     new Infrastructure.RelayCommand(() =>
                     {
                         var vm = getActiveTab();
-                        var resolved = ResolveVariables(prompt, vm.WorkingDirectory, gitService, settings, projectRegistry);
+                        var resolved = ResolveVariables(prompt, vm, gitService, settings, projectRegistry, backlogService);
                         vm.InputText = resolved;
 
                         if (vm.SendCommand.CanExecute(null))
@@ -268,6 +287,12 @@ public partial class ScriptService
                 Name = "Fix Error",
                 Prompt = "Fix the following error:\n\n{clipboard}",
                 HotKey = null
+            },
+            new ScriptDefinition
+            {
+                Name = "Team Status",
+                Prompt = "Here is the current state of the Team tab:\n\n<team-state>\n{team-state}\n</team-state>\n\nAnalyze the current team state. Describe what's happening, flag any issues or incidents, and suggest actions if needed.",
+                HotKey = "Ctrl+Shift+T"
             }
         ];
     }

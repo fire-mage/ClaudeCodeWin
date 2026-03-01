@@ -166,7 +166,7 @@ public partial class App : Application
             usageService.Start();
 
             // Menus (resolve active tab at click time)
-            scriptService.PopulateMenu(mainWindow, () => tabHost.ActiveTab!, gitService, settings, projectRegistry);
+            scriptService.PopulateMenu(mainWindow, () => tabHost.ActiveTab!, gitService, settings, projectRegistry, backlogService);
             taskRunnerService.PopulateMenu(mainWindow, () => tabHost.ActiveTab!);
 
             // Set task runner for all current and future tabs via CollectionChanged.

@@ -28,13 +28,13 @@ public class TeamOrchestratorService : IDisposable
     private bool _softPauseRequested;
     private int _reviewAttempt;
     private string? _lastReviewCriticalSnippet;
-    private const int MaxReviewRetries = 3;
+    private const int MaxReviewRetries = 5;
 
     // Health monitoring (Phase 6)
     private System.Timers.Timer? _healthTimer;
     private const int HealthCheckIntervalMs = 10_000;
     private const int StallNudgeThresholdSeconds = 60;
-    private const int StallKillThresholdSeconds = 300;
+    private const int StallKillThresholdSeconds = 600;
     private const int MaxSessionRetries = 3;
     private int _healthTickCount;
     private int _internetCheckPending; // 0=idle, 1=in-flight (Interlocked)
@@ -798,7 +798,7 @@ public class TeamOrchestratorService : IDisposable
                     return;
                 }
 
-                // 3. Review stall: nudge at 60s, kill at 300s (treat as consensus)
+                // 3. Review stall: nudge at 60s, kill at 600s (treat as consensus)
                 if (session.CurrentPhase == SessionPhase.Review)
                 {
                     if (session.ReviewStallSeconds >= StallKillThresholdSeconds)
