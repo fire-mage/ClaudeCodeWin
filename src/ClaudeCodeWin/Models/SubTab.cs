@@ -6,7 +6,8 @@ public enum SubTabType
 {
     Explorer,
     Chat,
-    FileEditor
+    FileEditor,
+    Team
 }
 
 public class SubTab : ViewModelBase
@@ -16,6 +17,7 @@ public class SubTab : ViewModelBase
     private bool _isActive;
     private string _content = "";
     private string _savedContent = "";
+    private int _badgeCount;
 
     public SubTab(SubTabType type, string title, string? filePath = null)
     {
@@ -66,6 +68,12 @@ public class SubTab : ViewModelBase
     {
         _savedContent = _content;
         HasUnsavedChanges = false;
+    }
+
+    public int BadgeCount
+    {
+        get => _badgeCount;
+        set => SetProperty(ref _badgeCount, value);
     }
 
     public string DisplayTitle => HasUnsavedChanges ? $"● {Title}" : Title;

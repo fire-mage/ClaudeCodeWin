@@ -18,6 +18,8 @@ public class ReviewService
     public event Action<string>? OnTextDelta;
     public event Action<string, ReviewVerdict>? OnReviewCompleted;
     public event Action<string>? OnError;
+    public event Action<int>? OnStreamStalled;
+    public event Action? OnStreamResumed;
 
     public bool IsActive => _isActive;
 
@@ -77,6 +79,19 @@ public class ReviewService
         Action<string>? textHandler = null;
         Action<ResultData>? completedHandler = null;
         Action<string>? errorHandler = null;
+        Action<int>? stallHandler = null;
+        Action? resumeHandler = null;
+        Action<string, string, string, System.Text.Json.JsonElement>? controlHandler = null;
+
+        void UnsubscribeAll()
+        {
+            cli.OnTextDelta -= textHandler;
+            cli.OnCompleted -= completedHandler;
+            cli.OnError -= errorHandler;
+            cli.OnStreamStalled -= stallHandler;
+            cli.OnStreamResumed -= resumeHandler;
+            cli.OnControlRequest -= controlHandler;
+        }
 
         textHandler = text =>
         {
@@ -86,10 +101,7 @@ public class ReviewService
 
         completedHandler = result =>
         {
-            cli.OnTextDelta -= textHandler;
-            cli.OnCompleted -= completedHandler;
-            cli.OnError -= errorHandler;
-
+            UnsubscribeAll();
             var fullText = _responseBuilder.ToString();
             var verdict = DetectVerdict(fullText);
             _isActive = false;
@@ -98,24 +110,27 @@ public class ReviewService
 
         errorHandler = error =>
         {
-            cli.OnTextDelta -= textHandler;
-            cli.OnCompleted -= completedHandler;
-            cli.OnError -= errorHandler;
-
+            UnsubscribeAll();
             _isActive = false;
             OnError?.Invoke($"Reviewer: {error}");
         };
 
+        stallHandler = seconds => OnStreamStalled?.Invoke(seconds);
+        resumeHandler = () => OnStreamResumed?.Invoke();
+
         cli.OnTextDelta += textHandler;
         cli.OnCompleted += completedHandler;
         cli.OnError += errorHandler;
+        cli.OnStreamStalled += stallHandler;
+        cli.OnStreamResumed += resumeHandler;
 
         // Only allow read-only tools; deny anything that could modify files or run commands
-        cli.OnControlRequest += (requestId, toolName, toolUseId, input) =>
+        controlHandler = (requestId, toolName, toolUseId, input) =>
         {
             var allowed = toolName is "Read" or "Glob" or "Grep" or "WebFetch" or "WebSearch";
             cli.SendControlResponse(requestId, allowed ? "allow" : "deny", toolUseId: toolUseId);
         };
+        cli.OnControlRequest += controlHandler;
 
         cli.SendMessage(prompt);
     }

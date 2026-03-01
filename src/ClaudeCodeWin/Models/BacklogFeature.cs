@@ -7,6 +7,7 @@ public class BacklogFeature
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public string ProjectPath { get; set; } = "";
     public string RawIdea { get; set; } = "";
+    public string? UserContext { get; set; }
     public string? Title { get; set; }
     public FeatureStatus Status { get; set; } = FeatureStatus.Raw;
     public string? PlannerSessionId { get; set; }

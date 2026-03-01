@@ -160,7 +160,8 @@ public class TabHostViewModel : ViewModelBase
         var tab = new MainViewModel(
             cliService, _notificationService, _settingsService, _settings,
             _gitService, _fileIndexService, _chatHistoryService,
-            _projectRegistry, _contextSnapshotService, _usageService);
+            _projectRegistry, _contextSnapshotService, _usageService,
+            _backlogService);
 
         // Wire project locking callbacks
         tab.IsProjectLockedByOtherTab = path =>

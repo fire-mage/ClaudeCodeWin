@@ -70,6 +70,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly ProjectRegistryService _projectRegistry;
     private readonly ContextSnapshotService _contextSnapshotService;
     private readonly UsageService _usageService;
+    private readonly BacklogService _backlogService;
     private TaskRunnerService? _taskRunnerService;
     private Window? _ownerWindow;
 
@@ -361,7 +362,8 @@ public partial class MainViewModel : ViewModelBase
         SettingsService settingsService, AppSettings settings, GitService gitService,
         FileIndexService fileIndexService,
         ChatHistoryService chatHistoryService, ProjectRegistryService projectRegistry,
-        ContextSnapshotService contextSnapshotService, UsageService usageService)
+        ContextSnapshotService contextSnapshotService, UsageService usageService,
+        BacklogService backlogService)
     {
         _cliService = cliService;
         _notificationService = notificationService;
@@ -373,6 +375,7 @@ public partial class MainViewModel : ViewModelBase
         _projectRegistry = projectRegistry;
         _contextSnapshotService = contextSnapshotService;
         _usageService = usageService;
+        _backlogService = backlogService;
 
         SendCommand = new RelayCommand(() => _ = SendMessageAsync());
         CancelCommand = new RelayCommand(CancelProcessing, () => IsProcessing);
@@ -594,6 +597,7 @@ public partial class MainViewModel : ViewModelBase
         StopNudgeTimer();
         _bgTaskTimer?.Stop();
         FinalizeActions.StopTaskSuggestionTimer();
+        Team.Dispose();
         Explorer.Dispose();
     }
 }

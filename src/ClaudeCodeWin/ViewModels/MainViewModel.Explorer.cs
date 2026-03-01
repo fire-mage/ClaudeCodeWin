@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
+using ClaudeCodeWin.Services;
 
 namespace ClaudeCodeWin.ViewModels;
 
@@ -12,6 +13,11 @@ public partial class MainViewModel
     public ObservableCollection<SubTab> SubTabs { get; } = [];
 
     public ExplorerViewModel Explorer { get; } = new();
+
+    public TeamViewModel Team { get; private set; } = null!;
+    private PlannerService _plannerService = null!;
+    private TeamOrchestratorService _orchestratorService = null!;
+    private ManagerService _managerService = null!;
 
     public SubTab? ActiveSubTab
     {
@@ -31,13 +37,18 @@ public partial class MainViewModel
             OnPropertyChanged(nameof(IsExplorerActive));
             OnPropertyChanged(nameof(IsChatActive));
             OnPropertyChanged(nameof(IsFileEditorActive));
+            OnPropertyChanged(nameof(IsTeamActive));
             OnPropertyChanged(nameof(ActiveFileTab));
+
+            if (IsTeamActive)
+                Team.Refresh();
         }
     }
 
     public bool IsExplorerActive => _activeSubTab?.Type == SubTabType.Explorer;
     public bool IsChatActive => _activeSubTab?.Type == SubTabType.Chat;
     public bool IsFileEditorActive => _activeSubTab?.Type == SubTabType.FileEditor;
+    public bool IsTeamActive => _activeSubTab?.Type == SubTabType.Team;
     public SubTab? ActiveFileTab => _activeSubTab?.Type == SubTabType.FileEditor ? _activeSubTab : null;
 
     /// <summary>
@@ -47,14 +58,30 @@ public partial class MainViewModel
     {
         var explorerTab = new SubTab(SubTabType.Explorer, "Explorer");
         var chatTab = new SubTab(SubTabType.Chat, "Chat");
+        var teamTab = new SubTab(SubTabType.Team, "Team");
 
         SubTabs.Add(chatTab);
         SubTabs.Add(explorerTab);
-
-        ActiveSubTab = chatTab; // Start with Chat active
+        SubTabs.Add(teamTab);
 
         // Wire explorer file open event
         Explorer.OnOpenFile += OpenFileInEditor;
+
+        // Initialize PlannerService + OrchestratorService + ManagerService + Team VM
+        _plannerService = new PlannerService();
+        _plannerService.Configure(_cliService.ClaudeExePath, WorkingDirectory);
+
+        _orchestratorService = new TeamOrchestratorService(_backlogService, _gitService);
+        _orchestratorService.Configure(_cliService.ClaudeExePath, WorkingDirectory);
+
+        _managerService = new ManagerService();
+        _managerService.Configure(_cliService.ClaudeExePath, WorkingDirectory);
+
+        Team = new TeamViewModel(_backlogService, () => WorkingDirectory,
+            _plannerService, _orchestratorService, _notificationService, _managerService);
+        Team.SetTeamTab(teamTab);
+
+        ActiveSubTab = chatTab; // Start with Chat active
     }
 
     /// <summary>
@@ -64,6 +91,10 @@ public partial class MainViewModel
     {
         if (!string.IsNullOrEmpty(WorkingDirectory) && Directory.Exists(WorkingDirectory))
             Explorer.SetRoot(WorkingDirectory);
+
+        _plannerService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);
+        _orchestratorService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);
+        _managerService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);
     }
 
     /// <summary>

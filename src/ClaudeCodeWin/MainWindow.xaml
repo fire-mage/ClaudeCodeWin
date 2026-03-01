@@ -215,6 +215,16 @@
                                             <TextBlock Text="x" FontSize="10"
                                                        Foreground="{StaticResource TextSecondaryBrush}"/>
                                         </Border>
+                                        <!-- Badge count (e.g. awaiting user input on Team tab) -->
+                                        <Border Padding="4,1" Margin="4,0,0,0"
+                                                CornerRadius="8" MinWidth="16"
+                                                Background="{StaticResource AccentBrush}"
+                                                VerticalAlignment="Center"
+                                                Visibility="{Binding BadgeCount, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding BadgeCount}" FontSize="9"
+                                                       Foreground="#0d1117" FontWeight="Bold"
+                                                       HorizontalAlignment="Center"/>
+                                        </Border>
                                     </StackPanel>
                                 </Border>
                                 <DataTemplate.Triggers>
@@ -228,12 +238,17 @@
                     </ItemsControl>
                 </Border>
 
-                <!-- === Content area: Explorer / Chat / File Editor === -->
+                <!-- === Content area: Explorer / Chat / File Editor / Team === -->
                 <Grid Grid.Row="1">
 
                     <!-- Explorer panel -->
                     <Border Visibility="{Binding IsExplorerActive, Converter={StaticResource BoolToVis}}">
                         <views:FileExplorerControl DataContext="{Binding Explorer}"/>
+                    </Border>
+
+                    <!-- Team panel -->
+                    <Border Visibility="{Binding IsTeamActive, Converter={StaticResource BoolToVis}}">
+                        <views:TeamPanelControl DataContext="{Binding Team}"/>
                     </Border>
 
                     <!-- File editor panel -->

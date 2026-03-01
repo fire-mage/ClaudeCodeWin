@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using ClaudeCodeWin.Models;
 
 namespace ClaudeCodeWin.Services;
@@ -56,6 +57,9 @@ public class ClaudeCliService
     public string ClaudeExePath { get; set; } = "claude";
     public string? WorkingDirectory { get; set; }
     public string? ModelOverride { get; set; }
+    public string? SystemPrompt { get; set; }
+    public bool AppendSystemPrompt { get; set; } = true;
+    public bool DangerouslySkipPermissions { get; set; } = true;
 
     public ClaudeCliService()
     {
@@ -127,10 +131,23 @@ public class ClaudeCliService
             var isCmdFile = exePath.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
                          || exePath.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
 
+            // Try to bypass cmd.exe by extracting node.exe + script from npm shim.
+            // This avoids cmd.exe's broken argument quoting for system prompts
+            // containing " or other special characters.
+            if (isCmdFile)
+            {
+                var nodeInfo = TryBypassCmdShim(exePath);
+                if (nodeInfo != null)
+                {
+                    args = $"\"{nodeInfo.Value.ScriptPath}\" {args}";
+                    exePath = nodeInfo.Value.NodeExe;
+                    isCmdFile = false;
+                }
+            }
+
             var startInfo = new ProcessStartInfo
             {
                 FileName = isCmdFile ? "cmd.exe" : exePath,
-                Arguments = isCmdFile ? $"/c \"\"{exePath}\" {args}\"" : args,
                 UseShellExecute = false,
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
@@ -140,6 +157,27 @@ public class ClaudeCliService
                 StandardOutputEncoding = new UTF8Encoding(false),
                 StandardErrorEncoding = new UTF8Encoding(false),
             };
+
+            // Handle system prompt: use env var for cmd.exe to avoid broken \" escaping
+            if (!string.IsNullOrEmpty(SystemPrompt))
+            {
+                var flag = AppendSystemPrompt ? "--append-system-prompt" : "--system-prompt";
+                var promptForCli = SystemPrompt.Replace("\r", "").Replace("\n", "\\n");
+
+                if (isCmdFile)
+                {
+                    // cmd.exe expands %VAR% in /c command string
+                    startInfo.Environment["CCW_SYSPROMPT"] = promptForCli;
+                    args += $" {flag} \"%CCW_SYSPROMPT%\"";
+                }
+                else
+                {
+                    var escaped = promptForCli.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                    args += $" {flag} \"{escaped}\"";
+                }
+            }
+
+            startInfo.Arguments = isCmdFile ? $"/c \"\"{exePath}\" {args}\"" : args;
 
             if (!string.IsNullOrEmpty(WorkingDirectory))
                 startInfo.WorkingDirectory = WorkingDirectory;
@@ -328,12 +366,52 @@ public class ClaudeCliService
         }
     }
 
+    /// <summary>
+    /// Extracts the Node.js executable and script path from an npm-generated .cmd shim,
+    /// allowing us to bypass cmd.exe entirely and avoid its argument quoting issues.
+    /// Returns null if the .cmd file doesn't match the expected npm shim pattern.
+    /// </summary>
+    private static (string NodeExe, string ScriptPath)? TryBypassCmdShim(string cmdPath)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(cmdPath);
+            if (dir == null) return null;
+
+            var content = File.ReadAllText(cmdPath);
+
+            // npm shims reference scripts like:
+            //   New (npm v9+): "%dp0%\node_modules\...\cli.mjs"  (SET dp0=%~dp0, then %dp0%)
+            //   Old:           "%~dp0\node_modules\...\cli.mjs"  (%~dp0 is a batch modifier, no closing %)
+            var match = Regex.Match(content, @"""%(?:~dp0\\|dp0%\\)([^""]+\.m?js)""");
+            if (!match.Success) return null;
+
+            var scriptPath = Path.GetFullPath(Path.Combine(dir, match.Groups[1].Value));
+            if (!File.Exists(scriptPath)) return null;
+
+            // Prefer node.exe in same directory (portable install), fall back to PATH
+            var localNode = Path.Combine(dir, "node.exe");
+            var nodeExe = File.Exists(localNode) ? localNode : "node";
+
+            return (nodeExe, scriptPath);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private string BuildArguments()
     {
-        var sb = new StringBuilder("-p --output-format stream-json --input-format stream-json --verbose --include-partial-messages --dangerously-skip-permissions --permission-prompt-tool stdio");
+        var sb = new StringBuilder("-p --output-format stream-json --input-format stream-json --verbose --include-partial-messages --permission-prompt-tool stdio");
+
+        if (DangerouslySkipPermissions)
+            sb.Append(" --dangerously-skip-permissions");
 
         if (!string.IsNullOrEmpty(ModelOverride))
             sb.Append($" --model \"{ModelOverride}\"");
+
+        // SystemPrompt is handled in StartSession() to avoid cmd.exe escaping issues
 
         if (!string.IsNullOrEmpty(_sessionId))
             sb.Append($" --resume \"{_sessionId}\"");
