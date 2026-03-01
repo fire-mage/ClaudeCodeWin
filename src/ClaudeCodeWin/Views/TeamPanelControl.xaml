@@ -202,39 +202,46 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <Button Grid.Column="0" Content="&#x25B6; Start"
-                        ToolTip="Start or resume orchestrator"
+                <TextBlock Grid.Column="0" Text="Orchestrator"
+                           FontSize="11" FontWeight="SemiBold"
+                           Foreground="{StaticResource PrimaryBrush}"
+                           VerticalAlignment="Center"
+                           Margin="0,0,8,0"/>
+
+                <Button Grid.Column="1" Content="&#x25B6; Run"
+                        ToolTip="Start executing planned phases (Dev + Review cycle)"
                         Padding="8,3" Margin="0,0,4,0"
                         FontSize="11"
                         Style="{StaticResource SubTabToolButton}"
                         Command="{Binding StartOrchestratorCommand}"/>
 
-                <Button Grid.Column="1" Content="&#x23F8; Pause"
+                <Button Grid.Column="2" Content="&#x23F8; Pause"
                         ToolTip="Finish current phase, then pause"
                         Padding="8,3" Margin="0,0,4,0"
                         FontSize="11"
                         Style="{StaticResource SubTabToolButton}"
                         Command="{Binding PauseOrchestratorCommand}"/>
 
-                <Button Grid.Column="2" Content="&#x23E9; Hard Pause"
+                <Button Grid.Column="3" Content="&#x23E9; Hard Pause"
                         ToolTip="Stop current session immediately (phase restarts on resume)"
                         Padding="8,3" Margin="0,0,4,0"
                         FontSize="11"
                         Style="{StaticResource SubTabToolButton}"
                         Command="{Binding HardPauseOrchestratorCommand}"/>
 
-                <Button Grid.Column="3" Content="&#x23F9; Stop"
+                <Button Grid.Column="4" Content="&#x23F9; Stop"
                         ToolTip="Stop orchestrator completely"
                         Padding="8,3" Margin="0,0,4,0"
                         FontSize="11"
                         Style="{StaticResource SubTabToolButton}"
                         Command="{Binding StopOrchestratorCommand}"/>
 
-                <TextBlock Grid.Column="5"
+                <TextBlock Grid.Column="6"
                            Text="{Binding OrchestratorStatusText}"
                            FontSize="11"
                            Foreground="{StaticResource AccentBrush}"

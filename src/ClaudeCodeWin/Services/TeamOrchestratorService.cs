@@ -116,12 +116,34 @@ public class TeamOrchestratorService : IDisposable
     {
         lock (_lock)
         {
-            if (_state is OrchestratorState.Running or OrchestratorState.WaitingForWork)
+            if (_state is OrchestratorState.Running
+                or OrchestratorState.SoftPaused or OrchestratorState.HardPaused)
                 return;
 
             _softPauseRequested = false;
             SetStateLocked(OrchestratorState.Running);
             StartHealthTimerLocked();
+            TryStartNextPhaseLocked();
+        }
+        FlushDeferredEvents();
+    }
+
+    /// <summary>
+    /// Notify the orchestrator that new work may be available (e.g. a feature was just planned).
+    /// If in WaitingForWork state, re-checks for pending phases.
+    /// </summary>
+    public void NotifyNewWork()
+    {
+        lock (_lock)
+        {
+            if (_state != OrchestratorState.WaitingForWork)
+                return;
+
+            if (string.IsNullOrEmpty(_workingDirectory)
+                || _backlogService.GetNextPendingPhase(_workingDirectory) == null)
+                return;
+
+            SetStateLocked(OrchestratorState.Running);
             TryStartNextPhaseLocked();
         }
         FlushDeferredEvents();

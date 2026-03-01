@@ -204,8 +204,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
             else
                 _orchestratorService.Start();
         }, () => _orchestratorService.State is OrchestratorState.Stopped
-               or OrchestratorState.SoftPaused or OrchestratorState.HardPaused
-               or OrchestratorState.WaitingForWork);
+               or OrchestratorState.SoftPaused or OrchestratorState.HardPaused);
 
         PauseOrchestratorCommand = new RelayCommand(
             () => _orchestratorService.SoftPause(),
@@ -331,6 +330,9 @@ public class TeamViewModel : ViewModelBase, IDisposable
                 f.PlannerSessionId = sessionId;
             });
             Refresh();
+
+            // Wake up orchestrator if it's idle waiting for work
+            _orchestratorService.NotifyNewWork();
         });
     }
 
