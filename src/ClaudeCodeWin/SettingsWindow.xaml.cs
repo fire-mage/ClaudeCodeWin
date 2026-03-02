@@ -33,8 +33,6 @@ public partial class SettingsWindow : Window
 
         AutoConfirmCheck.IsChecked = settings.AutoConfirmPlanMode;
         ContextSnapshotCheck.IsChecked = settings.ContextSnapshotEnabled;
-        ReviewerCheck.IsChecked = settings.ReviewerEnabled;
-
         UpdateInstructionsSummary();
         UpdateServersSummary();
 
@@ -63,14 +61,6 @@ public partial class SettingsWindow : Window
         if (!_initialized) return;
 
         _settings.ContextSnapshotEnabled = ContextSnapshotCheck.IsChecked == true;
-        _settingsService.Save(_settings);
-    }
-
-    private void Reviewer_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!_initialized) return;
-
-        _settings.ReviewerEnabled = ReviewerCheck.IsChecked == true;
         _settingsService.Save(_settings);
     }
 

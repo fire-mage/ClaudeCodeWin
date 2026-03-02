@@ -7,9 +7,37 @@ namespace ClaudeCodeWin.Views;
 
 public partial class TeamPanelControl : UserControl
 {
+    private TeamViewModel? _subscribedVm;
+
     public TeamPanelControl()
     {
         InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+    }
+
+    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (_subscribedVm != null)
+            _subscribedVm.PropertyChanged -= OnVmPropertyChanged;
+        _subscribedVm = DataContext as TeamViewModel;
+        if (_subscribedVm != null)
+            _subscribedVm.PropertyChanged += OnVmPropertyChanged;
+    }
+
+    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TeamViewModel.LiveChatText))
+        {
+            // Auto-scroll if already near bottom
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (ChatScrollViewer == null) return;
+                var isNearBottom = ChatScrollViewer.VerticalOffset >=
+                    ChatScrollViewer.ScrollableHeight - 20;
+                if (isNearBottom)
+                    ChatScrollViewer.ScrollToEnd();
+            }, System.Windows.Threading.DispatcherPriority.Background);
+        }
     }
 
     private TeamViewModel? VM => DataContext as TeamViewModel;
@@ -57,6 +85,12 @@ public partial class TeamPanelControl : UserControl
     {
         if (sender is Button btn && btn.DataContext is BacklogFeatureVM vm)
             VM?.AnswerQuestionCommand.Execute(vm);
+    }
+
+    private void DeleteFeature_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.DataContext is BacklogFeatureVM vm)
+            VM?.DeleteFeatureCommand.Execute(vm);
     }
 
     // --- Analysis section handlers ---
@@ -179,6 +213,12 @@ public partial class TeamPanelControl : UserControl
             vm.IsErrorExpanded = !vm.IsErrorExpanded;
             e.Handled = true;
         }
+    }
+
+    private void ViewChat_Click(object sender, RoutedEventArgs e)
+    {
+        if (VM != null)
+            VM.IsDevChatVisible = !VM.IsDevChatVisible;
     }
 
     private void LogHeader_Click(object sender, MouseButtonEventArgs e)

@@ -44,7 +44,8 @@ public class ManagerService
             ClaudeExePath = _claudeExePath ?? "claude",
             WorkingDirectory = _workingDirectory,
             SystemPrompt = systemPrompt,
-            DangerouslySkipPermissions = false
+            DangerouslySkipPermissions = false,
+            ModelOverride = TeamPrompts.TeamModelId
         };
 
         _isBusy = false;

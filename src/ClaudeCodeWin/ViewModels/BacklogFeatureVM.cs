@@ -114,6 +114,14 @@ public class BacklogFeatureVM : ViewModelBase
         set => SetProperty(ref _isErrorExpanded, value);
     }
 
+    // Active development indicator (set by TeamViewModel when orchestrator is working on this feature)
+    private bool _isActiveDeveloping;
+    public bool IsActiveDeveloping
+    {
+        get => _isActiveDeveloping;
+        set => SetProperty(ref _isActiveDeveloping, value);
+    }
+
     // Queue section properties
     public bool IsQueued => Feature.Status == FeatureStatus.Queued;
     public bool IsInProgress => Feature.Status == FeatureStatus.InProgress;

@@ -78,6 +78,11 @@ public class AppSettings
     public int ReviewAutoRetries { get; set; } = 11;
     public int ReviewTimeoutSeconds { get; set; } = 660;
 
+    // Development Team: dev stall detection (nudge → kill → retry)
+    public int DevNudgeSeconds { get; set; } = 360;
+    public int DevTimeoutSeconds { get; set; } = 660;
+    public int DevStallMaxRetries { get; set; } = 2;
+
     // Legacy migration: map old ExtremeCodeEnabled to ReviewerEnabled
     [System.Text.Json.Serialization.JsonIgnore]
     public bool ExtremeCodeEnabled { get => ReviewerEnabled; set => ReviewerEnabled = value; }

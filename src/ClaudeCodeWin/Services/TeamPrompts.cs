@@ -9,6 +9,8 @@ namespace ClaudeCodeWin.Services;
 /// </summary>
 public static class TeamPrompts
 {
+    public const string TeamModelId = "claude-opus-4-6";
+
     private const string AnalyzerBasePrompt =
         """
         You are an Idea Analyzer in a development team. Your job is to evaluate whether a feature idea is feasible, identify which projects it affects, and flag any risks.

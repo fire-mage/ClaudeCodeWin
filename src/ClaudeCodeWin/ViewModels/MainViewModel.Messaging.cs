@@ -15,7 +15,11 @@ public partial class MainViewModel
         if (string.IsNullOrEmpty(text))
             return;
 
-        // If Claude is busy, queue the message (including any attachments)
+        // If Claude is busy, queue the message (including any attachments).
+        // Note: during the review-fix cycle, IsProcessing is true but IsReviewInProgress
+        // is false (cleared when verdict arrived). User messages are intentionally queued
+        // here (not blocked) — they will be sent after the fix completes and before the
+        // next auto-review triggers.
         if (IsProcessing)
         {
             List<FileAttachment>? queuedAttachments = Attachments.Count > 0 ? [.. Attachments] : null;
@@ -23,6 +27,14 @@ public partial class MainViewModel
             InputText = string.Empty;
             if (queuedAttachments is not null)
                 Attachments.Clear();
+            return;
+        }
+
+        // Block input during code review — don't queue, just discard
+        if (IsReviewInProgress)
+        {
+            Messages.Add(new MessageViewModel(MessageRole.System,
+                "Cannot send messages during review. Press Escape to cancel review."));
             return;
         }
 
@@ -56,6 +68,51 @@ public partial class MainViewModel
             Messages.Add(new MessageViewModel(MessageRole.System, "Review cancelled (user message)."));
         }
 
+        // Team coordination: auto-pause orchestrator if it's actively running.
+        // Skip for internal prompts (review-fix, reviewer) — only pause for real user messages.
+        var orchState = _orchestratorService?.State ?? OrchestratorState.Stopped;
+        if (participantLabel is null
+            && orchState is OrchestratorState.Running or OrchestratorState.WaitingForWork
+            && !_teamPausedForChat)
+        {
+            var wasActivelyRunning = orchState == OrchestratorState.Running;
+            IsProcessing = true;
+            StatusText = "Pausing team...";
+            _teamPauseCancelledByUser = false;
+            _teamPauseCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            try
+            {
+                await _orchestratorService!.SoftPauseAsync(_teamPauseCts.Token);
+                _teamPausedForChat = true;
+                _teamWasActivelyRunning = wasActivelyRunning;
+                // Only show the message when the team was actively running (not idle/WaitingForWork)
+                // to avoid noisy "paused/resumed" pairs on every chat turn when the team is idle.
+                if (wasActivelyRunning)
+                    Messages.Add(new MessageViewModel(MessageRole.System, "Team paused. Processing your message..."));
+            }
+            catch (OperationCanceledException)
+            {
+                if (_teamPauseCancelledByUser)
+                {
+                    // User cancel (Escape) — CancelProcessing already cleaned up everything.
+                    // Restore the text so user doesn't lose it (InputText was cleared before SendDirectAsync).
+                    // Attachments don't need restoring — Attachments.Clear() hasn't been reached yet.
+                    InputText = text;
+                    return;
+                }
+                // 30s timeout — proceed with message anyway, team will finish its phase naturally
+                _orchestratorService!.ClearPendingSoftPause();
+                _orchestratorService.ResumeIfSoftPaused();
+                Messages.Add(new MessageViewModel(MessageRole.System,
+                    "Team pause timed out. Proceeding with your message."));
+            }
+            finally
+            {
+                _teamPauseCts?.Dispose();
+                _teamPauseCts = null;
+            }
+        }
+
         var userMsg = new MessageViewModel(MessageRole.User, text);
         if (participantLabel is not null)
             userMsg.ReviewerLabel = participantLabel;
@@ -72,6 +129,7 @@ public partial class MainViewModel
 
         EffectiveProjectName = "";
         _cliService.ClearFileSnapshots();
+        _activeSendGeneration = ++_sendGeneration;
         IsProcessing = true;
         StatusText = "Processing...";
         StartNudgeTimer();
@@ -129,6 +187,7 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            if (_activeSendGeneration != _sendGeneration) return;
             ResetNudgeActivity();
             if (_currentAssistantMessage is null) return;
 
@@ -148,6 +207,7 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            if (_activeSendGeneration != _sendGeneration) return;
             ResetNudgeActivity();
             if (_currentAssistantMessage is not null)
             {
@@ -170,6 +230,7 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            if (_activeSendGeneration != _sendGeneration) return;
             ResetNudgeActivity();
             if (_currentAssistantMessage is not null)
             {
@@ -183,6 +244,7 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            if (_activeSendGeneration != _sendGeneration) return;
             ResetNudgeActivity();
             if (_currentAssistantMessage is not null)
             {
@@ -224,6 +286,7 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            if (_activeSendGeneration != _sendGeneration) return;
             ResetNudgeActivity();
             if (_currentAssistantMessage is null) return;
 
@@ -248,6 +311,7 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            if (_activeSendGeneration != _sendGeneration) return;
             ResetNudgeActivity();
             // Show model name immediately when the first API call starts
             if (!string.IsNullOrEmpty(model) && string.IsNullOrEmpty(ModelName))
@@ -267,6 +331,9 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
+            // Skip stale callbacks from a cancelled CLI process
+            if (_activeSendGeneration != _sendGeneration) return;
+
             if (_currentAssistantMessage is not null)
             {
                 _currentAssistantMessage.IsStreaming = false;
@@ -379,6 +446,13 @@ public partial class MainViewModel
 
                 // Auto-review or task suggestion popup
                 OnTurnCompleted();
+
+                // Resume team AFTER OnTurnCompleted so that if an auto-review starts
+                // (and later sends a fix prompt via SendDirectAsync), the team stays
+                // paused and SendDirectAsync skips the SoftPauseAsync block. This avoids
+                // a pause→resume→pause churn cycle on every review round.
+                if (_teamPausedForChat && !IsReviewInProgress)
+                    ResumeTeamAfterChat();
             }
         });
     }
@@ -545,10 +619,32 @@ public partial class MainViewModel
         });
     }
 
+    /// <summary>
+    /// Resumes the team orchestrator after a chat-initiated pause.
+    /// Must be called on the UI thread (modifies Messages ObservableCollection).
+    /// </summary>
+    private void ResumeTeamAfterChat()
+    {
+        var wasActive = _teamWasActivelyRunning;
+        _teamPausedForChat = false;
+        _teamWasActivelyRunning = false;
+        // Use ResumeIfSoftPaused (not Resume) to avoid resuming from HardPaused —
+        // a health check may have transitioned to HardPaused (e.g. dev died, internet lost)
+        // between our soft pause and this resume call.
+        _orchestratorService?.ResumeIfSoftPaused();
+        // Only show the message when the team was actively running when paused,
+        // to avoid noisy "paused/resumed" pairs on every chat turn when the team is idle.
+        if (wasActive)
+            Messages.Add(new MessageViewModel(MessageRole.System, "Team work resumed."));
+    }
+
     private void HandleError(string error)
     {
         RunOnUI(() =>
         {
+            // Skip stale callbacks from a cancelled CLI process
+            if (_activeSendGeneration != _sendGeneration) return;
+
             if (_currentAssistantMessage is not null)
             {
                 _currentAssistantMessage.IsStreaming = false;
@@ -563,6 +659,17 @@ public partial class MainViewModel
             ClearAllThinking();
             StatusText = "Error";
             UpdateCta(CtaState.WaitingForUser);
+
+            // Resume team if we auto-paused it for chat.
+            // Unlike HandleCompleted, HandleError doesn't drain the queue,
+            // so we must resume unconditionally to avoid leaving the team stuck.
+            if (_teamPausedForChat)
+                ResumeTeamAfterChat();
+
+            // Warn user if queued messages are stranded (HandleError doesn't auto-drain)
+            if (MessageQueue.Count > 0)
+                Messages.Add(new MessageViewModel(MessageRole.System,
+                    $"{MessageQueue.Count} queued message(s) not sent. Click a message to send or return to input."));
 
             _notificationService.NotifyIfInactive();
         });

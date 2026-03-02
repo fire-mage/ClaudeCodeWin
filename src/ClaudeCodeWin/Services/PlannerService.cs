@@ -131,7 +131,8 @@ public class PlannerService
             ClaudeExePath = _claudeExePath ?? "claude",
             WorkingDirectory = projectPath ?? _workingDirectory,
             SystemPrompt = TeamPrompts.PlannerSystemPrompt,
-            DangerouslySkipPermissions = false
+            DangerouslySkipPermissions = false,
+            ModelOverride = TeamPrompts.TeamModelId
         };
         return cli;
     }

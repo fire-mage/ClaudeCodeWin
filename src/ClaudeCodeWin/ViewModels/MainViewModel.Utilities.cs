@@ -158,14 +158,32 @@ public partial class MainViewModel
             StatusText = "Review cancelled";
             UpdateCta(CtaState.WaitingForUser);
             Messages.Add(new MessageViewModel(MessageRole.System, "Review cancelled by user."));
+            if (_teamPausedForChat)
+                ResumeTeamAfterChat();
             return true;
         }
 
         return false;
     }
 
-    private void CancelProcessing()
+    private void CancelProcessing(bool resumeTeam = true)
     {
+        // Invalidate stale HandleCompleted/HandleError callbacks that may already
+        // be queued on the dispatcher from the about-to-be-killed CLI process.
+        _sendGeneration++;
+
+        // Cancel team pause-wait if still in progress.
+        // Only cancel here — SendDirectAsync's finally block owns the disposal.
+        _teamPauseCancelledByUser = true;
+        _teamPauseCts?.Cancel();
+        if (resumeTeam)
+        {
+            if (_teamPausedForChat)
+                ResumeTeamAfterChat();
+            else
+                _orchestratorService?.ClearPendingSoftPause();
+        }
+
         _cliService.Cancel();
         CancelReview();
         IsProcessing = false;
@@ -345,6 +363,7 @@ public partial class MainViewModel
             CtaState.WaitingForUser => "Claude is waiting for your response",
             CtaState.AnswerQuestion => "Answer the question above",
             CtaState.ConfirmOperation => "Confirm the operation above",
+            CtaState.Reviewing => "Review in progress. Wait for completion or press Escape to cancel.",
             _ => ""
         };
         OnPropertyChanged(nameof(HasCta));

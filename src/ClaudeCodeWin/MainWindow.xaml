@@ -194,7 +194,7 @@
 
                                         <!-- Compact mode: rotated vertical text -->
                                         <StackPanel x:Name="CompactModeLayout"
-                                                    HorizontalAlignment="Center" MaxHeight="120"
+                                                    HorizontalAlignment="Center"
                                                     Visibility="{Binding DataContext.IsTabPanelCompact,
                                                                  RelativeSource={RelativeSource AncestorType=Window},
                                                                  Converter={StaticResource BoolToVis}}">
@@ -220,7 +220,7 @@
                                             <TextBlock Text="{Binding TabTitle}" FontSize="11"
                                                        Foreground="{StaticResource TextBrush}"
                                                        TextTrimming="CharacterEllipsis"
-                                                       MaxWidth="100">
+                                                       MaxWidth="250">
                                                 <TextBlock.LayoutTransform>
                                                     <RotateTransform Angle="-90"/>
                                                 </TextBlock.LayoutTransform>
@@ -365,6 +365,7 @@
                             <RowDefinition Height="Auto"/>     <!-- Message queue -->
                             <RowDefinition Height="Auto"/>     <!-- Attachments -->
                             <RowDefinition Height="Auto"/>     <!-- CTA hint -->
+                            <RowDefinition Height="Auto"/>     <!-- Use Reviewer toggle -->
                             <RowDefinition Height="Auto"/>     <!-- Input -->
                             <RowDefinition Height="Auto"/>     <!-- Background tasks -->
                             <RowDefinition Height="Auto"/>     <!-- Changed files -->
@@ -1697,8 +1698,49 @@
                                Opacity="0.85"/>
                 </Border>
 
+                <!-- Use Reviewer toggle -->
+                <CheckBox Grid.Row="4"
+                          IsChecked="{Binding UseReviewer, Mode=TwoWay}"
+                          Margin="16,4,16,0"
+                          VerticalAlignment="Top"
+                          HorizontalAlignment="Left"
+                          Cursor="Hand">
+                    <CheckBox.Style>
+                        <Style TargetType="CheckBox">
+                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="CheckBox">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="14" Height="14" CornerRadius="2"
+                                                    BorderBrush="{StaticResource TextSecondaryBrush}"
+                                                    BorderThickness="1"
+                                                    Background="Transparent"
+                                                    VerticalAlignment="Center" Margin="0,0,5,0">
+                                                <TextBlock x:Name="Check" Text="&#x2713;" FontSize="10"
+                                                           FontWeight="Bold"
+                                                           Foreground="{StaticResource PrimaryBrush}"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           Visibility="Collapsed"/>
+                                            </Border>
+                                            <ContentPresenter VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </CheckBox.Style>
+                    <TextBlock Text="Use Reviewer" FontSize="11"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                </CheckBox>
+
                 <!-- Input area -->
-                <Grid Grid.Row="4" Margin="8">
+                <Grid Grid.Row="5" Margin="8,0,8,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
@@ -1817,7 +1859,7 @@
                 </Grid>
 
                 <!-- Background tasks panel -->
-                <Border Grid.Row="5"
+                <Border Grid.Row="6"
                         Background="{StaticResource SurfaceBrush}"
                         Padding="8,3"
                         Visibility="{Binding HasBackgroundTasks, Converter={StaticResource BoolToVis}}"
@@ -1918,7 +1960,7 @@
                 </Border>
 
                 <!-- Changed files indicator -->
-                <Border Grid.Row="6"
+                <Border Grid.Row="7"
                         Background="{StaticResource SurfaceBrush}"
                         Padding="8,3"
                         Visibility="{Binding HasChangedFiles, Converter={StaticResource BoolToVis}}"

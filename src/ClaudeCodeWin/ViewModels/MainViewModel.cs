@@ -76,6 +76,7 @@ public partial class MainViewModel : ViewModelBase
 
     private string _inputText = string.Empty;
     private bool _isProcessing;
+    private bool _isReviewInProgress;
     private string _statusText = "";
     private string _modelName = "";
     private MessageViewModel? _currentAssistantMessage;
@@ -114,6 +115,19 @@ public partial class MainViewModel : ViewModelBase
     // ExitPlanMode auto-confirm state
     private int _exitPlanModeAutoCount;
 
+    // Team pause/resume coordination for chat
+    private bool _teamPausedForChat;
+    private bool _teamWasActivelyRunning; // true if team was Running (not WaitingForWork) when paused
+    private CancellationTokenSource? _teamPauseCts;
+    private bool _teamPauseCancelledByUser;
+
+    // Generation counter: incremented in both CancelProcessing and SendDirectAsync
+    // to detect stale HandleCompleted/HandleError callbacks.
+    // Each send claims a new generation via ++_sendGeneration; if _activeSendGeneration
+    // doesn't match _sendGeneration when a callback fires, the callback is stale.
+    private int _sendGeneration;
+    private int _activeSendGeneration;
+
     // Control request protocol state
     private int _pendingQuestionCount;
     private string? _pendingControlRequestId;
@@ -138,6 +152,16 @@ public partial class MainViewModel : ViewModelBase
     {
         get => _isProcessing;
         set => SetProperty(ref _isProcessing, value);
+    }
+
+    public bool IsReviewInProgress
+    {
+        get => _isReviewInProgress;
+        set
+        {
+            if (SetProperty(ref _isReviewInProgress, value))
+                CancelCommand.RaiseCanExecuteChanged();
+        }
     }
 
     public DependencySetupViewModel DependencySetup { get; } = new();
@@ -378,7 +402,7 @@ public partial class MainViewModel : ViewModelBase
         _backlogService = backlogService;
 
         SendCommand = new RelayCommand(() => _ = SendMessageAsync());
-        CancelCommand = new RelayCommand(CancelProcessing, () => IsProcessing);
+        CancelCommand = new RelayCommand(() => CancelProcessing(), () => IsProcessing || IsReviewInProgress);
         NewSessionCommand = new RelayCommand(StartNewSession);
         RemoveAttachmentCommand = new RelayCommand(p =>
         {
@@ -416,11 +440,27 @@ public partial class MainViewModel : ViewModelBase
             if (p is QueuedMessage qm)
             {
                 MessageQueue.Remove(qm);
-                CancelProcessing();
-                _currentTaskStartIndex = Messages.Count;
-                _reviewCycleCompleted = false;
-                ChangedFiles.Clear();
-                _ = SendDirectAsync(qm.Text, qm.Attachments);
+                CancelProcessing(resumeTeam: false);
+                // Defer send to next dispatcher cycle so stale HandleCompleted/HandleError
+                // callbacks (queued before CancelProcessing killed the CLI) are processed
+                // and dropped by the generation check before the new send starts.
+                // Residual race: if pipe-buffered data from the killed process is read
+                // AFTER this callback runs, the stale callback would pass the generation
+                // check (both fields match). This is extremely unlikely on Windows but
+                // not impossible — a correct fix would require per-send closure capture
+                // in ClaudeCliService's event model.
+                System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
+                {
+                    // Guard against rapid double-click: if another queued message
+                    // already started sending, skip this one to avoid overwriting
+                    // the generation counter and losing the first response.
+                    if (IsProcessing) return;
+
+                    _currentTaskStartIndex = Messages.Count;
+                    _reviewCycleCompleted = false;
+                    ChangedFiles.Clear();
+                    _ = SendDirectAsync(qm.Text, qm.Attachments);
+                });
             }
         });
         ReturnQueuedToInputCommand = new RelayCommand(p =>
@@ -610,5 +650,6 @@ internal enum CtaState
     Processing,
     WaitingForUser,
     AnswerQuestion,
-    ConfirmOperation
+    ConfirmOperation,
+    Reviewing
 }

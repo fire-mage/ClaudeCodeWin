@@ -38,7 +38,8 @@ public class PlanReviewerService
             ClaudeExePath = _claudeExePath ?? "claude",
             WorkingDirectory = feature.ProjectPath ?? _workingDirectory,
             SystemPrompt = TeamPrompts.BuildPlanReviewerSystemPrompt(),
-            DangerouslySkipPermissions = false
+            DangerouslySkipPermissions = false,
+            ModelOverride = TeamPrompts.TeamModelId
         };
 
         var session = new ReviewerSession

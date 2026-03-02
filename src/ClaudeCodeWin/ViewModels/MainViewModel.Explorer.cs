@@ -78,7 +78,7 @@ public partial class MainViewModel
         _plannerService.Configure(_cliService.ClaudeExePath, WorkingDirectory);
 
         _orchestratorService = new TeamOrchestratorService(_backlogService, _gitService);
-        _orchestratorService.Configure(_cliService.ClaudeExePath, WorkingDirectory);
+        _orchestratorService.Configure(_cliService.ClaudeExePath, WorkingDirectory, _settings);
 
         _managerService = new ManagerService();
         _managerService.Configure(_cliService.ClaudeExePath, WorkingDirectory);

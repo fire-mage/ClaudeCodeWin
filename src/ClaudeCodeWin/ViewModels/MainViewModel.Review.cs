@@ -16,7 +16,17 @@ public partial class MainViewModel
     private System.Windows.Threading.DispatcherTimer? _reviewTimeoutTimer;
     private System.Windows.Threading.DispatcherTimer? _reviewNudgeTimer;
 
-    public bool ReviewerEnabled => _settings.ReviewerEnabled;
+    public bool UseReviewer
+    {
+        get => _settings.ReviewerEnabled;
+        set
+        {
+            if (_settings.ReviewerEnabled == value) return;
+            _settings.ReviewerEnabled = value;
+            _settingsService.Save(_settings);
+            OnPropertyChanged();
+        }
+    }
 
     /// <summary>
     /// Called from HandleCompleted after every turn.
@@ -161,14 +171,20 @@ public partial class MainViewModel
                     _currentReviewerMessage = null;
                 }
                 _reviewService = null;
+                IsReviewInProgress = false;
+                UpdateCta(CtaState.WaitingForUser);
                 StopReviewTimers();
                 ReviewStatusText = "";
                 Messages.Add(new MessageViewModel(MessageRole.System, "Review failed. Proceeding without review."));
                 TryShowTaskSuggestion();
+                if (_teamPausedForChat)
+                    ResumeTeamAfterChat();
             });
         };
 
         _reviewService.RunReview(context);
+        UpdateCta(CtaState.Reviewing);
+        IsReviewInProgress = true;
 
         // Start timeout and nudge timers
         StartReviewTimers();
@@ -209,7 +225,10 @@ public partial class MainViewModel
                 Messages.Add(new MessageViewModel(MessageRole.System,
                     $"Review timed out after {timeStr}."));
                 CancelReview();
+                UpdateCta(CtaState.WaitingForUser);
                 TryShowTaskSuggestion();
+                if (_teamPausedForChat)
+                    ResumeTeamAfterChat();
             }
         };
         _reviewTimeoutTimer.Start();
@@ -237,10 +256,12 @@ public partial class MainViewModel
         StopReviewTimers();
         _reviewService?.Stop();
         _reviewService = null;
+        IsReviewInProgress = false;
 
         if (verdict == ReviewVerdict.Consensus)
         {
             _reviewCycleCompleted = true;
+            UpdateCta(CtaState.WaitingForUser);
             Messages.Add(new MessageViewModel(MessageRole.System, "Review passed — no issues found."));
             ReviewStatusText = "Review Passed";
             // Auto-clear status after 5 seconds (stored as field for cancellation)
@@ -250,6 +271,8 @@ public partial class MainViewModel
             _reviewStatusClearTimer.Tick += (_, _) => { ReviewStatusText = ""; _reviewStatusClearTimer?.Stop(); _reviewStatusClearTimer = null; };
             _reviewStatusClearTimer.Start();
             TryShowTaskSuggestion();
+            if (_teamPausedForChat)
+                ResumeTeamAfterChat();
             return;
         }
 
@@ -285,10 +308,13 @@ public partial class MainViewModel
         if (criticalSnippet is not null && criticalSnippet == _lastReviewCriticalSnippet)
         {
             _reviewCycleCompleted = true;
+            UpdateCta(CtaState.WaitingForUser);
             Messages.Add(new MessageViewModel(MessageRole.System,
                 "Review loop detected — same critical issue repeated. Stopping auto-review."));
             ReviewStatusText = "Review: Loop detected";
             TryShowTaskSuggestion();
+            if (_teamPausedForChat)
+                ResumeTeamAfterChat();
             return;
         }
         _lastReviewCriticalSnippet = criticalSnippet;
@@ -324,6 +350,7 @@ public partial class MainViewModel
             _reviewService.Stop();
             _reviewService = null;
         }
+        IsReviewInProgress = false;
         _isAutoReviewPending = false;
         _reviewAttempt = 0;
         _reviewCycleCompleted = false;

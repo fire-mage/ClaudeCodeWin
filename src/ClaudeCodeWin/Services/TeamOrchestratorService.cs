@@ -29,18 +29,18 @@ public class TeamOrchestratorService : IDisposable
     private bool _softPauseRequested;
     private int _reviewAttempt;
     private string? _lastReviewCriticalSnippet;
-    // KEEP IN SYNC with AppSettings.ReviewAutoRetries
-    private const int MaxReviewRetries = 11;
+    private int _maxReviewRetries = 11;
 
     // Health monitoring (Phase 6)
     private System.Timers.Timer? _healthTimer;
     private const int HealthCheckIntervalMs = 10_000;
     private const int StallNudgeThresholdSeconds = 60;
+    private const int StallDisplayThresholdSeconds = 60; // visual health indicator (lower than nudge)
     // Stall detector (no output for N seconds), NOT an absolute timeout.
-    // Main chat uses AppSettings.ReviewTimeoutSeconds as an absolute timer instead.
-    // KEEP IN SYNC with AppSettings.ReviewTimeoutSeconds
-    private const int StallKillThresholdSeconds = 660;
-    private const int MaxSessionRetries = 3;
+    private int _reviewStallKillThresholdSeconds = 660;
+    private int _devStallNudgeThresholdSeconds = 360;
+    private int _devStallKillThresholdSeconds = 660;
+    private int _maxSessionRetries = 2;
     private int _healthTickCount;
     private int _internetCheckPending; // 0=idle, 1=in-flight (Interlocked)
 
@@ -57,10 +57,26 @@ public class TeamOrchestratorService : IDisposable
     public event Action<string>? OnReviewTextDelta;
     public event Action<string>? OnError;
     public event Action<IReadOnlyList<SessionHealthInfo>>? OnHealthSnapshot;
+    public event Action<string?>? OnActiveTaskChanged; // featureId or null when cleared
 
     public OrchestratorState State { get { lock (_lock) return _state; } }
     public bool IsRunning { get { lock (_lock) return _state == OrchestratorState.Running; } }
     public bool IsPaused { get { lock (_lock) return _state is OrchestratorState.SoftPaused or OrchestratorState.HardPaused; } }
+
+    public string? GetActiveFeatureId() { lock (_lock) return _activeSession?.FeatureId; }
+
+    public (string devText, string reviewText, SessionPhase phase) GetActiveSessionText()
+    {
+        lock (_lock)
+        {
+            if (_activeSession == null)
+                return ("", "", SessionPhase.Development);
+            return (
+                _activeSession.DevResponse.ToString(),
+                _activeSession.ReviewResponse.ToString(),
+                _activeSession.CurrentPhase);
+        }
+    }
 
     public TeamOrchestratorService(BacklogService backlogService, GitService gitService)
     {
@@ -78,6 +94,7 @@ public class TeamOrchestratorService : IDisposable
     private void RaisePhaseCompleted(string fid, string pid, PhaseStatus s) => RaiseEvent(() => OnPhaseCompleted?.Invoke(fid, pid, s));
     private void RaiseError(string msg) => RaiseEvent(() => OnError?.Invoke(msg));
     private void RaiseHealthSnapshot(IReadOnlyList<SessionHealthInfo> items) => RaiseEvent(() => OnHealthSnapshot?.Invoke(items));
+    private void RaiseActiveTaskChanged(string? featureId) => RaiseEvent(() => OnActiveTaskChanged?.Invoke(featureId));
 
     private void RaiseEvent(Action action)
     {
@@ -105,12 +122,23 @@ public class TeamOrchestratorService : IDisposable
         }
     }
 
-    public void Configure(string claudeExePath, string? workingDirectory)
+    public void Configure(string claudeExePath, string? workingDirectory, AppSettings? settings = null)
     {
         lock (_lock)
         {
             _claudeExePath = claudeExePath;
             _workingDirectory = workingDirectory;
+
+            if (settings is not null)
+            {
+                _maxReviewRetries = settings.ReviewAutoRetries;
+                _reviewStallKillThresholdSeconds = settings.ReviewTimeoutSeconds;
+                _devStallKillThresholdSeconds = settings.DevTimeoutSeconds;
+                // Ensure nudge fires before kill; clamp to at least 60s before timeout
+                _devStallNudgeThresholdSeconds = Math.Min(settings.DevNudgeSeconds,
+                    Math.Max(settings.DevTimeoutSeconds - 60, 60));
+                _maxSessionRetries = settings.DevStallMaxRetries;
+            }
         }
     }
 
@@ -155,6 +183,20 @@ public class TeamOrchestratorService : IDisposable
     }
 
     /// <summary>
+    /// Clears a pending soft-pause request without changing state.
+    /// Use when the caller that requested SoftPauseAsync was cancelled before
+    /// the orchestrator transitioned to SoftPaused — prevents the orchestrator
+    /// from transitioning to SoftPaused after the current phase finishes.
+    /// </summary>
+    public void ClearPendingSoftPause()
+    {
+        lock (_lock)
+        {
+            _softPauseRequested = false;
+        }
+    }
+
+    /// <summary>
     /// Soft pause: let current dev+review cycle finish, don't start next.
     /// </summary>
     public void SoftPause()
@@ -176,6 +218,78 @@ public class TeamOrchestratorService : IDisposable
             }
         }
         FlushDeferredEvents();
+    }
+
+    /// <summary>
+    /// Async soft pause: requests soft pause and waits until state actually transitions
+    /// to SoftPaused, HardPaused, or Stopped. Returns immediately if already in one of those states.
+    /// Callers MUST provide a meaningful CancellationToken — without one, this can hang
+    /// indefinitely if the active session dies without triggering AfterPhaseEndedLocked.
+    /// </summary>
+    /// <exception cref="OperationCanceledException">The <paramref name="ct"/> was cancelled.</exception>
+    public async Task SoftPauseAsync(CancellationToken ct)
+    {
+        // If caller passes an uncancellable token, apply a default timeout
+        // to prevent indefinite hangs if the active session dies silently.
+        CancellationTokenSource? fallbackCts = null;
+        if (!ct.CanBeCanceled)
+        {
+            fallbackCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            ct = fallbackCts.Token;
+        }
+
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnChanged(OrchestratorState newState)
+        {
+            if (newState is OrchestratorState.SoftPaused
+                or OrchestratorState.HardPaused
+                or OrchestratorState.Stopped)
+            {
+                tcs.TrySetResult();
+            }
+        }
+
+        // Subscribe BEFORE checking state to close the race window where another
+        // thread transitions state between our check and subscription.
+        OnStateChanged += OnChanged;
+        try
+        {
+            lock (_lock)
+            {
+                if (_state is OrchestratorState.SoftPaused
+                    or OrchestratorState.HardPaused
+                    or OrchestratorState.Stopped)
+                {
+                    tcs.TrySetResult();
+                }
+            }
+
+            if (!tcs.Task.IsCompleted)
+            {
+                SoftPause();
+
+                // Defensive re-check: SoftPause fires OnStateChanged synchronously
+                // via FlushDeferredEvents before returning, so TCS is normally already
+                // set here. This guards against future event delivery changes.
+                lock (_lock)
+                {
+                    if (_state is OrchestratorState.SoftPaused
+                        or OrchestratorState.HardPaused
+                        or OrchestratorState.Stopped)
+                    {
+                        tcs.TrySetResult();
+                    }
+                }
+            }
+
+            await tcs.Task.WaitAsync(ct);
+        }
+        finally
+        {
+            OnStateChanged -= OnChanged;
+            fallbackCts?.Dispose();
+        }
     }
 
     /// <summary>
@@ -233,6 +347,28 @@ public class TeamOrchestratorService : IDisposable
             }
             finally { FlushDeferredEvents(); }
         });
+    }
+
+    /// <summary>
+    /// Atomically resume only if currently soft-paused. No-op otherwise.
+    /// Unlike Resume(), this will NOT resume from HardPaused — closing
+    /// the TOCTOU window where a health check could transition to HardPaused
+    /// between our check and the Resume() call.
+    /// </summary>
+    public void ResumeIfSoftPaused()
+    {
+        lock (_lock)
+        {
+            if (_state != OrchestratorState.SoftPaused)
+                return;
+
+            _softPauseRequested = false;
+            SetStateLocked(OrchestratorState.Running);
+            StartHealthTimerLocked();
+            RaiseLog("Resuming from soft pause.");
+            TryStartNextPhaseLocked();
+        }
+        FlushDeferredEvents();
     }
 
     /// <summary>
@@ -314,7 +450,8 @@ public class TeamOrchestratorService : IDisposable
             SystemPrompt = TeamPrompts.BuildDeveloperSystemPrompt(
                 session.FeatureTitle, phase.Title,
                 phase.Plan, phase.AcceptanceCriteria),
-            DangerouslySkipPermissions = true
+            DangerouslySkipPermissions = true,
+            ModelOverride = TeamPrompts.TeamModelId
         };
 
         session.DevCli = devCli;
@@ -322,6 +459,7 @@ public class TeamOrchestratorService : IDisposable
 
         WireDevEvents(session);
 
+        RaiseActiveTaskChanged(feature.Id);
         RaiseLog($"Dev started: [{session.FeatureTitle}] Phase {phase.Order}: {phase.Title}");
         RaisePhaseStarted(feature.Id, phase.Id);
 
@@ -406,6 +544,7 @@ public class TeamOrchestratorService : IDisposable
             {
                 if (_activeSession != session) return;
                 session.DevStallSeconds = 0;
+                session.DevNudgeSent = false;
             }
         };
     }
@@ -519,7 +658,7 @@ public class TeamOrchestratorService : IDisposable
         string devSummary, List<string> changedFiles, string? gitDiff)
     {
         var reviewer = new ReviewService();
-        reviewer.Configure(_claudeExePath ?? "claude", workDir);
+        reviewer.Configure(_claudeExePath ?? "claude", workDir, TeamPrompts.TeamModelId);
         session.Reviewer = reviewer;
 
         var context = TeamPrompts.BuildOrchestratorReviewContext(
@@ -610,7 +749,7 @@ public class TeamOrchestratorService : IDisposable
         // ISSUES_FOUND or None
         _reviewAttempt++;
 
-        if (_reviewAttempt >= MaxReviewRetries)
+        if (_reviewAttempt >= _maxReviewRetries)
         {
             RaiseLog($"Phase [{session.PhaseTitle}] failed review after {_reviewAttempt} retries.");
 
@@ -658,7 +797,7 @@ public class TeamOrchestratorService : IDisposable
         _lastReviewCriticalSnippet = criticalSnippet;
 
         // Send fix prompt to developer
-        RaiseLog($"Review round {_reviewAttempt}/{MaxReviewRetries} for [{session.PhaseTitle}]. Sending fixes...");
+        RaiseLog($"Review round {_reviewAttempt}/{_maxReviewRetries} for [{session.PhaseTitle}]. Sending fixes...");
 
         session.CurrentPhase = SessionPhase.FixingIssues;
         session.DevResponse.Clear();
@@ -687,7 +826,8 @@ public class TeamOrchestratorService : IDisposable
             SystemPrompt = TeamPrompts.BuildDeveloperSystemPrompt(
                 session.FeatureTitle, session.PhaseTitle,
                 session.PhasePlan, session.AcceptanceCriteria),
-            DangerouslySkipPermissions = true
+            DangerouslySkipPermissions = true,
+            ModelOverride = TeamPrompts.TeamModelId
         };
 
         if (session.DevSessionId is not null)
@@ -743,6 +883,7 @@ public class TeamOrchestratorService : IDisposable
         }
 
         _activeSession = null;
+        RaiseActiveTaskChanged(null);
     }
 
     private void CleanupSessionLocked()
@@ -750,6 +891,7 @@ public class TeamOrchestratorService : IDisposable
         _activeSession?.DevCli?.StopSession();
         _activeSession?.Reviewer?.Stop();
         _activeSession = null;
+        RaiseActiveTaskChanged(null);
     }
 
     // ── Health monitoring (Phase 6) ─────────────────────────────────
@@ -831,6 +973,8 @@ public class TeamOrchestratorService : IDisposable
             return;
         }
 
+        ClaudeCliService? devCliToNudge = null;
+        ReviewService? reviewerToNudge = null;
         try
         {
             lock (_lock)
@@ -847,13 +991,21 @@ public class TeamOrchestratorService : IDisposable
                     return;
                 }
 
-                // 2. Dev stall threshold → kill and restart
+                // 2a. Dev stall: nudge at 360s — capture ref, send outside lock
                 if (session.CurrentPhase is SessionPhase.Development or SessionPhase.FixingIssues
-                    && session.DevStallSeconds >= StallKillThresholdSeconds)
+                    && session.DevStallSeconds >= _devStallNudgeThresholdSeconds
+                    && !session.DevNudgeSent)
                 {
-                    RaiseLog($"Dev stalled {session.DevStallSeconds}s (>={StallKillThresholdSeconds}s). Restarting.");
-                    session.DevCli?.StopSession();
-                    session.DevStallSeconds = 0;
+                    session.DevNudgeSent = true;
+                    devCliToNudge = session.DevCli;
+                    RaiseLog($"Dev nudged after {session.DevStallSeconds}s inactivity.");
+                }
+
+                // 2b. Dev stall threshold → kill and restart
+                if (session.CurrentPhase is SessionPhase.Development or SessionPhase.FixingIssues
+                    && session.DevStallSeconds >= _devStallKillThresholdSeconds)
+                {
+                    RaiseLog($"Dev stalled {session.DevStallSeconds}s. Nudge was sent: {session.DevNudgeSent}. Retry {session.RetryCount}/{_maxSessionRetries}.");
                     RestartDevSessionLocked(session, "stall timeout");
                     return;
                 }
@@ -861,7 +1013,7 @@ public class TeamOrchestratorService : IDisposable
                 // 3. Review stall: nudge at 60s, kill at 660s (treat as consensus)
                 if (session.CurrentPhase == SessionPhase.Review)
                 {
-                    if (session.ReviewStallSeconds >= StallKillThresholdSeconds)
+                    if (session.ReviewStallSeconds >= _reviewStallKillThresholdSeconds)
                     {
                         RaiseLog($"Reviewer stalled {session.ReviewStallSeconds}s. Treating as consensus.");
                         HandleReviewCompletedLocked(session, "", ReviewVerdict.Consensus);
@@ -870,12 +1022,31 @@ public class TeamOrchestratorService : IDisposable
                     if (session.ReviewStallSeconds >= StallNudgeThresholdSeconds && !session.NudgeSent)
                     {
                         session.NudgeSent = true;
-                        session.Reviewer?.SendNudge();
+                        reviewerToNudge = session.Reviewer;
                         RaiseLog("Reviewer nudged after 60s inactivity.");
                     }
                 }
 
                 FireHealthSnapshotLocked(session);
+            }
+
+            // Send nudge messages outside the lock to avoid blocking on stdin pipe.
+            // Re-validate captured references: a concurrent tick may have restarted
+            // the session (RestartDevSessionLocked), replacing DevCli/Reviewer.
+            // Sending to a stale (stopped) CLI could auto-restart an orphan process.
+            if (devCliToNudge != null)
+            {
+                bool stillCurrent;
+                lock (_lock) { stillCurrent = _activeSession == session && session.DevCli == devCliToNudge; }
+                if (stillCurrent)
+                    devCliToNudge.SendMessage("Are you still working? Please continue with the current task.");
+            }
+            if (reviewerToNudge != null)
+            {
+                bool stillCurrent;
+                lock (_lock) { stillCurrent = _activeSession == session && session.Reviewer == reviewerToNudge; }
+                if (stillCurrent)
+                    reviewerToNudge.SendNudge();
             }
         }
         finally { FlushDeferredEvents(); }
@@ -884,10 +1055,10 @@ public class TeamOrchestratorService : IDisposable
     private void RestartDevSessionLocked(DevReviewSession session, string reason)
     {
         session.RetryCount++;
-        if (session.RetryCount > MaxSessionRetries)
+        if (session.RetryCount > _maxSessionRetries)
         {
-            RaiseLog($"Dev restart limit ({MaxSessionRetries}) exceeded ({reason}). Failing phase.");
-            RaiseError($"Phase [{session.PhaseTitle}] failed: {reason} after {MaxSessionRetries} retries");
+            RaiseLog($"Dev restart limit ({_maxSessionRetries}) exceeded ({reason}). Failing phase.");
+            RaiseError($"Phase [{session.PhaseTitle}] failed: {reason} after {_maxSessionRetries} retries");
 
             _backlogService.MarkPhaseStatus(session.FeatureId, session.PhaseId,
                 PhaseStatus.Failed, errorMessage: $"Dev failed: {reason}");
@@ -896,7 +1067,7 @@ public class TeamOrchestratorService : IDisposable
             _backlogService.ModifyFeature(session.FeatureId, f =>
             {
                 f.Status = FeatureStatus.PlanApproved;
-                f.ErrorSummary = $"Dev failed: {reason} after {MaxSessionRetries} retries";
+                f.ErrorSummary = $"Dev failed: {reason} after {_maxSessionRetries} retries";
                 f.ErrorDetails = TruncateErrorDetails(session.DevResponse.ToString());
             });
 
@@ -908,11 +1079,12 @@ public class TeamOrchestratorService : IDisposable
             return;
         }
 
-        RaiseLog($"Restarting dev session (attempt {session.RetryCount}/{MaxSessionRetries}, reason: {reason}).");
+        RaiseLog($"Restarting dev session (attempt {session.RetryCount}/{_maxSessionRetries}, reason: {reason}).");
 
         var workDir = session.DevCli?.WorkingDirectory ?? _workingDirectory;
         session.DevCli?.StopSession();
         session.DevStallSeconds = 0;
+        session.DevNudgeSent = false;
 
         var devCli = new ClaudeCliService
         {
@@ -921,7 +1093,8 @@ public class TeamOrchestratorService : IDisposable
             SystemPrompt = TeamPrompts.BuildDeveloperSystemPrompt(
                 session.FeatureTitle, session.PhaseTitle,
                 session.PhasePlan, session.AcceptanceCriteria),
-            DangerouslySkipPermissions = true
+            DangerouslySkipPermissions = true,
+            ModelOverride = TeamPrompts.TeamModelId
         };
 
         if (session.DevSessionId is not null)
@@ -945,11 +1118,11 @@ public class TeamOrchestratorService : IDisposable
         {
             var health = session.DevCli is null || !session.DevCli.IsProcessRunning
                 ? SessionHealth.Error
-                : session.DevStallSeconds >= StallNudgeThresholdSeconds
+                : session.DevStallSeconds >= StallDisplayThresholdSeconds
                     ? SessionHealth.Stalled
                     : SessionHealth.Healthy;
 
-            var detail = session.DevStallSeconds >= StallNudgeThresholdSeconds
+            var detail = session.DevStallSeconds >= StallDisplayThresholdSeconds
                 ? $"stalled {session.DevStallSeconds}s" : "";
 
             var role = session.CurrentPhase == SessionPhase.FixingIssues ? "Dev (fixing)" : "Dev";
@@ -1165,6 +1338,7 @@ public class DevReviewSession
     public int DevStallSeconds;
     public int ReviewStallSeconds;
     public bool NudgeSent;
+    public bool DevNudgeSent;
     public int RetryCount;
 }
 

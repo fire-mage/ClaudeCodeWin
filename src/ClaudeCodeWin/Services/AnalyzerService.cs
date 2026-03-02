@@ -137,7 +137,8 @@ public class AnalyzerService
             ClaudeExePath = _claudeExePath ?? "claude",
             WorkingDirectory = projectPath ?? _workingDirectory,
             SystemPrompt = _systemPrompt ?? "",
-            DangerouslySkipPermissions = false
+            DangerouslySkipPermissions = false,
+            ModelOverride = TeamPrompts.TeamModelId
         };
         return cli;
     }

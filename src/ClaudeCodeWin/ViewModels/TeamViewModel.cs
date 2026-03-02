@@ -34,6 +34,17 @@ public class TeamViewModel : ViewModelBase, IDisposable
     private bool _isManagerActive;
     private bool _showArchive;
 
+    // Live chat viewer state
+    private string? _activeDevelopingFeatureId;
+    private string _devChatText = "";
+    private string _reviewChatText = "";
+    private bool _isDevChatVisible;
+    private string _devChatLabel = "Development";
+    private readonly StringBuilder _devChatBuffer = new();
+    private readonly StringBuilder _reviewChatBuffer = new();
+    private System.Windows.Threading.DispatcherTimer? _chatFlushTimer;
+    private bool _chatBufferDirty;
+
     // Pipeline collections (6 sections, Ideas is IdeasText)
     public ObservableCollection<BacklogFeatureVM> AnalyzingFeatures { get; } = [];
     public ObservableCollection<BacklogFeatureVM> PlanningFeatures { get; } = [];
@@ -50,6 +61,36 @@ public class TeamViewModel : ViewModelBase, IDisposable
     {
         get => _showArchive;
         set => SetProperty(ref _showArchive, value);
+    }
+
+    public string? ActiveDevelopingFeatureId
+    {
+        get => _activeDevelopingFeatureId;
+        private set => SetProperty(ref _activeDevelopingFeatureId, value);
+    }
+
+    public string DevChatText
+    {
+        get => _devChatText;
+        private set => SetProperty(ref _devChatText, value);
+    }
+
+    public string ReviewChatText
+    {
+        get => _reviewChatText;
+        private set => SetProperty(ref _reviewChatText, value);
+    }
+
+    public bool IsDevChatVisible
+    {
+        get => _isDevChatVisible;
+        set => SetProperty(ref _isDevChatVisible, value);
+    }
+
+    public string DevChatLabel
+    {
+        get => _devChatLabel;
+        private set => SetProperty(ref _devChatLabel, value);
     }
 
     /// <summary>
@@ -308,6 +349,16 @@ public class TeamViewModel : ViewModelBase, IDisposable
         {
             if (p is BacklogFeatureVM vm)
             {
+                if (vm.Feature.Status is FeatureStatus.Queued or FeatureStatus.InProgress)
+                {
+                    MessageBox.Show(
+                        $"Cannot delete '{vm.DisplayTitle}' — it is currently {vm.Feature.Status}. Cancel or wait for it to finish first.",
+                        "Delete Blocked",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return;
+                }
+
                 var result = MessageBox.Show(
                     $"Delete feature '{vm.DisplayTitle}'?",
                     "Confirm Delete",
@@ -703,6 +754,9 @@ public class TeamViewModel : ViewModelBase, IDisposable
         _orchestratorService.OnPhaseCompleted += HandleOrchestratorPhaseCompleted;
         _orchestratorService.OnError += HandleOrchestratorError;
         _orchestratorService.OnHealthSnapshot += HandleHealthSnapshot;
+        _orchestratorService.OnActiveTaskChanged += HandleActiveTaskChanged;
+        _orchestratorService.OnDevTextDelta += HandleDevTextDelta;
+        _orchestratorService.OnReviewTextDelta += HandleReviewTextDelta;
 
         // Manager commands
         StartManagerCommand = new RelayCommand(ExecuteStartManager, () => !_isManagerActive);
@@ -1118,6 +1172,11 @@ public class TeamViewModel : ViewModelBase, IDisposable
             }
         }
 
+        // Mark the actively developing backlog item
+        var activeId = _orchestratorService.GetActiveFeatureId();
+        foreach (var vm in BacklogFeatures)
+            vm.IsActiveDeveloping = vm.Id == activeId;
+
         UpdateCounts();
 
         if (_showArchive)
@@ -1229,6 +1288,114 @@ public class TeamViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(HasActiveSession));
         });
     }
+
+    // --- Active task & live chat ---
+
+    private const int MaxChatTextLength = 50_000; // ~50KB cap
+    private bool _showingReviewChat;
+
+    private void HandleActiveTaskChanged(string? featureId)
+    {
+        RunOnUI(() =>
+        {
+            ActiveDevelopingFeatureId = featureId;
+            _devChatText = "";
+            _reviewChatText = "";
+            _devChatBuffer.Clear();
+            _reviewChatBuffer.Clear();
+            _chatFlushTimer?.Stop();
+            _chatFlushTimer = null;
+            _chatBufferDirty = false;
+            OnPropertyChanged(nameof(DevChatText));
+            OnPropertyChanged(nameof(ReviewChatText));
+            DevChatLabel = "Development";
+            _showingReviewChat = false;
+            OnPropertyChanged(nameof(LiveChatText));
+
+            if (featureId == null)
+            {
+                SessionHealthItems.Clear();
+                OnPropertyChanged(nameof(HasActiveSession));
+                IsDevChatVisible = false;
+            }
+
+            // Update IsActiveDeveloping on backlog items
+            foreach (var vm in BacklogFeatures)
+                vm.IsActiveDeveloping = vm.Id == featureId;
+        });
+    }
+
+    private void HandleDevTextDelta(string text)
+    {
+        RunOnUI(() =>
+        {
+            _devChatBuffer.Append(text);
+            _showingReviewChat = false;
+            EnsureChatFlushTimer();
+        });
+    }
+
+    private void HandleReviewTextDelta(string text)
+    {
+        RunOnUI(() =>
+        {
+            _reviewChatBuffer.Append(text);
+            _showingReviewChat = true;
+            EnsureChatFlushTimer();
+        });
+    }
+
+    private void EnsureChatFlushTimer()
+    {
+        _chatBufferDirty = true;
+        if (_chatFlushTimer != null) return;
+        _chatFlushTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(100)
+        };
+        _chatFlushTimer.Tick += (_, _) => FlushChatBuffer();
+        _chatFlushTimer.Start();
+    }
+
+    private void FlushChatBuffer()
+    {
+        if (!_chatBufferDirty)
+        {
+            _chatFlushTimer?.Stop();
+            _chatFlushTimer = null;
+            return;
+        }
+
+        _chatBufferDirty = false;
+
+        if (_devChatBuffer.Length > 0)
+        {
+            _devChatText += _devChatBuffer.ToString();
+            _devChatBuffer.Clear();
+            if (_devChatText.Length > MaxChatTextLength)
+                _devChatText = _devChatText[^MaxChatTextLength..];
+            OnPropertyChanged(nameof(DevChatText));
+            DevChatLabel = "Development";
+        }
+
+        if (_reviewChatBuffer.Length > 0)
+        {
+            _reviewChatText += _reviewChatBuffer.ToString();
+            _reviewChatBuffer.Clear();
+            if (_reviewChatText.Length > MaxChatTextLength)
+                _reviewChatText = _reviewChatText[^MaxChatTextLength..];
+            OnPropertyChanged(nameof(ReviewChatText));
+            DevChatLabel = "Review";
+        }
+
+        OnPropertyChanged(nameof(LiveChatText));
+    }
+
+    /// <summary>
+    /// Returns the latest chat text — dev during Development/FixingIssues, review during Review.
+    /// Phase tracked locally via _showingReviewChat to avoid lock acquisition on every delta.
+    /// </summary>
+    public string LiveChatText => _showingReviewChat ? _reviewChatText : _devChatText;
 
     // --- Manager ---
 
@@ -1601,6 +1768,9 @@ public class TeamViewModel : ViewModelBase, IDisposable
         _orchestratorService.OnPhaseCompleted -= HandleOrchestratorPhaseCompleted;
         _orchestratorService.OnError -= HandleOrchestratorError;
         _orchestratorService.OnHealthSnapshot -= HandleHealthSnapshot;
+        _orchestratorService.OnActiveTaskChanged -= HandleActiveTaskChanged;
+        _orchestratorService.OnDevTextDelta -= HandleDevTextDelta;
+        _orchestratorService.OnReviewTextDelta -= HandleReviewTextDelta;
         _orchestratorService.Dispose();
 
         _managerService.OnTextDelta -= HandleManagerTextDelta;
@@ -1609,6 +1779,8 @@ public class TeamViewModel : ViewModelBase, IDisposable
         _managerService.OnError -= HandleManagerError;
         _managerService.StopSession();
 
+        _chatFlushTimer?.Stop();
+        _chatFlushTimer = null;
         _ideasSaveTimer?.Stop();
         _ideasSaveTimer = null;
         if (!string.IsNullOrEmpty(_ideasLoadedForProject))

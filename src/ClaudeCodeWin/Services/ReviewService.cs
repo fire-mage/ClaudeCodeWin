@@ -14,6 +14,7 @@ public class ReviewService
     private bool _isActive;
     private string? _claudeExePath;
     private string? _workingDirectory;
+    private string? _modelOverride;
 
     public event Action<string>? OnTextDelta;
     public event Action<string, ReviewVerdict>? OnReviewCompleted;
@@ -23,10 +24,11 @@ public class ReviewService
 
     public bool IsActive => _isActive;
 
-    public void Configure(string claudeExePath, string? workingDirectory)
+    public void Configure(string claudeExePath, string? workingDirectory, string? modelOverride = null)
     {
         _claudeExePath = claudeExePath;
         _workingDirectory = workingDirectory;
+        _modelOverride = modelOverride;
     }
 
     /// <summary>
@@ -68,6 +70,7 @@ public class ReviewService
         var cli = new ClaudeCliService();
         cli.ClaudeExePath = _claudeExePath ?? "claude";
         cli.WorkingDirectory = _workingDirectory;
+        cli.ModelOverride = _modelOverride;
         return cli;
     }
 
