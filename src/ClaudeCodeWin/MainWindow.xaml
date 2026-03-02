@@ -41,24 +41,10 @@
         <!-- Menu bar with gradient border -->
         <StackPanel Grid.Row="0">
             <Menu Background="{StaticResource SurfaceBrush}">
-                <MenuItem Header="_Chats"
-                          ToolTip="Chat management: start new conversations, switch projects, browse history">
-                    <MenuItem Header="New _Chat" Command="{Binding ActiveTab.NewSessionCommand}"
-                              InputGestureText="Ctrl+N"
-                              ToolTip="Start a fresh conversation in the current project."/>
-                    <MenuItem Header="Open _Project..." x:Name="OpenProjectMenu"
-                              Click="MenuItem_OpenProject_Click"
-                              ToolTip="Open a project folder in a new tab."/>
-                    <MenuItem Header="Chat _History..." Click="MenuItem_ChatHistory_Click"
-                              ToolTip="Browse and reopen previous conversations."/>
-                    <Separator/>
-                    <MenuItem Header="E_xit" Click="MenuItem_Exit_Click"
-                              ToolTip="Close the application. Window position and size are saved automatically."/>
-                </MenuItem>
                 <MenuItem Header="S_cripts" x:Name="ScriptsMenu" Visibility="Collapsed"/>
                 <MenuItem Header="My _Scripts" x:Name="TasksMenu"
                           ToolTip="Shell commands: run predefined terminal commands in your project folder.&#x0a;Output appears in a separate window. Customize via tasks.json.&#x0a;Example: 'Git Status' runs 'git status' and displays the result."/>
-                <MenuItem Header="_Ask Claude"
+                <MenuItem Header="_Claude"
                           ToolTip="Ask Claude to learn new skills or view what Claude already knows">
                     <MenuItem Header="_Marketplace..." Click="MenuItem_Marketplace_Click"
                               ToolTip="Browse and install skills and plugins for Claude."/>
@@ -68,7 +54,10 @@
                               ToolTip="View the articles Claude has saved in its personal Knowledge Base for this project."/>
                 </MenuItem>
                 <MenuItem Header="_App"
-                          ToolTip="Updates and application information">
+                          ToolTip="Project management, updates, and application information">
+                    <MenuItem Header="Open _Project..." Click="MenuItem_OpenProject_Click"
+                              ToolTip="Open a project folder in a new tab."/>
+                    <Separator/>
                     <MenuItem Header="Check for _Updates..." Command="{Binding Update.CheckForUpdatesCommand}"
                               ToolTip="Check if a newer version is available on the update server.&#x0a;If found, download and install with one click. Also checks automatically every 4 hours."/>
                     <MenuItem Header="Check for CLI Updates..." Command="{Binding Update.CheckCliUpdatesCommand}"
@@ -85,6 +74,9 @@
                               ToolTip="Run system diagnostics: check CLI, authentication, Git, internet connectivity and more."/>
                     <MenuItem Header="_About" Click="MenuItem_About_Click"
                               ToolTip="Application version, build date, and support contacts."/>
+                    <Separator/>
+                    <MenuItem Header="E_xit" Click="MenuItem_Exit_Click"
+                              ToolTip="Close the application. Window position and size are saved automatically."/>
                 </MenuItem>
             </Menu>
             <!-- Gradient accent stripe (green → orange → yellow) -->
@@ -150,7 +142,7 @@
                     <ItemsControl ItemsSource="{Binding Tabs}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <StackPanel Orientation="Vertical"/>
+                                <UniformGrid Columns="1"/>
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
@@ -162,6 +154,7 @@
                                     <Grid>
                                         <!-- Full mode: horizontal layout -->
                                         <Grid x:Name="FullModeLayout"
+                                              VerticalAlignment="Center"
                                               Visibility="{Binding DataContext.IsTabPanelFull,
                                                            RelativeSource={RelativeSource AncestorType=Window},
                                                            Converter={StaticResource BoolToVis}}">
@@ -195,6 +188,7 @@
                                         <!-- Compact mode: rotated vertical text -->
                                         <StackPanel x:Name="CompactModeLayout"
                                                     HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
                                                     Visibility="{Binding DataContext.IsTabPanelCompact,
                                                                  RelativeSource={RelativeSource AncestorType=Window},
                                                                  Converter={StaticResource BoolToVis}}">
@@ -325,6 +319,11 @@
                     <!-- Team panel -->
                     <Border Visibility="{Binding IsTeamActive, Converter={StaticResource BoolToVis}}">
                         <views:TeamPanelControl DataContext="{Binding Team}"/>
+                    </Border>
+
+                    <!-- Notepad panel -->
+                    <Border Visibility="{Binding IsNotepadActive, Converter={StaticResource BoolToVis}}">
+                        <views:NotepadControl DataContext="{Binding Notepad}"/>
                     </Border>
 
                     <!-- File editor panel -->
@@ -1021,101 +1020,136 @@
                     </ItemsControl>
                 </ScrollViewer>
 
-                <!-- Rate limit banner -->
-                <Border Grid.Row="0"
-                        VerticalAlignment="Top"
-                        HorizontalAlignment="Stretch"
-                        Panel.ZIndex="15"
-                        Visibility="{Binding ShowRateLimitBanner, Converter={StaticResource BoolToVis}}">
-                    <Border Background="#CC45475a"
-                            BorderBrush="{StaticResource WarningBrush}"
-                            BorderThickness="0,0,0,2"
-                            Padding="16,10">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="&#x23F3; " FontSize="16"
-                                       Foreground="{StaticResource WarningBrush}"
-                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock FontSize="13" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextBrush}">
-                                    <Run Text="Rate limit reached. Resets in "/>
-                                    <Run Text="{Binding RateLimitCountdown, Mode=OneWay}"
-                                         Foreground="{StaticResource WarningBrush}"/>
-                                </TextBlock>
-                                <TextBlock Text="Your session will auto-resume when ready."
-                                           FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
-                                           Margin="0,2,0,0"/>
-                            </StackPanel>
-                            <Button Grid.Column="2" Content="Upgrade Account"
-                                    Margin="12,0,0,0" Padding="12,4"
-                                    Cursor="Hand"
-                                    Command="{Binding UpgradeAccountCommand}"
-                                    ToolTip="Open Anthropic billing page in browser">
-                                <Button.Style>
-                                    <Style TargetType="Button">
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
-                                        <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
-                                        <Setter Property="BorderThickness" Value="1"/>
-                                        <Setter Property="FontSize" Value="11"/>
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border Background="{TemplateBinding Background}"
-                                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                                            BorderThickness="{TemplateBinding BorderThickness}"
-                                                            CornerRadius="4"
-                                                            Padding="{TemplateBinding Padding}">
-                                                        <ContentPresenter HorizontalAlignment="Center"
-                                                                          VerticalAlignment="Center"/>
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter Property="Background"
-                                                                    Value="{StaticResource PrimaryBrush}"/>
-                                                            <Setter Property="Foreground"
-                                                                    Value="{StaticResource BackgroundBrush}"/>
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
-                            <Button Grid.Column="3" Content="&#x2715;"
-                                    Margin="8,0,0,0" Padding="6,2"
-                                    Cursor="Hand"
-                                    Command="{Binding DismissRateLimitCommand}"
-                                    ToolTip="Dismiss">
-                                <Button.Style>
-                                    <Style TargetType="Button">
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
-                                        <Setter Property="BorderThickness" Value="0"/>
-                                        <Setter Property="FontSize" Value="14"/>
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border Background="Transparent" Padding="{TemplateBinding Padding}">
-                                                        <ContentPresenter HorizontalAlignment="Center"
-                                                                          VerticalAlignment="Center"/>
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
-                        </Grid>
+                <!-- Overlay banners — StackPanel auto-stacks, no hardcoded offsets -->
+                <StackPanel Grid.Row="0"
+                            VerticalAlignment="Top"
+                            HorizontalAlignment="Stretch"
+                            Panel.ZIndex="15">
+                    <!-- Rate limit banner -->
+                    <Border Visibility="{Binding ShowRateLimitBanner, Converter={StaticResource BoolToVis}}">
+                        <Border Background="#CC45475a"
+                                BorderBrush="{StaticResource WarningBrush}"
+                                BorderThickness="0,0,0,2"
+                                Padding="16,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="&#x23F3; " FontSize="16"
+                                           Foreground="{StaticResource WarningBrush}"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextBrush}">
+                                        <Run Text="Rate limit reached. Resets in "/>
+                                        <Run Text="{Binding RateLimitCountdown, Mode=OneWay}"
+                                             Foreground="{StaticResource WarningBrush}"/>
+                                    </TextBlock>
+                                    <TextBlock Text="Your session will auto-resume when ready."
+                                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                                               Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <Button Grid.Column="2" Content="Upgrade Account"
+                                        Margin="12,0,0,0" Padding="12,4"
+                                        Cursor="Hand"
+                                        Command="{Binding UpgradeAccountCommand}"
+                                        ToolTip="Open Anthropic billing page in browser">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                                            <Setter Property="BorderThickness" Value="1"/>
+                                            <Setter Property="FontSize" Value="11"/>
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border Background="{TemplateBinding Background}"
+                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                                CornerRadius="4"
+                                                                Padding="{TemplateBinding Padding}">
+                                                            <ContentPresenter HorizontalAlignment="Center"
+                                                                              VerticalAlignment="Center"/>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="Background"
+                                                                        Value="{StaticResource PrimaryBrush}"/>
+                                                                <Setter Property="Foreground"
+                                                                        Value="{StaticResource BackgroundBrush}"/>
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Grid.Column="3" Content="&#x2715;"
+                                        Margin="8,0,0,0" Padding="6,2"
+                                        Cursor="Hand"
+                                        Command="{Binding DismissRateLimitCommand}"
+                                        ToolTip="Dismiss">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                            <Setter Property="FontSize" Value="14"/>
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                                                            <ContentPresenter HorizontalAlignment="Center"
+                                                                              VerticalAlignment="Center"/>
+                                                        </Border>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                            </Grid>
+                        </Border>
                     </Border>
-                </Border>
+
+                    <!-- Conflict pause banner -->
+                    <Border Visibility="{Binding IsConflictBannerVisible, Converter={StaticResource BoolToVis}}">
+                        <Border Background="#CC45475a"
+                                BorderBrush="{StaticResource WarningBrush}"
+                                BorderThickness="0,0,0,2"
+                                Padding="16,8">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <Button Content="Edit anyway"
+                                            Command="{Binding EditAnywayCommand}"
+                                            IsEnabled="{Binding IsConflictActionable}"
+                                            Style="{StaticResource SmallButtonStyle}"
+                                            Margin="8,0,4,0"
+                                            ToolTip="Approve this edit without waiting for team to pause"/>
+                                    <Button Content="Cancel"
+                                            Command="{Binding CancelConflictCommand}"
+                                            IsEnabled="{Binding IsConflictActionable}"
+                                            Style="{StaticResource SmallButtonStyle}"
+                                            ToolTip="Deny this edit and stop the current session"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="&#x26A0; " FontSize="14"
+                                               Foreground="{StaticResource WarningBrush}"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding ConflictBannerText}"
+                                               FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{StaticResource WarningBrush}"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                    </Border>
+                </StackPanel>
 
                 <!-- Bookmarks button -->
                 <Border x:Name="BookmarksButton"
@@ -1698,46 +1732,70 @@
                                Opacity="0.85"/>
                 </Border>
 
-                <!-- Use Reviewer toggle -->
-                <CheckBox Grid.Row="4"
-                          IsChecked="{Binding UseReviewer, Mode=TwoWay}"
-                          Margin="16,4,16,0"
-                          VerticalAlignment="Top"
-                          HorizontalAlignment="Left"
-                          Cursor="Hand">
-                    <CheckBox.Style>
-                        <Style TargetType="CheckBox">
-                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="CheckBox">
-                                        <StackPanel Orientation="Horizontal">
-                                            <Border Width="14" Height="14" CornerRadius="2"
-                                                    BorderBrush="{StaticResource TextSecondaryBrush}"
-                                                    BorderThickness="1"
-                                                    Background="Transparent"
-                                                    VerticalAlignment="Center" Margin="0,0,5,0">
-                                                <TextBlock x:Name="Check" Text="&#x2713;" FontSize="10"
-                                                           FontWeight="Bold"
-                                                           Foreground="{StaticResource PrimaryBrush}"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                           Visibility="Collapsed"/>
-                                            </Border>
-                                            <ContentPresenter VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsChecked" Value="True">
-                                                <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </CheckBox.Style>
-                    <TextBlock Text="Use Reviewer" FontSize="11"
-                               Foreground="{StaticResource TextSecondaryBrush}"/>
-                </CheckBox>
+                <!-- Use Reviewer toggle + New Chat / History buttons -->
+                <Grid Grid.Row="4" Margin="16,4,16,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <CheckBox Grid.Column="0"
+                              IsChecked="{Binding UseReviewer, Mode=TwoWay}"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Left"
+                              Cursor="Hand">
+                        <CheckBox.Style>
+                            <Style TargetType="CheckBox">
+                                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="CheckBox">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border Width="14" Height="14" CornerRadius="2"
+                                                        BorderBrush="{StaticResource TextSecondaryBrush}"
+                                                        BorderThickness="1"
+                                                        Background="Transparent"
+                                                        VerticalAlignment="Center" Margin="0,0,5,0">
+                                                    <TextBlock x:Name="Check" Text="&#x2713;" FontSize="10"
+                                                               FontWeight="Bold"
+                                                               Foreground="{StaticResource PrimaryBrush}"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Visibility="Collapsed"/>
+                                                </Border>
+                                                <ContentPresenter VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsChecked" Value="True">
+                                                    <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </CheckBox.Style>
+                        <TextBlock Text="Use Reviewer" FontSize="11"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                    </CheckBox>
+                    <!-- Spacer column="1" -->
+                    <Button Grid.Column="2"
+                            Content="New Chat"
+                            Command="{Binding NewSessionCommand}"
+                            Style="{StaticResource TabAddButton}"
+                            FontSize="11" Padding="6,2"
+                            Foreground="{StaticResource TextSecondaryBrush}"
+                            ToolTip="Start a new chat (Ctrl+N)"
+                            VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <Button Grid.Column="3"
+                            Content="History"
+                            Click="MenuItem_ChatHistory_Click"
+                            Style="{StaticResource TabAddButton}"
+                            FontSize="11" Padding="6,2"
+                            Foreground="{StaticResource TextSecondaryBrush}"
+                            ToolTip="Browse and reopen previous conversations"
+                            VerticalAlignment="Center"/>
+                </Grid>
 
                 <!-- Input area -->
                 <Grid Grid.Row="5" Margin="8,0,8,8">
@@ -2091,10 +2149,9 @@
                 </StackPanel>
                 <!-- Session block — labels grey, percentages gold (global usage, bound to TabHost) -->
                 <Border Grid.Column="5" VerticalAlignment="Center" Margin="0,0,16,0"
-                        Cursor="Hand" Background="Transparent"
-                        MouseLeftButtonUp="MemoryIndicator_Click"
+                        Background="Transparent"
                         DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
-                        ToolTip="Usage limits from your Anthropic subscription.&#x0a;Session resets every 5 hours, weekly every 7 days.&#x0a;Click for session menu."
+                        ToolTip="Usage limits from your Anthropic subscription.&#x0a;Session resets every 5 hours, weekly every 7 days."
                         Visibility="{Binding SessionPctText, Converter={StaticResource StringToVis}}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock FontSize="11" VerticalAlignment="Center">
@@ -2104,17 +2161,7 @@
                             <Run Text="Week: " Foreground="{StaticResource TextSecondaryBrush}"/>
                             <Run Text="{Binding WeekPctText, Mode=OneWay}" Foreground="{StaticResource AccentBrush}"/>
                         </TextBlock>
-                        <TextBlock Text=" &#x25BC;" FontSize="7"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                   VerticalAlignment="Center" Margin="2,1,0,0"/>
                     </StackPanel>
-                    <Border.ContextMenu>
-                        <ContextMenu x:Name="MemoryContextMenu">
-                            <MenuItem Header="New Session" Command="{Binding ActiveTab.NewSessionCommand}"
-                                      InputGestureText="Ctrl+N"
-                                      ToolTip="Start a fresh conversation. Clears history and resets memory usage."/>
-                        </ContextMenu>
-                    </Border.ContextMenu>
                 </Border>
                 <Border Grid.Column="7" VerticalAlignment="Center"
                         Background="Transparent"

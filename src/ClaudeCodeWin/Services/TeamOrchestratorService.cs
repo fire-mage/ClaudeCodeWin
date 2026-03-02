@@ -67,6 +67,14 @@ public class TeamOrchestratorService : IDisposable
 
     public string? GetActiveFeatureId() { lock (_lock) return _activeSession?.FeatureId; }
 
+    public List<string> GetActiveSessionChangedFiles()
+    {
+        lock (_lock)
+        {
+            return _activeSession?.ChangedFiles.ToList() ?? [];
+        }
+    }
+
     public (string devText, string reviewText, SessionPhase phase) GetActiveSessionText()
     {
         lock (_lock)
@@ -145,6 +153,23 @@ public class TeamOrchestratorService : IDisposable
     }
 
     /// <summary>
+    /// Transition from Stopped to WaitingForWork without starting the health timer
+    /// or picking up work immediately. Used for auto-start on project open.
+    /// </summary>
+    public void StartReady()
+    {
+        lock (_lock)
+        {
+            if (_state != OrchestratorState.Stopped) return;
+
+            _softPauseRequested = false;
+            SetStateLocked(OrchestratorState.WaitingForWork);
+            RaiseLog("Orchestrator ready. Waiting for work.");
+        }
+        FlushDeferredEvents();
+    }
+
+    /// <summary>
     /// Start the orchestrator. Picks up next pending phase.
     /// </summary>
     public void Start()
@@ -156,6 +181,7 @@ public class TeamOrchestratorService : IDisposable
                 return;
 
             _softPauseRequested = false;
+
             SetStateLocked(OrchestratorState.Running);
             StartHealthTimerLocked();
             TryStartNextPhaseLocked();
@@ -179,6 +205,7 @@ public class TeamOrchestratorService : IDisposable
                 return;
 
             SetStateLocked(OrchestratorState.Running);
+            StartHealthTimerLocked();
             TryStartNextPhaseLocked();
         }
         FlushDeferredEvents();
@@ -321,6 +348,7 @@ public class TeamOrchestratorService : IDisposable
                 return;
 
             _softPauseRequested = false;
+
             SetStateLocked(OrchestratorState.Running);
             StartHealthTimerLocked();
             RaiseLog("Checking internet before resuming...");
@@ -365,8 +393,9 @@ public class TeamOrchestratorService : IDisposable
                 return;
 
             _softPauseRequested = false;
+
             SetStateLocked(OrchestratorState.Running);
-            StartHealthTimerLocked();
+            StartHealthTimerLocked(); // Must restart health timer — matches Resume() behavior
             RaiseLog("Resuming from soft pause.");
             TryStartNextPhaseLocked();
         }
@@ -413,6 +442,7 @@ public class TeamOrchestratorService : IDisposable
         var next = _backlogService.GetNextPendingPhase(_workingDirectory);
         if (next == null)
         {
+            StopHealthTimerLocked();
             SetStateLocked(OrchestratorState.WaitingForWork);
             RaiseLog("No pending phases. Waiting for new work.");
             return;
@@ -427,6 +457,10 @@ public class TeamOrchestratorService : IDisposable
 
         _reviewAttempt = 0;
         _lastReviewCriticalSnippet = null;
+
+        // Ensure health timer is running — idempotent, guards against callers
+        // that reach here without explicitly starting it (e.g. AfterPhaseEndedLocked)
+        StartHealthTimerLocked();
 
         LaunchDeveloperLocked(feature, phase);
     }

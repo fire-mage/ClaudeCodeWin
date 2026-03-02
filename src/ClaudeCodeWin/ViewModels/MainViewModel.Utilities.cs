@@ -172,31 +172,19 @@ public partial class MainViewModel
             StatusText = "Review cancelled";
             UpdateCta(CtaState.WaitingForUser);
             Messages.Add(new MessageViewModel(MessageRole.System, "Review cancelled by user."));
-            if (_teamPausedForChat)
-                ResumeTeamAfterChat();
+            if (_teamPausedForConflict)
+                ResumeTeamAfterConflict();
             return true;
         }
 
         return false;
     }
 
-    private void CancelProcessing(bool resumeTeam = true)
+    private void CancelProcessing()
     {
         // Invalidate stale HandleCompleted/HandleError callbacks that may already
         // be queued on the dispatcher from the about-to-be-killed CLI process.
         _sendGeneration++;
-
-        // Cancel team pause-wait if still in progress.
-        // Only cancel here — SendDirectAsync's finally block owns the disposal.
-        _teamPauseCancelledByUser = true;
-        _teamPauseCts?.Cancel();
-        if (resumeTeam)
-        {
-            if (_teamPausedForChat)
-                ResumeTeamAfterChat();
-            else
-                _orchestratorService?.ClearPendingSoftPause();
-        }
 
         _cliService.Cancel();
         CancelReview();
@@ -213,6 +201,9 @@ public partial class MainViewModel
         }
 
         ClearAllThinking();
+
+        if (_teamPausedForConflict)
+            ResumeTeamAfterConflict();
     }
 
     /// <summary>

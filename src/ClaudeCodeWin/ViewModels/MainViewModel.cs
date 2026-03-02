@@ -58,6 +58,7 @@ public partial class MainViewModel : ViewModelBase
         - Tasks are auto-parsed, added to backlog, and planning starts immediately
         - Include: what to change, why, affected files/services, constraints
         - One task = one logical change (don't merge unrelated features)
+        - **NEVER write directly to backlog.json** — always use `team-task` code blocks in your chat response. The app parses them automatically.
 
         ## Important rules
         - When editing tasks.json or scripts.json, the format is a JSON array with camelCase keys. After editing, remind the user to click "Reload Scripts" in the menu.
@@ -114,6 +115,14 @@ public partial class MainViewModel : ViewModelBase
     private bool _showRateLimitBanner;
     private string _rateLimitCountdown = "";
 
+    // Conflict tracking: pause team when chat edits a file the team has changed
+    private bool _teamPausedForConflict;
+    private CancellationTokenSource? _conflictPauseCts;
+    private bool _conflictEditAnyway;
+    private string? _pendingConflictRequestId;
+    private string? _pendingConflictToolUseId;
+    private System.Windows.Threading.DispatcherTimer? _conflictBannerClearTimer;
+
     // Track project roots already registered this session (avoid re-registering)
     private readonly HashSet<string> _registeredProjectRoots =
         new(StringComparer.OrdinalIgnoreCase);
@@ -124,12 +133,6 @@ public partial class MainViewModel : ViewModelBase
 
     // ExitPlanMode auto-confirm state
     private int _exitPlanModeAutoCount;
-
-    // Team pause/resume coordination for chat
-    private bool _teamPausedForChat;
-    private bool _teamWasActivelyRunning; // true if team was Running (not WaitingForWork) when paused
-    private CancellationTokenSource? _teamPauseCts;
-    private bool _teamPauseCancelledByUser;
 
     // Generation counter: incremented in both CancelProcessing and SendDirectAsync
     // to detect stale HandleCompleted/HandleError callbacks.
@@ -323,6 +326,21 @@ public partial class MainViewModel : ViewModelBase
         set => SetProperty(ref _rateLimitCountdown, value);
     }
 
+    private string _conflictBannerText = "";
+    public string ConflictBannerText
+    {
+        get => _conflictBannerText;
+        set => SetProperty(ref _conflictBannerText, value);
+    }
+
+    public bool IsConflictBannerVisible => _teamPausedForConflict;
+
+    /// <summary>True when conflict buttons should be enabled (still waiting for user decision).</summary>
+    public bool IsConflictActionable => _pendingConflictRequestId != null;
+
+    public RelayCommand EditAnywayCommand { get; }
+    public RelayCommand CancelConflictCommand { get; }
+
     public FinalizeActionsViewModel FinalizeActions { get; }
 
     public bool HasDialogHistory => Messages.Any(m => m.Role == MessageRole.Assistant);
@@ -451,7 +469,7 @@ public partial class MainViewModel : ViewModelBase
             if (p is QueuedMessage qm)
             {
                 MessageQueue.Remove(qm);
-                CancelProcessing(resumeTeam: false);
+                CancelProcessing();
                 // Defer send to next dispatcher cycle so stale HandleCompleted/HandleError
                 // callbacks (queued before CancelProcessing killed the CLI) are processed
                 // and dropped by the generation check before the new send starts.
@@ -520,6 +538,8 @@ public partial class MainViewModel : ViewModelBase
         NudgeCommand = new RelayCommand(ExecuteNudge);
         SendBgTaskOutputCommand = new RelayCommand(ExecuteSendBgTaskOutput);
         DismissBgTaskCommand = new RelayCommand(ExecuteDismissBgTask);
+        EditAnywayCommand = new RelayCommand(() => HandleEditAnyway());
+        CancelConflictCommand = new RelayCommand(() => HandleCancelConflict());
         InitializeNudge();
         InitializeBackgroundTaskTimer();
         InitializeSubTabCommands();
@@ -645,10 +665,16 @@ public partial class MainViewModel : ViewModelBase
     public void Dispose()
     {
         CancelReview();
+        _conflictBannerClearTimer?.Stop();
+        _conflictBannerClearTimer = null;
+        _conflictPauseCts?.Cancel();
+        _conflictPauseCts?.Dispose();
+        _conflictPauseCts = null;
         _cliService.StopSession();
         StopNudgeTimer();
         _bgTaskTimer?.Stop();
         FinalizeActions.StopTaskSuggestionTimer();
+        Notepad?.Shutdown();
         Team.Dispose();
         Explorer.Dispose();
     }

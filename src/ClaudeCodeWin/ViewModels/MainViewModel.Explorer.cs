@@ -14,6 +14,8 @@ public partial class MainViewModel
 
     public ExplorerViewModel Explorer { get; } = new();
 
+    public NotepadViewModel Notepad { get; private set; } = null!;
+
     public TeamViewModel Team { get; private set; } = null!;
     private PlannerService _plannerService = null!;
     private PlanReviewerService _planReviewerService = null!;
@@ -27,7 +29,16 @@ public partial class MainViewModel
             if (_activeSubTab == value) return;
 
             if (_activeSubTab != null)
+            {
                 _activeSubTab.IsActive = false;
+
+                // Flush notepad auto-save when navigating away
+                if (_activeSubTab.Type == SubTabType.Notepad)
+                {
+                    try { Notepad?.Shutdown(); }
+                    catch (Exception ex) { DiagnosticLogger.Log("NOTEPAD_SHUTDOWN_ERROR", ex.Message); }
+                }
+            }
 
             SetProperty(ref _activeSubTab, value);
 
@@ -38,10 +49,17 @@ public partial class MainViewModel
             OnPropertyChanged(nameof(IsChatActive));
             OnPropertyChanged(nameof(IsFileEditorActive));
             OnPropertyChanged(nameof(IsTeamActive));
+            OnPropertyChanged(nameof(IsNotepadActive));
             OnPropertyChanged(nameof(ActiveFileTab));
 
             if (IsTeamActive)
                 Team.Refresh();
+
+            if (IsNotepadActive)
+            {
+                Notepad?.Activate();
+                Notepad?.LoadNotes();
+            }
         }
     }
 
@@ -49,20 +67,27 @@ public partial class MainViewModel
     public bool IsChatActive => _activeSubTab?.Type == SubTabType.Chat;
     public bool IsFileEditorActive => _activeSubTab?.Type == SubTabType.FileEditor;
     public bool IsTeamActive => _activeSubTab?.Type == SubTabType.Team;
+    public bool IsNotepadActive => _activeSubTab?.Type == SubTabType.Notepad;
     public SubTab? ActiveFileTab => _activeSubTab?.Type == SubTabType.FileEditor ? _activeSubTab : null;
 
     /// <summary>
-    /// Initializes the default sub-tabs (Explorer + Chat). Called once during construction.
+    /// Initializes the fixed sub-tabs. Called once during construction.
     /// </summary>
     private void InitializeSubTabs()
     {
-        var explorerTab = new SubTab(SubTabType.Explorer, "Explorer");
-        var chatTab = new SubTab(SubTabType.Chat, "Chat");
-        var teamTab = new SubTab(SubTabType.Team, "Team");
+        var chatTab = new SubTab(SubTabType.Chat, "Task Discussion");
+        var teamTab = new SubTab(SubTabType.Team, "Task Queue");
+        var notepadTab = new SubTab(SubTabType.Notepad, "Notepad");
+        var explorerTab = new SubTab(SubTabType.Explorer, "File Explorer");
 
-        SubTabs.Add(chatTab);
-        SubTabs.Add(explorerTab);
-        SubTabs.Add(teamTab);
+        // Create NotepadViewModel (service has no shared state, instantiate internally)
+        var notepadStorage = new NotepadStorageService();
+        Notepad = new NotepadViewModel(notepadStorage);
+
+        SubTabs.Add(chatTab);       // 1. Task Discussion
+        SubTabs.Add(teamTab);       // 2. Task Queue
+        SubTabs.Add(notepadTab);    // 3. Notepad
+        SubTabs.Add(explorerTab);   // 4. File Explorer
 
         // Wire explorer file open event
         Explorer.OnOpenFile += OpenFileInEditor;
@@ -75,6 +100,7 @@ public partial class MainViewModel
         _orchestratorService = new TeamOrchestratorService(_backlogService, _gitService);
         _orchestratorService.TeamNotesService = _teamNotesService;
         _orchestratorService.Configure(_cliService.ClaudeExePath, WorkingDirectory, _settings);
+        _orchestratorService.StartReady();
 
         _planReviewerService = new PlanReviewerService();
         _planReviewerService.TeamNotesService = _teamNotesService;
@@ -110,6 +136,7 @@ public partial class MainViewModel
         _plannerService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);
         _planReviewerService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);
         _orchestratorService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);
+        _orchestratorService?.StartReady(); // Idempotent — no-op if already in WaitingForWork from init
     }
 
     /// <summary>

@@ -68,51 +68,6 @@ public partial class MainViewModel
             Messages.Add(new MessageViewModel(MessageRole.System, "Review cancelled (user message)."));
         }
 
-        // Team coordination: auto-pause orchestrator if it's actively running.
-        // Skip for internal prompts (review-fix, reviewer) — only pause for real user messages.
-        var orchState = _orchestratorService?.State ?? OrchestratorState.Stopped;
-        if (participantLabel is null
-            && orchState is OrchestratorState.Running or OrchestratorState.WaitingForWork
-            && !_teamPausedForChat)
-        {
-            var wasActivelyRunning = orchState == OrchestratorState.Running;
-            IsProcessing = true;
-            StatusText = "Pausing team...";
-            _teamPauseCancelledByUser = false;
-            _teamPauseCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            try
-            {
-                await _orchestratorService!.SoftPauseAsync(_teamPauseCts.Token);
-                _teamPausedForChat = true;
-                _teamWasActivelyRunning = wasActivelyRunning;
-                // Only show the message when the team was actively running (not idle/WaitingForWork)
-                // to avoid noisy "paused/resumed" pairs on every chat turn when the team is idle.
-                if (wasActivelyRunning)
-                    Messages.Add(new MessageViewModel(MessageRole.System, "Team paused. Processing your message..."));
-            }
-            catch (OperationCanceledException)
-            {
-                if (_teamPauseCancelledByUser)
-                {
-                    // User cancel (Escape) — CancelProcessing already cleaned up everything.
-                    // Restore the text so user doesn't lose it (InputText was cleared before SendDirectAsync).
-                    // Attachments don't need restoring — Attachments.Clear() hasn't been reached yet.
-                    InputText = text;
-                    return;
-                }
-                // 30s timeout — proceed with message anyway, team will finish its phase naturally
-                _orchestratorService!.ClearPendingSoftPause();
-                _orchestratorService.ResumeIfSoftPaused();
-                Messages.Add(new MessageViewModel(MessageRole.System,
-                    "Team pause timed out. Proceeding with your message."));
-            }
-            finally
-            {
-                _teamPauseCts?.Dispose();
-                _teamPauseCts = null;
-            }
-        }
-
         var userMsg = new MessageViewModel(MessageRole.User, text);
         if (participantLabel is not null)
             userMsg.ReviewerLabel = participantLabel;
@@ -499,12 +454,9 @@ public partial class MainViewModel
                 // Auto-review or task suggestion popup
                 OnTurnCompleted();
 
-                // Resume team AFTER OnTurnCompleted so that if an auto-review starts
-                // (and later sends a fix prompt via SendDirectAsync), the team stays
-                // paused and SendDirectAsync skips the SoftPauseAsync block. This avoids
-                // a pause→resume→pause churn cycle on every review round.
-                if (_teamPausedForChat && !IsReviewInProgress)
-                    ResumeTeamAfterChat();
+                // Resume team after conflict pause (only when no review is pending)
+                if (_teamPausedForConflict && !IsReviewInProgress)
+                    ResumeTeamAfterConflict();
             }
         });
     }
@@ -671,25 +623,6 @@ public partial class MainViewModel
         });
     }
 
-    /// <summary>
-    /// Resumes the team orchestrator after a chat-initiated pause.
-    /// Must be called on the UI thread (modifies Messages ObservableCollection).
-    /// </summary>
-    private void ResumeTeamAfterChat()
-    {
-        var wasActive = _teamWasActivelyRunning;
-        _teamPausedForChat = false;
-        _teamWasActivelyRunning = false;
-        // Use ResumeIfSoftPaused (not Resume) to avoid resuming from HardPaused —
-        // a health check may have transitioned to HardPaused (e.g. dev died, internet lost)
-        // between our soft pause and this resume call.
-        _orchestratorService?.ResumeIfSoftPaused();
-        // Only show the message when the team was actively running when paused,
-        // to avoid noisy "paused/resumed" pairs on every chat turn when the team is idle.
-        if (wasActive)
-            Messages.Add(new MessageViewModel(MessageRole.System, "Team work resumed."));
-    }
-
     private void HandleError(string error)
     {
         RunOnUI(() =>
@@ -712,16 +645,13 @@ public partial class MainViewModel
             StatusText = "Error";
             UpdateCta(CtaState.WaitingForUser);
 
-            // Resume team if we auto-paused it for chat.
-            // Unlike HandleCompleted, HandleError doesn't drain the queue,
-            // so we must resume unconditionally to avoid leaving the team stuck.
-            if (_teamPausedForChat)
-                ResumeTeamAfterChat();
-
             // Warn user if queued messages are stranded (HandleError doesn't auto-drain)
             if (MessageQueue.Count > 0)
                 Messages.Add(new MessageViewModel(MessageRole.System,
                     $"{MessageQueue.Count} queued message(s) not sent. Click a message to send or return to input."));
+
+            if (_teamPausedForConflict)
+                ResumeTeamAfterConflict();
 
             _notificationService.NotifyIfInactive();
         });
@@ -744,5 +674,26 @@ public partial class MainViewModel
             dir = parent;
         }
         return false;
+    }
+
+    private void ResumeTeamAfterConflict()
+    {
+        if (!_teamPausedForConflict) return; // Already resumed — avoid resuming unrelated soft pause
+        var wasSoftPaused = _orchestratorService?.State == Services.OrchestratorState.SoftPaused;
+        _teamPausedForConflict = false;
+        ConflictBannerText = "";
+        OnPropertyChanged(nameof(IsConflictBannerVisible));
+        // Cancel safety timer — normal cleanup happened
+        _conflictBannerClearTimer?.Stop();
+        _conflictBannerClearTimer = null;
+        // Clear pending IDs so HandleConflictPauseAsync catch block won't send duplicate response
+        _pendingConflictRequestId = null;
+        _pendingConflictToolUseId = null;
+        _conflictPauseCts?.Cancel();
+        _conflictPauseCts?.Dispose();
+        _conflictPauseCts = null;
+        _orchestratorService?.ResumeIfSoftPaused();
+        if (wasSoftPaused)
+            Messages.Add(new MessageViewModel(MessageRole.System, "Team resumed."));
     }
 }

@@ -177,8 +177,9 @@ public partial class MainViewModel
                 ReviewStatusText = "";
                 Messages.Add(new MessageViewModel(MessageRole.System, "Review failed. Proceeding without review."));
                 TryShowTaskSuggestion();
-                if (_teamPausedForChat)
-                    ResumeTeamAfterChat();
+                // Only fires when conflict pause is active (not every review turn)
+                if (_teamPausedForConflict)
+                    ResumeTeamAfterConflict();
             });
         };
 
@@ -227,8 +228,8 @@ public partial class MainViewModel
                 CancelReview();
                 UpdateCta(CtaState.WaitingForUser);
                 TryShowTaskSuggestion();
-                if (_teamPausedForChat)
-                    ResumeTeamAfterChat();
+                if (_teamPausedForConflict)
+                    ResumeTeamAfterConflict();
             }
         };
         _reviewTimeoutTimer.Start();
@@ -271,8 +272,8 @@ public partial class MainViewModel
             _reviewStatusClearTimer.Tick += (_, _) => { ReviewStatusText = ""; _reviewStatusClearTimer?.Stop(); _reviewStatusClearTimer = null; };
             _reviewStatusClearTimer.Start();
             TryShowTaskSuggestion();
-            if (_teamPausedForChat)
-                ResumeTeamAfterChat();
+            if (_teamPausedForConflict)
+                ResumeTeamAfterConflict();
             return;
         }
 
@@ -313,8 +314,8 @@ public partial class MainViewModel
                 "Review loop detected — same critical issue repeated. Stopping auto-review."));
             ReviewStatusText = "Review: Loop detected";
             TryShowTaskSuggestion();
-            if (_teamPausedForChat)
-                ResumeTeamAfterChat();
+            if (_teamPausedForConflict)
+                ResumeTeamAfterConflict();
             return;
         }
         _lastReviewCriticalSnippet = criticalSnippet;

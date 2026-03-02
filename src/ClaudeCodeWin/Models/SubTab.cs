@@ -7,7 +7,8 @@ public enum SubTabType
     Explorer,
     Chat,
     FileEditor,
-    Team
+    Team,
+    Notepad
 }
 
 public class SubTab : ViewModelBase

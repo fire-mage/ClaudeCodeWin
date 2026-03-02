@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
@@ -8,6 +9,8 @@ namespace ClaudeCodeWin.ViewModels;
 
 public partial class MainViewModel
 {
+    private const int ConflictPauseTimeoutSeconds = 30;
+
     private void HandleControlRequest(string requestId, string toolName, string toolUseId, JsonElement input)
     {
         RunOnUI(() =>
@@ -22,7 +25,20 @@ public partial class MainViewModel
             }
             else
             {
-                // Auto-approve other tool permission requests
+                // Check for file write conflicts with team.
+                // Known limitation: Bash tool calls that modify files (sed, echo >, mv, cat >)
+                // bypass this check — parsing arbitrary shell commands is impractical.
+                // Claude frequently uses Bash for file modifications, so conflicts may go undetected.
+                if (toolName is "Write" or "Edit" or "NotebookEdit")
+                {
+                    var filePath = ExtractFilePathFromToolInput(input);
+                    if (filePath != null && IsFileConflictWithTeam(filePath))
+                    {
+                        _ = HandleConflictPauseAsync(requestId, toolUseId, filePath);
+                        return;
+                    }
+                }
+
                 _cliService.SendControlResponse(requestId, "allow", toolUseId: toolUseId);
             }
         });
@@ -298,5 +314,236 @@ public partial class MainViewModel
             if (msg.QuestionDisplay is { IsAnswered: false })
                 msg.QuestionDisplay.IsAnswered = true;
         }
+    }
+
+    private static string? ExtractFilePathFromToolInput(JsonElement input)
+    {
+        if (input.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+            return null;
+
+        if (input.TryGetProperty("file_path", out var fp) && fp.ValueKind == JsonValueKind.String)
+            return fp.GetString();
+
+        if (input.TryGetProperty("notebook_path", out var np) && np.ValueKind == JsonValueKind.String)
+            return np.GetString();
+
+        return null;
+    }
+
+    private bool IsFileConflictWithTeam(string filePath)
+    {
+        // Only check when team is actively running or waiting for work
+        var orch = _orchestratorService;
+        if (orch == null) return false;
+        var state = orch.State;
+        if (state is not (OrchestratorState.Running or OrchestratorState.WaitingForWork))
+            return false;
+
+        // Canonicalize input path; if the input itself is malformed, skip entirely
+        string normalizedPath;
+        try { normalizedPath = Path.GetFullPath(filePath); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            DiagnosticLogger.Log("CONFLICT_CHECK_ERROR", $"Bad input path: {ex.Message}");
+            return false;
+        }
+
+        // Check active session's changed files
+        var activeFiles = orch.GetActiveSessionChangedFiles();
+        if (IsPathInList(activeFiles, normalizedPath))
+            return true;
+
+        // Check changed files from InProgress features in the backlog
+        // Only when team is actively Running — WaitingForWork may have stale InProgress features
+        if (state == OrchestratorState.Running && !string.IsNullOrEmpty(WorkingDirectory))
+        {
+            var inProgressFeatures = _backlogService.GetFeaturesByStatus(WorkingDirectory, FeatureStatus.InProgress);
+            foreach (var feature in inProgressFeatures)
+            {
+                foreach (var phase in feature.Phases)
+                {
+                    if (IsPathInList(phase.ChangedFiles, normalizedPath))
+                        return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if normalizedPath matches any path in the list.
+    /// Malformed entries are skipped so one bad path doesn't abort the entire check.
+    /// </summary>
+    private static bool IsPathInList(IEnumerable<string> paths, string normalizedPath)
+    {
+        foreach (var f in paths)
+        {
+            try
+            {
+                if (string.Equals(Path.GetFullPath(f), normalizedPath, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                // Skip malformed path, continue checking others
+                DiagnosticLogger.Log("CONFLICT_CHECK_SKIP", $"Skipping malformed path '{f}': {ex.Message}");
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Pauses team orchestrator when a Write/Edit/NotebookEdit conflicts with team files.
+    /// Called as fire-and-forget: _ = HandleConflictPauseAsync(...).
+    /// Exceptions are caught internally — safe despite not being awaited.
+    /// </summary>
+    private async Task HandleConflictPauseAsync(string requestId, string toolUseId, string filePath)
+    {
+        // Guard: if already handling a conflict pause, just allow this tool immediately
+        if (_conflictPauseCts != null)
+        {
+            _cliService.SendControlResponse(requestId, "allow", toolUseId: toolUseId);
+            return;
+        }
+
+        _teamPausedForConflict = true;
+        _conflictEditAnyway = false;
+        _pendingConflictRequestId = requestId;
+        _pendingConflictToolUseId = toolUseId;
+        ConflictBannerText = $"Team is editing {Path.GetFileName(filePath)} \u2014 pausing team...";
+        OnPropertyChanged(nameof(IsConflictBannerVisible));
+        OnPropertyChanged(nameof(IsConflictActionable));
+
+        _conflictPauseCts = new CancellationTokenSource(TimeSpan.FromSeconds(ConflictPauseTimeoutSeconds));
+        var orch = _orchestratorService;
+        if (orch == null)
+        {
+            // Orchestrator disposed between conflict check and pause — allow the tool
+            ClearConflictPauseState();
+            _cliService.SendControlResponse(requestId, "allow", toolUseId: toolUseId);
+            return;
+        }
+
+        var responseSent = false;
+        try
+        {
+            await orch.SoftPauseAsync(_conflictPauseCts.Token);
+
+            // Team confirmed paused — allow the tool
+            ConflictBannerText = "Team paused \u2014 working...";
+            _cliService.SendControlResponse(requestId, "allow", toolUseId: toolUseId);
+            responseSent = true;
+        }
+        catch (OperationCanceledException)
+        {
+            // Capture as local — HandleCancelConflict may have nulled the field
+            var pendingReqId = _pendingConflictRequestId;
+
+            if (_conflictEditAnyway)
+            {
+                // User clicked "Edit anyway" — allow the tool, clear pause, resume team
+                if (!responseSent && _cliService.IsProcessRunning)
+                    _cliService.SendControlResponse(requestId, "allow", toolUseId: toolUseId);
+                responseSent = true;
+                ClearConflictPauseState();
+            }
+            else
+            {
+                // Timeout or ResumeTeamAfterConflict cancelled — allow anyway
+                // Only clean up if ResumeTeamAfterConflict hasn't already done so
+                if (_teamPausedForConflict)
+                    ClearConflictPauseState();
+                // Only send if CLI is still alive and not denied by HandleCancelConflict
+                if (!responseSent && _cliService.IsProcessRunning && pendingReqId != null)
+                    _cliService.SendControlResponse(requestId, "allow", toolUseId: toolUseId);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Capture as local — HandleCancelConflict may have nulled the field
+            var pendingReqId = _pendingConflictRequestId;
+
+            DiagnosticLogger.Log("CONFLICT_PAUSE_ERROR", ex.Message);
+            if (_teamPausedForConflict)
+                ClearConflictPauseState();
+            if (!responseSent && _cliService.IsProcessRunning && pendingReqId != null)
+                _cliService.SendControlResponse(requestId, "allow", toolUseId: toolUseId);
+        }
+        finally
+        {
+            // Always release the CTS so the guard check allows future conflict detection
+            if (_conflictPauseCts != null)
+            {
+                _conflictPauseCts.Dispose();
+                _conflictPauseCts = null;
+            }
+            _pendingConflictRequestId = null;
+            _pendingConflictToolUseId = null;
+            OnPropertyChanged(nameof(IsConflictActionable));
+
+            // Safety net: if banner still shows after success path ("Team paused — working...")
+            // and HandleCompleted/HandleError never fires (CLI crash, process killed), auto-clear
+            // the banner after 2 minutes so it doesn't stay visible forever.
+            if (_teamPausedForConflict && !string.IsNullOrEmpty(ConflictBannerText))
+            {
+                _conflictBannerClearTimer?.Stop();
+                _conflictBannerClearTimer = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMinutes(2)
+                };
+                _conflictBannerClearTimer.Tick += (_, _) =>
+                {
+                    _conflictBannerClearTimer?.Stop();
+                    _conflictBannerClearTimer = null;
+                    if (_teamPausedForConflict)
+                    {
+                        DiagnosticLogger.Log("CONFLICT_BANNER_TIMEOUT",
+                            "Conflict banner auto-cleared after 2 min safety timeout.");
+                        ClearConflictPauseState();
+                    }
+                };
+                _conflictBannerClearTimer.Start();
+            }
+        }
+    }
+
+    private void ClearConflictPauseState()
+    {
+        ConflictBannerText = "";
+        _teamPausedForConflict = false;
+        OnPropertyChanged(nameof(IsConflictBannerVisible));
+        _orchestratorService?.ClearPendingSoftPause();
+        _orchestratorService?.ResumeIfSoftPaused();
+    }
+
+    private void HandleEditAnyway()
+    {
+        _conflictEditAnyway = true;
+        _conflictPauseCts?.Cancel();
+    }
+
+    private void HandleCancelConflict()
+    {
+        var reqId = _pendingConflictRequestId;
+        var toolId = _pendingConflictToolUseId;
+
+        // Null out pending IDs first — signals catch block in HandleConflictPauseAsync
+        // not to send a duplicate 'allow' response after we send 'deny' here
+        _pendingConflictRequestId = null;
+        _pendingConflictToolUseId = null;
+
+        // Cancel the pause wait
+        _conflictPauseCts?.Cancel();
+
+        // Fire-and-forget deny — written to stdin before CancelProcessing() kills the CLI.
+        // The CLI may not process it, but the session is being destroyed anyway.
+        if (reqId != null && _cliService.IsProcessRunning)
+            _cliService.SendControlResponse(reqId, "deny", toolUseId: toolId,
+                errorMessage: "User cancelled due to file conflict");
+
+        // CancelProcessing() calls ResumeTeamAfterConflict() which handles all cleanup:
+        // clears _teamPausedForConflict, ConflictBannerText, disposes CTS, resumes team
+        CancelProcessing();
     }
 }
