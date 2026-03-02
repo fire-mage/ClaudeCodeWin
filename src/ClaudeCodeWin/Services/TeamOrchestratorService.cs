@@ -22,6 +22,8 @@ public class TeamOrchestratorService : IDisposable
     private string? _claudeExePath;
     private string? _workingDirectory;
 
+    public TeamNotesService? TeamNotesService { get; set; }
+
     // All mutable state is guarded by _lock
     private readonly object _lock = new();
     private DevReviewSession? _activeSession;
@@ -553,13 +555,27 @@ public class TeamOrchestratorService : IDisposable
 
     private void HandleDevCompletedLocked(DevReviewSession session)
     {
+        var devText = session.DevResponse.ToString();
+
+        // Extract developer notes — deferred to run after _lock release
+        if (TeamNotesService is { } notesService && _workingDirectory is not null)
+        {
+            var notes = TeamNotesDetector.ExtractNotes(devText);
+            if (notes.Count > 0)
+            {
+                var projectPath = _workingDirectory;
+                var featureId = session.FeatureId;
+                var featureTitle = session.FeatureTitle;
+                RaiseEvent(() => notesService.AddNotes(projectPath, "developer", featureId, featureTitle, notes));
+            }
+        }
+
         // If developer was fixing review issues and dismissed the reviewer, skip re-review
         if (session.CurrentPhase == SessionPhase.FixingIssues
-            && ReviewService.DetectReviewDismiss(session.DevResponse.ToString()))
+            && ReviewService.DetectReviewDismiss(devText))
         {
             RaiseLog($"Developer dismissed reviewer for [{session.PhaseTitle}] — low quality feedback.");
 
-            var devText = session.DevResponse.ToString();
             var commitHash = _gitService.RunGit("rev-parse --short HEAD", _workingDirectory)?.Trim();
             _backlogService.MarkPhaseStatus(
                 session.FeatureId, session.PhaseId, PhaseStatus.Done,
@@ -724,6 +740,20 @@ public class TeamOrchestratorService : IDisposable
     {
         session.Reviewer?.Stop();
         session.Reviewer = null;
+
+        // Extract reviewer notes — deferred to run after _lock release
+        if (TeamNotesService is { } notesService && _workingDirectory is not null
+            && !string.IsNullOrEmpty(reviewText))
+        {
+            var notes = TeamNotesDetector.ExtractNotes(reviewText);
+            if (notes.Count > 0)
+            {
+                var projectPath = _workingDirectory;
+                var featureId = session.FeatureId;
+                var featureTitle = session.FeatureTitle;
+                RaiseEvent(() => notesService.AddNotes(projectPath, "reviewer", featureId, featureTitle, notes));
+            }
+        }
 
         if (verdict == ReviewVerdict.Consensus)
         {
@@ -1113,6 +1143,7 @@ public class TeamOrchestratorService : IDisposable
     {
         var items = new List<SessionHealthInfo>();
         var elapsed = $"{(DateTime.Now - session.StartedAt).TotalMinutes:F0}m";
+        var phaseName = session.CurrentPhase.ToString();
 
         if (session.CurrentPhase is SessionPhase.Development or SessionPhase.FixingIssues)
         {
@@ -1126,7 +1157,12 @@ public class TeamOrchestratorService : IDisposable
                 ? $"stalled {session.DevStallSeconds}s" : "";
 
             var role = session.CurrentPhase == SessionPhase.FixingIssues ? "Dev (fixing)" : "Dev";
-            items.Add(new SessionHealthInfo(role, health, detail, elapsed));
+            var isFixing = session.CurrentPhase == SessionPhase.FixingIssues;
+            items.Add(new SessionHealthInfo(role, health, detail, elapsed,
+                idleSeconds: session.DevStallSeconds,
+                reviewRound: isFixing ? _reviewAttempt + 1 : 0,
+                maxReviewRounds: isFixing ? _maxReviewRetries : 0,
+                phaseName: phaseName));
         }
 
         if (session.CurrentPhase == SessionPhase.Review)
@@ -1138,7 +1174,11 @@ public class TeamOrchestratorService : IDisposable
             var detail = session.ReviewStallSeconds >= StallNudgeThresholdSeconds
                 ? $"stalled {session.ReviewStallSeconds}s" : "";
 
-            items.Add(new SessionHealthInfo("Review", health, detail, elapsed));
+            items.Add(new SessionHealthInfo("Review", health, detail, elapsed,
+                idleSeconds: session.ReviewStallSeconds,
+                reviewRound: _reviewAttempt + 1,
+                maxReviewRounds: _maxReviewRetries,
+                phaseName: phaseName));
         }
 
         RaiseHealthSnapshot(items);

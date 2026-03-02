@@ -24,6 +24,7 @@ public class TabHostViewModel : ViewModelBase
     private readonly ContextSnapshotService _contextSnapshotService;
     private readonly UsageService _usageService;
     private readonly BacklogService _backlogService;
+    private readonly TeamNotesService _teamNotesService;
 
     // Project uniqueness: prevent the same project from being open in two tabs
     private readonly HashSet<string> _openProjects = new(StringComparer.OrdinalIgnoreCase);
@@ -137,7 +138,8 @@ public class TabHostViewModel : ViewModelBase
         ProjectRegistryService projectRegistry,
         ContextSnapshotService contextSnapshotService,
         UsageService usageService,
-        BacklogService backlogService)
+        BacklogService backlogService,
+        TeamNotesService teamNotesService)
     {
         _notificationService = notificationService;
         _settingsService = settingsService;
@@ -150,6 +152,7 @@ public class TabHostViewModel : ViewModelBase
         _contextSnapshotService = contextSnapshotService;
         _usageService = usageService;
         _backlogService = backlogService;
+        _teamNotesService = teamNotesService;
 
         _isTabPanelCompact = settings.TabPanelCompact;
 
@@ -187,7 +190,7 @@ public class TabHostViewModel : ViewModelBase
             cliService, _notificationService, _settingsService, _settings,
             _gitService, _fileIndexService, _chatHistoryService,
             _projectRegistry, _contextSnapshotService, _usageService,
-            _backlogService);
+            _backlogService, _teamNotesService);
 
         // Wire project locking callbacks
         tab.IsProjectLockedByOtherTab = path =>

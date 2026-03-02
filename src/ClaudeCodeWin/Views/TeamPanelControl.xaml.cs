@@ -63,15 +63,6 @@ public partial class TeamPanelControl : UserControl
             VM?.CancelFeatureCommand.Execute(vm);
     }
 
-    private void AddIdeaTextBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter && VM?.AddIdeaCommand.CanExecute(null) == true)
-        {
-            VM.AddIdeaCommand.Execute(null);
-            e.Handled = true;
-        }
-    }
-
     private void AnswerTextBox_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter && sender is TextBox tb && tb.DataContext is BacklogFeatureVM vm)
@@ -154,6 +145,61 @@ public partial class TeamPanelControl : UserControl
             VM?.RetryPlanningCommand.Execute(vm);
     }
 
+    // --- Discussion section handlers ---
+
+    private void DiscussPlan_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.DataContext is BacklogFeatureVM vm)
+            VM?.DiscussPlanCommand.Execute(vm);
+    }
+
+    private void SubmitDiscussion_Click(object sender, RoutedEventArgs e)
+    {
+        // The button inherits DataContext from the outer DataTemplate (BacklogFeatureVM)
+        if (sender is FrameworkElement fe && FindParentFeatureVM(fe) is { } vm)
+            VM?.SubmitDiscussionCommand.Execute(vm);
+    }
+
+    private void CancelDiscussion_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && FindParentFeatureVM(fe) is { } vm)
+            VM?.CancelDiscussionCommand.Execute(vm);
+    }
+
+    private static BacklogFeatureVM? FindParentFeatureVM(FrameworkElement element)
+    {
+        var fe = element;
+        while (fe != null)
+        {
+            if (fe.DataContext is BacklogFeatureVM vm)
+                return vm;
+            fe = System.Windows.Media.VisualTreeHelper.GetParent(fe) as FrameworkElement;
+        }
+        return null;
+    }
+
+    private void DiscussionRadio_Checked(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.RadioButton rb)
+        {
+            // The Tag holds the DiscussionQuestionVM (set in XAML)
+            if (rb.Tag is DiscussionQuestionVM questionVm)
+            {
+                questionVm.SelectedAnswer = rb.Content as string ?? "";
+                questionVm.IsCustom = false;
+            }
+        }
+    }
+
+    private void DiscussionCustomText_GotFocus(object sender, RoutedEventArgs e)
+    {
+        // When user clicks into the custom text box, auto-select the "Other" radio
+        if (sender is TextBox tb && tb.DataContext is DiscussionQuestionVM questionVm)
+        {
+            questionVm.IsCustom = true;
+        }
+    }
+
     // --- Backlog section handlers ---
 
     private void AddToQueue_Click(object sender, RoutedEventArgs e)
@@ -215,6 +261,28 @@ public partial class TeamPanelControl : UserControl
         }
     }
 
+    private void QuickAddIdea_Click(object sender, RoutedEventArgs e)
+    {
+        if (VM != null && VM.HasProjectLoaded && !string.IsNullOrWhiteSpace(QuickIdeaBox.Text))
+        {
+            var text = QuickIdeaBox.Text.Trim();
+            VM.IdeasText = string.IsNullOrEmpty(VM.IdeasText)
+                ? text
+                : VM.IdeasText.TrimEnd() + "\n" + text;
+            QuickIdeaBox.Text = "";
+        }
+    }
+
+    private void QuickIdeaBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && VM is { HasProjectLoaded: true }
+            && !string.IsNullOrWhiteSpace(QuickIdeaBox.Text))
+        {
+            QuickAddIdea_Click(sender, e);
+            e.Handled = true;
+        }
+    }
+
     private void ViewChat_Click(object sender, RoutedEventArgs e)
     {
         if (VM != null)
@@ -234,40 +302,6 @@ public partial class TeamPanelControl : UserControl
             LogArrow.Text = "\u25B8"; // right
         }
         e.Handled = true;
-    }
-
-    private void ManagerHeader_Click(object sender, MouseButtonEventArgs e)
-    {
-        ToggleManagerPanel();
-        e.Handled = true;
-    }
-
-    private void ToggleManager_Click(object sender, RoutedEventArgs e)
-    {
-        ToggleManagerPanel();
-    }
-
-    private void ToggleManagerPanel()
-    {
-        if (ManagerPanel.Visibility == Visibility.Collapsed)
-        {
-            ManagerPanel.Visibility = Visibility.Visible;
-            ManagerArrow.Text = "\u25BE"; // down
-        }
-        else
-        {
-            ManagerPanel.Visibility = Visibility.Collapsed;
-            ManagerArrow.Text = "\u25B8"; // right
-        }
-    }
-
-    private void ManagerInput_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter && VM?.SendManagerMessageCommand.CanExecute(null) == true)
-        {
-            VM.SendManagerMessageCommand.Execute(null);
-            e.Handled = true;
-        }
     }
 
     private static BacklogFeatureVM? GetFeatureFromContextMenu(MenuItem menuItem)

@@ -119,6 +119,54 @@
             </Grid>
         </DataTemplate>
 
+        <!-- Plan Approval phase template (expanded with plan details) -->
+        <DataTemplate x:Key="PlanApprovalPhaseTemplate">
+            <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
+                    Padding="0,4,0,6" Margin="0,0,0,2">
+                <StackPanel>
+                    <!-- Line 1: StatusIcon + Phase Title -->
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding StatusIcon}"
+                                   FontSize="12"
+                                   FontFamily="Cascadia Code,Consolas,Courier New"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding Title}"
+                                   FontSize="12" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}"
+                                   VerticalAlignment="Center"
+                                   Margin="6,0,0,0"/>
+                    </StackPanel>
+
+                    <!-- Line 2: Plan text -->
+                    <TextBlock Text="{Binding Plan}"
+                               FontSize="11"
+                               FontFamily="Cascadia Code,Consolas"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               Margin="20,4,0,0"
+                               Visibility="{Binding HasPlan, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- Line 3: Acceptance Criteria (teal left border) -->
+                    <Border Margin="20,6,0,0" Padding="8,4"
+                            BorderBrush="#4EC9B0" BorderThickness="2,0,0,0"
+                            Background="#0f1a1a"
+                            Visibility="{Binding HasAcceptanceCriteria, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <TextBlock Text="Acceptance:"
+                                       FontSize="10" FontWeight="SemiBold"
+                                       Foreground="#4EC9B0"/>
+                            <TextBlock Text="{Binding AcceptanceCriteria}"
+                                       FontSize="10"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
         <!-- Feature card template -->
         <DataTemplate x:Key="FeatureItemTemplate" DataType="{x:Type vm:BacklogFeatureVM}">
             <Border Margin="0,2" Padding="8,6"
@@ -213,10 +261,11 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Row 0: Compact toolbar — Add Idea + Orchestrator controls -->
+        <!-- Row 0: Compact toolbar — Add Idea + Refresh + Notes + Status -->
         <Border Grid.Row="0" Padding="8,4"
                 Background="{StaticResource SurfaceBrush}"
                 BorderBrush="{StaticResource BorderBrush}"
@@ -226,87 +275,82 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="16"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Add idea input -->
                 <Grid Grid.Column="0">
-                    <TextBox x:Name="IdeaBox"
-                             Text="{Binding AddIdeaText, UpdateSourceTrigger=PropertyChanged}"
+                    <TextBox x:Name="QuickIdeaBox"
+                             FontSize="11" Padding="4,3"
                              Background="{StaticResource BackgroundBrush}"
                              Foreground="{StaticResource TextBrush}"
                              CaretBrush="{StaticResource TextBrush}"
                              BorderBrush="{StaticResource BorderBrush}"
-                             FontSize="11" Padding="6,3"
-                             VerticalContentAlignment="Center"
-                             KeyDown="AddIdeaTextBox_KeyDown"/>
-                    <TextBlock Text="Add idea..."
-                               IsHitTestVisible="False"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontSize="11"
-                               VerticalAlignment="Center"
-                               Margin="8,0,0,0"
-                               Visibility="{Binding Text.Length, ElementName=IdeaBox,
-                                            Converter={StaticResource BoolToVis},
-                                            ConverterParameter=Invert}"/>
+                             VerticalAlignment="Center"
+                             KeyDown="QuickIdeaBox_KeyDown"/>
+                    <TextBlock Text="Add idea..." IsHitTestVisible="False"
+                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="6,4,0,0" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Text.Length, ElementName=QuickIdeaBox}" Value="0">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </Grid>
 
-                <Button Grid.Column="1" Content="+ Add"
-                        Padding="6,3" Margin="4,0,0,0" FontSize="11"
-                        Style="{StaticResource SubTabToolButton}"
-                        Command="{Binding AddIdeaCommand}"/>
+                <Button Grid.Column="1" Content="+Add"
+                        ToolTip="Add idea to notepad" Padding="6,3" Margin="4,0,0,0"
+                        FontSize="10"
+                        Style="{StaticResource ExplorerToolButton}"
+                        Click="QuickAddIdea_Click"/>
 
                 <Button Grid.Column="2" Content="&#x21BB;"
-                        ToolTip="Refresh" Padding="4,3" Margin="2,0,0,0"
+                        ToolTip="Refresh" Padding="4,3" Margin="4,0,0,0"
                         Style="{StaticResource ExplorerToolButton}"
                         Command="{Binding RefreshCommand}"/>
 
-                <!-- Separator -->
-                <Border Grid.Column="3" Width="1" Background="{StaticResource BorderBrush}"
-                        Margin="4,2"/>
+                <!-- Notes button with unread badge -->
+                <Grid Grid.Column="3" Margin="4,0,0,0">
+                    <Button Content="&#x1F4DD; Notes"
+                            ToolTip="Team Notes"
+                            Padding="6,3"
+                            FontSize="10"
+                            Foreground="#CE9178"
+                            Style="{StaticResource ExplorerToolButton}"
+                            Command="{Binding ToggleNotesPanelCommand}"/>
+                    <!-- Unread count badge -->
+                    <Border CornerRadius="8" Padding="4,1" MinWidth="16"
+                            Background="#f85149"
+                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="0,-4,-6,0"
+                            IsHitTestVisible="False">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding UnreadNotesCount}" Value="0">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding UnreadNotesCount}"
+                                   FontSize="9" FontWeight="Bold"
+                                   Foreground="White"
+                                   HorizontalAlignment="Center"/>
+                    </Border>
+                </Grid>
 
-                <!-- Orchestrator controls -->
                 <TextBlock Grid.Column="4" Text="{Binding OrchestratorStatusText}"
                            FontSize="10"
                            Foreground="{StaticResource AccentBrush}"
                            VerticalAlignment="Center"
-                           Margin="0,0,6,0"/>
-
-                <Button Grid.Column="5" Content="&#x25B6;"
-                        ToolTip="Run orchestrator"
-                        Padding="4,3" Margin="0,0,2,0" FontSize="10"
-                        Style="{StaticResource ExplorerToolButton}"
-                        Command="{Binding StartOrchestratorCommand}"/>
-
-                <Button Grid.Column="6" Content="&#x23F8;"
-                        ToolTip="Soft pause"
-                        Padding="4,3" Margin="0,0,2,0" FontSize="10"
-                        Style="{StaticResource ExplorerToolButton}"
-                        Command="{Binding PauseOrchestratorCommand}"/>
-
-                <Button Grid.Column="7" Content="&#x23E9;"
-                        ToolTip="Hard pause"
-                        Padding="4,3" Margin="0,0,2,0" FontSize="10"
-                        Style="{StaticResource ExplorerToolButton}"
-                        Command="{Binding HardPauseOrchestratorCommand}"/>
-
-                <Button Grid.Column="8" Content="&#x23F9;"
-                        ToolTip="Stop orchestrator"
-                        Padding="4,3" Margin="0,0,2,0" FontSize="10"
-                        Style="{StaticResource ExplorerToolButton}"
-                        Command="{Binding StopOrchestratorCommand}"/>
-
-                <Button Grid.Column="9" Content="Mgr"
-                        ToolTip="Toggle Manager"
-                        Padding="4,3" Margin="2,0,0,0" FontSize="10"
-                        Style="{StaticResource ExplorerToolButton}"
-                        Click="ToggleManager_Click"/>
+                           Margin="6,0,0,0"/>
             </Grid>
         </Border>
 
@@ -484,8 +528,138 @@
             </Grid>
         </Border>
 
-        <!-- Row 2: Scrollable 7-section pipeline -->
-        <ScrollViewer Grid.Row="2"
+        <!-- Row 2: Notes panel (collapsible) -->
+        <Border Grid.Row="2"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="#CE9178"
+                BorderThickness="0,0,0,1"
+                MaxHeight="300"
+                Visibility="{Binding ShowNotesPanel, Converter={StaticResource BoolToVis}}">
+            <StackPanel>
+                <!-- Header: Title + Mark all read + Close -->
+                <DockPanel Margin="10,8,10,4">
+                    <TextBlock Text="Team Notes" FontSize="13" FontWeight="SemiBold"
+                               Foreground="#CE9178" VerticalAlignment="Center"/>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button Content="Mark all read" Padding="6,2" Margin="0,0,4,0"
+                                FontSize="10"
+                                Style="{StaticResource SubTabToolButton}"
+                                Command="{Binding MarkAllReadCommand}"/>
+                        <Button Content="&#x2715;" Padding="4,2"
+                                FontSize="10"
+                                Style="{StaticResource ExplorerToolButton}"
+                                Command="{Binding ToggleNotesPanelCommand}"/>
+                    </StackPanel>
+                    <!-- Spacer -->
+                    <Border/>
+                </DockPanel>
+
+                <!-- Notes list -->
+                <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto"
+                              Margin="6,0,6,6">
+                    <Grid>
+                        <!-- Empty state -->
+                        <TextBlock Text="No notes yet"
+                                   FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,16,0,16">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Notes.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <!-- Notes items -->
+                        <ItemsControl ItemsSource="{Binding Notes}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,2" Padding="8,6"
+                                            Background="{StaticResource BackgroundBrush}"
+                                            CornerRadius="4"
+                                            BorderBrush="{StaticResource BorderBrush}"
+                                            BorderThickness="1">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="28"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- Role icon -->
+                                            <TextBlock Grid.Column="0"
+                                                       Text="{Binding RoleIcon}"
+                                                       FontSize="16"
+                                                       VerticalAlignment="Top"
+                                                       Margin="0,2,0,0"/>
+
+                                            <!-- Content -->
+                                            <StackPanel Grid.Column="1">
+                                                <!-- Row 1: Role label + timestamp -->
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding RoleLabel}"
+                                                               FontSize="11" FontWeight="SemiBold"
+                                                               Foreground="#CE9178"/>
+                                                    <TextBlock Text="{Binding TimestampText}"
+                                                               FontSize="10"
+                                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                                               VerticalAlignment="Center"
+                                                               Margin="8,0,0,0"/>
+                                                </StackPanel>
+
+                                                <!-- Row 2: Feature reference (if any) -->
+                                                <TextBlock Text="{Binding FeatureReference}"
+                                                           FontSize="10" FontStyle="Italic"
+                                                           Foreground="{StaticResource AccentBrush}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Margin="0,1,0,0">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding FeatureReference}" Value="">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+
+                                                <!-- Row 3: Message -->
+                                                <TextBlock Text="{Binding Message}"
+                                                           FontSize="11"
+                                                           Foreground="{StaticResource TextBrush}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,2,0,0"/>
+                                            </StackPanel>
+
+                                            <!-- Dismiss button -->
+                                            <Button Grid.Column="2"
+                                                    Content="&#x2715;"
+                                                    ToolTip="Dismiss note"
+                                                    Padding="4,2"
+                                                    FontSize="9"
+                                                    VerticalAlignment="Top"
+                                                    Style="{StaticResource ExplorerToolButton}"
+                                                    Command="{Binding DataContext.DismissNoteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding NoteId}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
+
+        <!-- Row 3: Scrollable 7-section pipeline -->
+        <ScrollViewer Grid.Row="3"
                       VerticalScrollBarVisibility="Auto"
                       Background="{StaticResource BackgroundBrush}">
             <StackPanel Margin="8,6">
@@ -543,18 +717,38 @@
                                        VerticalAlignment="Center"/>
                         </DockPanel>
 
-                        <!-- Notepad TextBox -->
-                        <TextBox Text="{Binding IdeasText, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="{StaticResource BackgroundBrush}"
-                                 Foreground="{StaticResource TextBrush}"
-                                 CaretBrush="{StaticResource TextBrush}"
-                                 BorderBrush="{StaticResource BorderBrush}"
-                                 BorderThickness="1"
-                                 FontSize="12" Padding="8,6"
-                                 AcceptsReturn="True"
-                                 TextWrapping="Wrap"
-                                 MinHeight="80" MaxHeight="200"
-                                 VerticalScrollBarVisibility="Auto"/>
+                        <!-- Notepad TextBox with placeholder -->
+                        <Grid>
+                            <TextBox x:Name="IdeasTextBox"
+                                     Text="{Binding IdeasText, UpdateSourceTrigger=PropertyChanged}"
+                                     Background="{StaticResource BackgroundBrush}"
+                                     Foreground="{StaticResource TextBrush}"
+                                     CaretBrush="{StaticResource TextBrush}"
+                                     BorderBrush="{StaticResource BorderBrush}"
+                                     BorderThickness="1"
+                                     FontSize="12" Padding="8,6"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     MinHeight="80" MaxHeight="200"
+                                     VerticalScrollBarVisibility="Auto"/>
+                            <TextBlock Text="Type your feature ideas here, one per line..."
+                                       IsHitTestVisible="False"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Margin="10,8,0,0"
+                                       VerticalAlignment="Top">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text.Length, ElementName=IdeasTextBox}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
 
                         <!-- Submit button -->
                         <Button Margin="0,6,0,0"
@@ -574,7 +768,16 @@
                 <!-- ================================================ -->
                 <!-- Section 2: Analysis -->
                 <!-- ================================================ -->
-                <Expander Style="{StaticResource PipelineExpander}" IsExpanded="True">
+                <Expander IsExpanded="True">
+                    <Expander.Style>
+                        <Style TargetType="Expander" BasedOn="{StaticResource PipelineExpander}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding AnalyzingCount}" Value="0">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Expander.Style>
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#x2461;" Foreground="{StaticResource AnalysisAccent}"
@@ -785,7 +988,16 @@
                 <!-- ================================================ -->
                 <!-- Section 3: Planning -->
                 <!-- ================================================ -->
-                <Expander Style="{StaticResource PipelineExpander}" IsExpanded="True">
+                <Expander IsExpanded="True">
+                    <Expander.Style>
+                        <Style TargetType="Expander" BasedOn="{StaticResource PipelineExpander}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding PlanningCount}" Value="0">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Expander.Style>
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#x2462;" Foreground="{StaticResource PlanningAccent}"
@@ -956,7 +1168,16 @@
                 <!-- ================================================ -->
                 <!-- Section 4: Plan Approval -->
                 <!-- ================================================ -->
-                <Expander Style="{StaticResource PipelineExpander}" IsExpanded="True">
+                <Expander IsExpanded="True">
+                    <Expander.Style>
+                        <Style TargetType="Expander" BasedOn="{StaticResource PipelineExpander}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ApprovalCount}" Value="0">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Expander.Style>
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#x2463;" Foreground="{StaticResource ApprovalAccent}"
@@ -1013,24 +1234,10 @@
                                                    Foreground="{StaticResource TextSecondaryBrush}"
                                                    Margin="0,2,0,0"/>
 
-                                        <!-- Expandable phases list -->
-                                        <Border Background="Transparent" Cursor="Hand"
-                                                MouseLeftButtonUp="Feature_Click" Margin="0,4,0,0">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding IsExpanded, Converter={StaticResource ExpandArrow}}"
-                                                           FontSize="10"
-                                                           Foreground="{StaticResource TextSecondaryBrush}"
-                                                           VerticalAlignment="Center"/>
-                                                <TextBlock Text="Show phases" FontSize="10"
-                                                           Foreground="{StaticResource TextSecondaryBrush}"
-                                                           Margin="4,0,0,0"
-                                                           VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                        </Border>
+                                        <!-- Phases list (always visible in Plan Approval) -->
                                         <ItemsControl ItemsSource="{Binding PhaseItems}"
-                                                      ItemTemplate="{StaticResource PhaseItemTemplate}"
-                                                      Margin="16,2,0,0"
-                                                      Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}"/>
+                                                      ItemTemplate="{StaticResource PlanApprovalPhaseTemplate}"
+                                                      Margin="0,6,0,0"/>
 
                                         <!-- AI Review verdict (inline) -->
                                         <Border Margin="0,6,0,0" Padding="6,4"
@@ -1110,11 +1317,111 @@
                                                     FontSize="10"
                                                     Style="{StaticResource SubTabToolButton}"
                                                     Click="RequestAIReview_Click"/>
+                                            <Button Content="Discuss Plan" Padding="8,3" Margin="0,0,4,0"
+                                                    FontSize="10"
+                                                    Style="{StaticResource SubTabToolButton}"
+                                                    Click="DiscussPlan_Click"
+                                                    Visibility="{Binding CanDiscuss, Converter={StaticResource BoolToVis}}"/>
                                             <Button Content="&#x2715;" ToolTip="Delete feature"
                                                     Padding="6,3" FontSize="10"
                                                     Style="{StaticResource SubTabToolButton}"
                                                     Click="DeleteFeature_Click"/>
                                         </StackPanel>
+
+                                        <!-- Discussion loading indicator -->
+                                        <TextBlock Text="Generating questions..."
+                                                   FontSize="10" FontStyle="Italic"
+                                                   Foreground="{StaticResource ApprovalAccent}"
+                                                   Margin="0,4,0,0"
+                                                   Visibility="{Binding IsDiscussionLoading, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- Discussion error -->
+                                        <TextBlock Text="{Binding DiscussionError}"
+                                                   FontSize="10" FontStyle="Italic"
+                                                   Foreground="#C94040"
+                                                   Margin="0,4,0,0"
+                                                   TextWrapping="Wrap"
+                                                   Visibility="{Binding HasDiscussionError, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- Inline Discussion Q&A Panel -->
+                                        <Border Margin="0,6,0,0" Padding="8,6"
+                                                BorderBrush="{StaticResource ApprovalAccent}"
+                                                BorderThickness="2,0,0,0"
+                                                Background="{StaticResource ApprovalDimBg}"
+                                                CornerRadius="0,4,4,0"
+                                                Visibility="{Binding IsDiscussionOpen, Converter={StaticResource BoolToVis}}">
+                                            <StackPanel>
+                                                <!-- Header -->
+                                                <TextBlock Text="Plan Discussion"
+                                                           FontSize="12" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource ApprovalAccent}"
+                                                           Margin="0,0,0,6"/>
+
+                                                <!-- Questions list -->
+                                                <ItemsControl ItemsSource="{Binding DiscussionQuestions}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Margin="0,0,0,8">
+                                                                <!-- Question text -->
+                                                                <TextBlock Text="{Binding Question}"
+                                                                           FontSize="11" FontWeight="SemiBold"
+                                                                           Foreground="{StaticResource TextBrush}"
+                                                                           TextWrapping="Wrap"
+                                                                           Margin="0,0,0,4"/>
+
+                                                                <!-- Suggested answers as RadioButtons -->
+                                                                <ItemsControl ItemsSource="{Binding SuggestedAnswers}">
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <RadioButton Content="{Binding}"
+                                                                                         FontSize="10"
+                                                                                         Foreground="{StaticResource TextSecondaryBrush}"
+                                                                                         Margin="0,1"
+                                                                                         GroupName="{Binding DataContext.GroupId, RelativeSource={RelativeSource AncestorType=StackPanel}}"
+                                                                                         Checked="DiscussionRadio_Checked"
+                                                                                         Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=StackPanel}}"/>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+
+                                                                <!-- "Other" option — GroupName binds directly since DataContext is DiscussionQuestionVM -->
+                                                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                                                    <RadioButton Content="Other:"
+                                                                                 FontSize="10"
+                                                                                 Foreground="{StaticResource TextSecondaryBrush}"
+                                                                                 GroupName="{Binding GroupId}"
+                                                                                 IsChecked="{Binding IsCustom, Mode=TwoWay}"
+                                                                                 VerticalAlignment="Center"/>
+                                                                    <TextBox Text="{Binding CustomAnswer, UpdateSourceTrigger=PropertyChanged}"
+                                                                             FontSize="10"
+                                                                             Background="{StaticResource BackgroundBrush}"
+                                                                             Foreground="{StaticResource TextBrush}"
+                                                                             CaretBrush="{StaticResource TextBrush}"
+                                                                             BorderBrush="{StaticResource BorderBrush}"
+                                                                             Padding="4,2"
+                                                                             MinWidth="150"
+                                                                             Margin="4,0,0,0"
+                                                                             VerticalAlignment="Center"
+                                                                             GotFocus="DiscussionCustomText_GotFocus"/>
+                                                                </StackPanel>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <!-- Footer buttons -->
+                                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                    <Button Content="Submit Answers" Padding="8,3" Margin="0,0,4,0"
+                                                            FontSize="10"
+                                                            Style="{StaticResource SubTabToolButton}"
+                                                            Click="SubmitDiscussion_Click"/>
+                                                    <Button Content="Cancel" Padding="8,3"
+                                                            FontSize="10"
+                                                            Style="{StaticResource SubTabToolButton}"
+                                                            Click="CancelDiscussion_Click"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>
@@ -1125,7 +1432,16 @@
                 <!-- ================================================ -->
                 <!-- Section 5: Backlog -->
                 <!-- ================================================ -->
-                <Expander Style="{StaticResource PipelineExpander}" IsExpanded="True">
+                <Expander IsExpanded="True">
+                    <Expander.Style>
+                        <Style TargetType="Expander" BasedOn="{StaticResource PipelineExpander}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding BacklogCount}" Value="0">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Expander.Style>
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#x2464;" Foreground="{StaticResource BacklogAccent}"
@@ -1314,7 +1630,20 @@
                 <!-- ================================================ -->
                 <!-- Section 6: Implementation Queue -->
                 <!-- ================================================ -->
-                <Expander Style="{StaticResource PipelineExpander}" IsExpanded="True">
+                <Expander IsExpanded="True">
+                    <Expander.Style>
+                        <Style TargetType="Expander" BasedOn="{StaticResource PipelineExpander}">
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding QueuedCount}" Value="0"/>
+                                        <Condition Binding="{Binding IsOrchestratorStopped}" Value="True"/>
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Expander.Style>
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#x2465;" Foreground="{StaticResource QueueAccent}"
@@ -1335,57 +1664,84 @@
                                 <TextBlock Text="{Binding QueuedCount}" FontSize="10"
                                            Foreground="{StaticResource QueueAccent}"/>
                             </Border>
+
+                            <!-- Orchestrator controls -->
+                            <Button Content="&#x25B6;" ToolTip="Run orchestrator"
+                                    Padding="4,2" Margin="12,0,2,0" FontSize="10"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource ExplorerToolButton}"
+                                    Command="{Binding StartOrchestratorCommand}"/>
+                            <Button Content="&#x23F8;" ToolTip="Soft pause"
+                                    Padding="4,2" Margin="0,0,2,0" FontSize="10"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource ExplorerToolButton}"
+                                    Command="{Binding PauseOrchestratorCommand}"/>
+                            <Button Content="&#x23E9;" ToolTip="Hard pause"
+                                    Padding="4,2" Margin="0,0,2,0" FontSize="10"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource ExplorerToolButton}"
+                                    Command="{Binding HardPauseOrchestratorCommand}"/>
                         </StackPanel>
                     </Expander.Header>
                     <StackPanel Margin="4,0,4,8">
-                        <!-- Health strip (active sessions) -->
-                        <Border Padding="6,3" Margin="0,0,0,4"
+                        <!-- Active task metrics panel -->
+                        <Border Padding="6,4" Margin="0,0,0,4"
                                 Background="{StaticResource SurfaceBrush}"
                                 CornerRadius="4"
                                 BorderBrush="{StaticResource BorderBrush}"
                                 BorderThickness="1"
                                 Visibility="{Binding HasActiveSession, Converter={StaticResource BoolToVis}}">
-                            <ItemsControl ItemsSource="{Binding SessionHealthItems}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <StackPanel Orientation="Horizontal"/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
-                                            <TextBlock Text="{Binding HealthIcon}"
-                                                       FontSize="11"
-                                                       VerticalAlignment="Center"
-                                                       Margin="0,0,4,0">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding HasIssue}" Value="True">
-                                                                <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                            <TextBlock Text="{Binding Role}"
-                                                       FontSize="11" FontWeight="SemiBold"
-                                                       Foreground="{StaticResource TextBrush}"
-                                                       VerticalAlignment="Center"/>
-                                            <TextBlock Text="{Binding Detail}"
-                                                       FontSize="10" Margin="4,0,0,0"
-                                                       Foreground="{StaticResource WarningBrush}"
-                                                       VerticalAlignment="Center"
-                                                       Visibility="{Binding HasIssue, Converter={StaticResource BoolToVis}}"/>
-                                            <TextBlock Text="{Binding Elapsed}"
-                                                       FontSize="10" Margin="4,0,0,0"
-                                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                                       VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            <StackPanel Orientation="Horizontal">
+                                <!-- IN PROGRESS badge -->
+                                <Border CornerRadius="4" Padding="5,1"
+                                        Background="#1a2a1a" VerticalAlignment="Center">
+                                    <TextBlock Text="IN PROGRESS" FontSize="10" FontWeight="SemiBold"
+                                               Foreground="{StaticResource QueueAccent}"/>
+                                </Border>
+
+                                <!-- Elapsed -->
+                                <TextBlock Text="{Binding ActiveElapsed}" FontSize="11"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0"/>
+
+                                <!-- Role -->
+                                <TextBlock Text="{Binding ActiveRole}" FontSize="11"
+                                           Foreground="{StaticResource TextBrush}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0"/>
+
+                                <!-- Review round (collapsed when empty) -->
+                                <TextBlock Text="{Binding ActiveReviewRound}" FontSize="10"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ActiveReviewRound}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <!-- Idle time (warning when >= 30s) -->
+                                <TextBlock Text="{Binding ActiveIdleText}" FontSize="10"
+                                           VerticalAlignment="Center" Margin="8,0,0,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsIdleWarning}" Value="True">
+                                                    <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ActiveIdleText}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
                         </Border>
 
                         <!-- Live Chat Viewer -->
@@ -1569,7 +1925,16 @@
                 <!-- ================================================ -->
                 <!-- Section 7: Completed -->
                 <!-- ================================================ -->
-                <Expander Style="{StaticResource PipelineExpander}" IsExpanded="False">
+                <Expander IsExpanded="False">
+                    <Expander.Style>
+                        <Style TargetType="Expander" BasedOn="{StaticResource PipelineExpander}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding CompletedCount}" Value="0">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Expander.Style>
                     <Expander.Header>
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -1795,83 +2160,6 @@
                         </StackPanel>
                     </StackPanel>
                 </Expander>
-
-                <!-- ================================================ -->
-                <!-- Manager Chat (collapsible) -->
-                <!-- ================================================ -->
-                <Border Background="Transparent" Cursor="Hand" Margin="0,8,0,0"
-                        MouseLeftButtonUp="ManagerHeader_Click">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="ManagerArrow" Text="&#x25B8;"
-                                   FontSize="10" Margin="0,0,4,0"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                   VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="1" Text="Manager" FontSize="11"
-                                   FontWeight="SemiBold"
-                                   Foreground="{StaticResource PrimaryBrush}"
-                                   VerticalAlignment="Center"/>
-                        <Button Grid.Column="2" Content="Start"
-                                Padding="6,2" Margin="4,0,0,0"
-                                FontSize="10"
-                                Style="{StaticResource SubTabToolButton}"
-                                Command="{Binding StartManagerCommand}"/>
-                        <Button Grid.Column="3" Content="Stop"
-                                Padding="6,2" Margin="4,0,0,0"
-                                FontSize="10"
-                                Style="{StaticResource SubTabToolButton}"
-                                Command="{Binding StopManagerCommand}"/>
-                    </Grid>
-                </Border>
-                <StackPanel x:Name="ManagerPanel" Visibility="Collapsed" Margin="0,4,0,0">
-                    <TextBox x:Name="ManagerChatBox"
-                             Text="{Binding ManagerChatLog, Mode=OneWay}"
-                             Background="{StaticResource BackgroundBrush}"
-                             Foreground="{StaticResource TextBrush}"
-                             CaretBrush="{StaticResource TextBrush}"
-                             BorderBrush="{StaticResource BorderBrush}"
-                             BorderThickness="1"
-                             FontFamily="Cascadia Code,Consolas,Courier New"
-                             FontSize="11"
-                             IsReadOnly="True"
-                             TextWrapping="Wrap"
-                             MaxHeight="200"
-                             VerticalScrollBarVisibility="Auto"/>
-
-                    <TextBlock Text="{Binding ManagerResponse}"
-                               FontSize="11" FontStyle="Italic"
-                               Foreground="{StaticResource AccentBrush}"
-                               TextWrapping="Wrap"
-                               Margin="0,2,0,0"
-                               Visibility="{Binding IsManagerActive, Converter={StaticResource BoolToVis}}"/>
-
-                    <Grid Margin="0,4,0,0"
-                          Visibility="{Binding IsManagerActive, Converter={StaticResource BoolToVis}}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBox Grid.Column="0"
-                                 Text="{Binding ManagerInputText, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="{StaticResource BackgroundBrush}"
-                                 Foreground="{StaticResource TextBrush}"
-                                 CaretBrush="{StaticResource TextBrush}"
-                                 BorderBrush="{StaticResource BorderBrush}"
-                                 FontSize="11" Padding="6,3"
-                                 VerticalContentAlignment="Center"
-                                 KeyDown="ManagerInput_KeyDown"/>
-                        <Button Grid.Column="1" Content="Send"
-                                Padding="8,3" Margin="4,0,0,0"
-                                FontSize="11"
-                                Style="{StaticResource SubTabToolButton}"
-                                Command="{Binding SendManagerMessageCommand}"/>
-                    </Grid>
-                </StackPanel>
 
                 <!-- ================================================ -->
                 <!-- Orchestrator Log (collapsible) -->

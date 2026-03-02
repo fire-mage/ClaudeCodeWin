@@ -100,13 +100,14 @@ public partial class App : Application
             var contextSnapshotService = new ContextSnapshotService();
             var backlogService = new BacklogService();
             backlogService.Load();
+            var teamNotesService = new TeamNotesService();
 
             // Create TabHostViewModel (manages multiple tabs)
             var tabHost = new TabHostViewModel(
                 notificationService, settingsService, settings, gitService,
                 updateService, fileIndexService, chatHistoryService,
                 projectRegistry, contextSnapshotService, usageService,
-                backlogService);
+                backlogService, teamNotesService);
 
             // Determine which project paths to restore (new multi-tab or legacy single)
             var tabPaths = (settings.OpenTabPaths is { Count: > 0 }

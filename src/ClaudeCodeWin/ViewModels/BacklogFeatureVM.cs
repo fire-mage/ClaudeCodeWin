@@ -82,6 +82,44 @@ public class BacklogFeatureVM : ViewModelBase
         set => SetProperty(ref _isReviewInProgress, value);
     }
 
+    // Discussion properties
+    private bool _isDiscussionLoading;
+    public bool IsDiscussionLoading
+    {
+        get => _isDiscussionLoading;
+        set { if (SetProperty(ref _isDiscussionLoading, value)) OnPropertyChanged(nameof(CanDiscuss)); }
+    }
+
+    private bool _isDiscussionOpen;
+    public bool IsDiscussionOpen
+    {
+        get => _isDiscussionOpen;
+        set { if (SetProperty(ref _isDiscussionOpen, value)) OnPropertyChanged(nameof(CanDiscuss)); }
+    }
+
+    private List<DiscussionQuestionVM> _discussionQuestions = [];
+    public List<DiscussionQuestionVM> DiscussionQuestions
+    {
+        get => _discussionQuestions;
+        set => SetProperty(ref _discussionQuestions, value);
+    }
+
+    public bool CanDiscuss => Feature.Status == FeatureStatus.PlanReady
+        && !_isDiscussionLoading && !_isDiscussionOpen;
+
+    private string? _discussionError;
+    public string? DiscussionError
+    {
+        get => _discussionError;
+        set
+        {
+            if (SetProperty(ref _discussionError, value))
+                OnPropertyChanged(nameof(HasDiscussionError));
+        }
+    }
+
+    public bool HasDiscussionError => !string.IsNullOrEmpty(_discussionError);
+
     public string PhaseProgressText
     {
         get
@@ -227,6 +265,10 @@ public class PhaseDisplayItem
     };
 
     public string Title => Phase.Title;
+    public string Plan => Phase.Plan;
+    public bool HasPlan => !string.IsNullOrEmpty(Phase.Plan);
+    public string? AcceptanceCriteria => Phase.AcceptanceCriteria;
+    public bool HasAcceptanceCriteria => !string.IsNullOrEmpty(Phase.AcceptanceCriteria);
 
     public string TimeText
     {

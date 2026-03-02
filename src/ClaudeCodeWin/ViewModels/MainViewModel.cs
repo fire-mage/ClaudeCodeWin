@@ -71,6 +71,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly ContextSnapshotService _contextSnapshotService;
     private readonly UsageService _usageService;
     private readonly BacklogService _backlogService;
+    private readonly TeamNotesService _teamNotesService;
     private TaskRunnerService? _taskRunnerService;
     private Window? _ownerWindow;
 
@@ -387,7 +388,7 @@ public partial class MainViewModel : ViewModelBase
         FileIndexService fileIndexService,
         ChatHistoryService chatHistoryService, ProjectRegistryService projectRegistry,
         ContextSnapshotService contextSnapshotService, UsageService usageService,
-        BacklogService backlogService)
+        BacklogService backlogService, TeamNotesService teamNotesService)
     {
         _cliService = cliService;
         _notificationService = notificationService;
@@ -400,6 +401,7 @@ public partial class MainViewModel : ViewModelBase
         _contextSnapshotService = contextSnapshotService;
         _usageService = usageService;
         _backlogService = backlogService;
+        _teamNotesService = teamNotesService;
 
         SendCommand = new RelayCommand(() => _ = SendMessageAsync());
         CancelCommand = new RelayCommand(() => CancelProcessing(), () => IsProcessing || IsReviewInProgress);

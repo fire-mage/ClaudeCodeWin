@@ -17,6 +17,8 @@ public class AnalyzerService
     private string? _workingDirectory;
     private string? _systemPrompt;
 
+    public TeamNotesService? TeamNotesService { get; set; }
+
     public event Action<string, AnalysisResult>? OnAnalysisComplete; // featureId, result
     public event Action<string, string>? OnQuestionAsked; // featureId, question
     public event Action<string, string>? OnAnalysisError; // featureId, error
@@ -51,7 +53,9 @@ public class AnalyzerService
         var session = new AnalyzerSession
         {
             Cli = cli,
-            FeatureId = feature.Id
+            FeatureId = feature.Id,
+            FeatureTitle = feature.Title ?? feature.RawIdea,
+            ProjectPath = feature.ProjectPath
         };
 
         if (!_sessions.TryAdd(feature.Id, session))
@@ -123,6 +127,8 @@ public class AnalyzerService
         }
     }
 
+    public bool HasActiveSessions => !_sessions.IsEmpty;
+
     public bool IsAnalyzing(string featureId) => _sessions.ContainsKey(featureId);
 
     public string? GetSessionId(string featureId)
@@ -168,6 +174,14 @@ public class AnalyzerService
             var analysisResult = ParseAnalysis(fullText);
             var savedSessionId = session.SessionId;
             analysisResult.SessionId = savedSessionId;
+
+            // Extract notes before firing completion
+            if (TeamNotesService is { } notesService && session.ProjectPath is not null)
+            {
+                var notes = TeamNotesDetector.ExtractNotes(fullText);
+                if (notes.Count > 0)
+                    notesService.AddNotes(session.ProjectPath, "analyzer", featureId, session.FeatureTitle, notes);
+            }
 
             // Only fire event if we still own the session (not stopped externally)
             if (_sessions.TryRemove(featureId, out _))
@@ -285,6 +299,7 @@ public class AnalyzerService
                 Title = root.TryGetProperty("title", out var t) ? t.GetString() : null,
                 Summary = root.TryGetProperty("summary", out var s) ? s.GetString() ?? "" : "",
                 Reason = root.TryGetProperty("reason", out var r) ? r.GetString() : null,
+                DuplicateOf = root.TryGetProperty("duplicateOf", out var dup) && dup.ValueKind == JsonValueKind.String ? dup.GetString() : null,
                 RawText = text
             };
 
@@ -311,6 +326,8 @@ public class AnalyzerService
     {
         public required ClaudeCliService Cli;
         public required string FeatureId;
+        public string? FeatureTitle;
+        public string? ProjectPath;
         public StringBuilder Response = new();
         public string? SessionId;
         public string? PendingRequestId;
@@ -329,6 +346,7 @@ public class AnalysisResult
     public string? Title { get; set; }
     public string Summary { get; set; } = "";
     public string? Reason { get; set; }
+    public string? DuplicateOf { get; set; }
     public List<string> AffectedProjects { get; set; } = [];
     public string? SessionId { get; set; }
     public string RawText { get; set; } = "";

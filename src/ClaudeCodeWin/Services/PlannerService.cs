@@ -12,13 +12,18 @@ namespace ClaudeCodeWin.Services;
 public class PlannerService
 {
     private readonly ConcurrentDictionary<string, PlannerSession> _sessions = new();
+    private readonly ConcurrentDictionary<string, DiscussionSession> _discussionSessions = new();
     private string? _claudeExePath;
     private string? _workingDirectory;
+
+    public TeamNotesService? TeamNotesService { get; set; }
 
     public event Action<string, string, string?, List<BacklogPhase>>? OnPlanReady; // featureId, title, sessionId, phases
     public event Action<string, string>? OnQuestionAsked; // featureId, question
     public event Action<string, string>? OnPlannerError; // featureId, error
     public event Action<string, string>? OnPlannerTextDelta; // featureId, text
+    public event Action<string, PlanDiscussionResult>? OnDiscussionReady; // featureId, result
+    public event Action<string, string>? OnDiscussionError; // featureId, error
 
     public void Configure(string claudeExePath, string? workingDirectory)
     {
@@ -42,7 +47,9 @@ public class PlannerService
         var session = new PlannerSession
         {
             Cli = cli,
-            FeatureId = feature.Id
+            FeatureId = feature.Id,
+            FeatureTitle = feature.Title ?? feature.RawIdea,
+            ProjectPath = feature.ProjectPath
         };
 
         if (!_sessions.TryAdd(feature.Id, session))
@@ -102,7 +109,7 @@ public class PlannerService
     }
 
     /// <summary>
-    /// Stop all active planning sessions.
+    /// Stop all active planning and discussion sessions.
     /// </summary>
     public void StopAll()
     {
@@ -113,6 +120,15 @@ public class PlannerService
             {
                 if (_sessions.TryRemove(key, out var session))
                     session.Cli.StopSession();
+            }
+        }
+
+        while (!_discussionSessions.IsEmpty)
+        {
+            foreach (var key in _discussionSessions.Keys)
+            {
+                if (_discussionSessions.TryRemove(key, out var ds))
+                    ds.Cli.StopSession();
             }
         }
     }
@@ -162,6 +178,14 @@ public class PlannerService
             var fullText = session.Response.ToString();
             var (title, phases) = ParsePlan(fullText);
             var savedSessionId = session.SessionId;
+
+            // Extract notes before firing completion
+            if (TeamNotesService is { } notesService && session.ProjectPath is not null)
+            {
+                var notes = TeamNotesDetector.ExtractNotes(fullText);
+                if (notes.Count > 0)
+                    notesService.AddNotes(session.ProjectPath, "planner", featureId, session.FeatureTitle, notes);
+            }
 
             // Only StopSession if we won the TryRemove race — prevents double-stop
             // when StopPlanning() is called concurrently
@@ -264,6 +288,203 @@ public class PlannerService
     }
 
     /// <summary>
+    /// Start a discussion session for a feature — generates 3-5 questions about the plan.
+    /// Creates a NEW CLI session (not reusing the planner session).
+    /// </summary>
+    public void StartDiscussion(BacklogFeature feature)
+    {
+        var (systemPrompt, userMessage) = TeamPrompts.BuildPlanDiscussionPrompt(feature);
+
+        var cli = new ClaudeCliService
+        {
+            ClaudeExePath = _claudeExePath ?? "claude",
+            WorkingDirectory = feature.ProjectPath ?? _workingDirectory,
+            SystemPrompt = systemPrompt,
+            DangerouslySkipPermissions = false,
+            ModelOverride = TeamPrompts.TeamModelId
+        };
+
+        var ds = new DiscussionSession
+        {
+            Cli = cli,
+            FeatureId = feature.Id
+        };
+
+        if (!_discussionSessions.TryAdd(feature.Id, ds))
+        {
+            cli.StopSession();
+            return;
+        }
+
+        WireDiscussionEvents(ds);
+        cli.SendMessage(userMessage);
+    }
+
+    /// <summary>
+    /// Submit user's answers to discussion questions and refine the plan.
+    /// Creates a new CLI session for refinement.
+    /// </summary>
+    public void SubmitDiscussionAnswers(string featureId, BacklogFeature feature,
+        List<(string question, string answer)> answers)
+    {
+        // Stop any existing discussion session for this feature
+        StopDiscussion(featureId);
+
+        var (systemPrompt, userMessage) = TeamPrompts.BuildPlanRefinementPrompt(feature, answers);
+
+        var cli = new ClaudeCliService
+        {
+            ClaudeExePath = _claudeExePath ?? "claude",
+            WorkingDirectory = feature.ProjectPath ?? _workingDirectory,
+            SystemPrompt = systemPrompt,
+            DangerouslySkipPermissions = false,
+            ModelOverride = TeamPrompts.TeamModelId
+        };
+
+        var ds = new DiscussionSession
+        {
+            Cli = cli,
+            FeatureId = featureId,
+            IsRefinement = true
+        };
+
+        // Use TryAdd — if another refinement is already running, skip
+        if (!_discussionSessions.TryAdd(featureId, ds))
+        {
+            cli.StopSession();
+            return;
+        }
+
+        WireDiscussionEvents(ds);
+        cli.SendMessage(userMessage);
+    }
+
+    /// <summary>
+    /// Stop/cancel the discussion CLI session for a feature.
+    /// </summary>
+    public void StopDiscussion(string featureId)
+    {
+        if (_discussionSessions.TryRemove(featureId, out var ds))
+            ds.Cli.StopSession();
+    }
+
+    public bool IsDiscussing(string featureId) => _discussionSessions.ContainsKey(featureId);
+
+    private void WireDiscussionEvents(DiscussionSession ds)
+    {
+        var cli = ds.Cli;
+        var featureId = ds.FeatureId;
+
+        // No lock needed: OnTextDelta/OnCompleted are sequential on the same stream-reading thread.
+        // StopSession kills the process, preventing further events.
+        cli.OnTextDelta += text => ds.Response.Append(text);
+
+        cli.OnCompleted += result =>
+        {
+            var fullText = ds.Response.ToString();
+
+            // Compare removed session to guard against race with StopDiscussion+StartDiscussion
+            if (_discussionSessions.TryRemove(featureId, out var completedSession))
+            {
+                if (completedSession != ds)
+                    _discussionSessions.TryAdd(featureId, completedSession); // restore new session
+            }
+            // Always clean up our own CLI process (idempotent for already-exited processes)
+            ds.Cli.StopSession();
+
+            if (ds.IsRefinement)
+            {
+                // Parse as a plan (same format as PlannerSystemPrompt)
+                var (title, phases) = ParsePlan(fullText);
+                if (phases.Count > 0)
+                    OnPlanReady?.Invoke(featureId, title, null, phases);
+                else
+                    OnDiscussionError?.Invoke(featureId, "Refinement did not produce a valid plan");
+            }
+            else
+            {
+                // Parse as discussion questions
+                var questions = ParseDiscussionQuestions(fullText);
+                if (questions != null && questions.Questions.Count > 0)
+                    OnDiscussionReady?.Invoke(featureId, questions);
+                else
+                    OnDiscussionError?.Invoke(featureId, "Failed to generate discussion questions");
+            }
+        };
+
+        cli.OnError += error =>
+        {
+            if (_discussionSessions.TryRemove(featureId, out var errorSession))
+            {
+                if (errorSession != ds)
+                    _discussionSessions.TryAdd(featureId, errorSession); // restore new session
+            }
+            ds.Cli.StopSession();
+            OnDiscussionError?.Invoke(featureId, error);
+        };
+
+        // Allow read-only tools only, deny everything else (no AskUserQuestion)
+        cli.OnControlRequest += (requestId, toolName, toolUseId, _) =>
+        {
+            var allowed = toolName is "Read" or "Glob" or "Grep" or "WebFetch" or "WebSearch";
+            cli.SendControlResponse(requestId, allowed ? "allow" : "deny",
+                toolUseId: toolUseId);
+        };
+    }
+
+    /// <summary>
+    /// Parse the discussion response to extract questions with suggested answers.
+    /// </summary>
+    internal static PlanDiscussionResult? ParseDiscussionQuestions(string text)
+    {
+        var jsonText = JsonBlockExtractor.Extract(text, "questions");
+        if (jsonText is null) return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(jsonText);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("questions", out var questionsArr)
+                || questionsArr.ValueKind != JsonValueKind.Array)
+                return null;
+
+            var result = new PlanDiscussionResult();
+            var index = 0;
+
+            foreach (var q in questionsArr.EnumerateArray())
+            {
+                var question = new PlanDiscussionQuestion
+                {
+                    Index = index++,
+                    Question = q.TryGetProperty("question", out var qt)
+                        ? qt.GetString() ?? "" : ""
+                };
+
+                if (q.TryGetProperty("suggestedAnswers", out var sa)
+                    && sa.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var a in sa.EnumerateArray())
+                    {
+                        var answer = a.GetString();
+                        if (!string.IsNullOrEmpty(answer))
+                            question.SuggestedAnswers.Add(answer);
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(question.Question))
+                    result.Questions.Add(question);
+            }
+
+            return result.Questions.Count > 0 ? result : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Parse the planner's response to extract the JSON plan.
     /// Looks for a JSON object with "title" and "phases" keys.
     /// </summary>
@@ -315,11 +536,21 @@ public class PlannerService
     {
         public required ClaudeCliService Cli;
         public required string FeatureId;
+        public string? FeatureTitle;
+        public string? ProjectPath;
         public StringBuilder Response = new();
         public string? SessionId;
         public string? PendingRequestId;
         public string? PendingToolUseId;
         public string? PendingQuestionText;
         public string? PendingQuestionsJson;
+    }
+
+    private class DiscussionSession
+    {
+        public required ClaudeCliService Cli;
+        public required string FeatureId;
+        public StringBuilder Response = new();
+        public bool IsRefinement;
     }
 }

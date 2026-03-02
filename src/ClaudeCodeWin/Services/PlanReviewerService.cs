@@ -16,6 +16,8 @@ public class PlanReviewerService
     private string? _claudeExePath;
     private string? _workingDirectory;
 
+    public TeamNotesService? TeamNotesService { get; set; }
+
     public event Action<string, PlanReviewResult>? OnReviewComplete; // featureId, result
     public event Action<string, string>? OnReviewError; // featureId, error
     public event Action<string, string>? OnReviewTextDelta; // featureId, text
@@ -45,7 +47,9 @@ public class PlanReviewerService
         var session = new ReviewerSession
         {
             Cli = cli,
-            FeatureId = feature.Id
+            FeatureId = feature.Id,
+            FeatureTitle = feature.Title ?? feature.RawIdea,
+            ProjectPath = feature.ProjectPath
         };
 
         if (!_sessions.TryAdd(feature.Id, session))
@@ -142,6 +146,14 @@ public class PlanReviewerService
             var fullText = session.Response.ToString();
             var reviewResult = ParseReview(fullText);
 
+            // Extract notes before firing completion
+            if (TeamNotesService is { } notesService && session.ProjectPath is not null)
+            {
+                var notes = TeamNotesDetector.ExtractNotes(fullText);
+                if (notes.Count > 0)
+                    notesService.AddNotes(session.ProjectPath, "plan-reviewer", featureId, session.FeatureTitle, notes);
+            }
+
             if (_sessions.TryRemove(featureId, out _))
             {
                 session.Cli.StopSession();
@@ -222,6 +234,8 @@ public class PlanReviewerService
     {
         public required ClaudeCliService Cli;
         public required string FeatureId;
+        public string? FeatureTitle;
+        public string? ProjectPath;
         public StringBuilder Response = new();
     }
 }

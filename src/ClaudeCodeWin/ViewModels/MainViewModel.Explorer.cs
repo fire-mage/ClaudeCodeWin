@@ -19,7 +19,6 @@ public partial class MainViewModel
     private AnalyzerService _analyzerService = null!;
     private PlanReviewerService _planReviewerService = null!;
     private TeamOrchestratorService _orchestratorService = null!;
-    private ManagerService _managerService = null!;
 
     public SubTab? ActiveSubTab
     {
@@ -69,30 +68,31 @@ public partial class MainViewModel
         // Wire explorer file open event
         Explorer.OnOpenFile += OpenFileInEditor;
 
-        // Initialize AnalyzerService + PlannerService + OrchestratorService + ManagerService + Team VM
+        // Initialize AnalyzerService + PlannerService + OrchestratorService + Team VM
         _analyzerService = new AnalyzerService();
+        _analyzerService.TeamNotesService = _teamNotesService;
         var analyzerPrompt = TeamPrompts.BuildAnalyzerSystemPrompt(WorkingDirectory, _projectRegistry.Projects);
         _analyzerService.Configure(_cliService.ClaudeExePath, WorkingDirectory, analyzerPrompt);
 
         _plannerService = new PlannerService();
+        _plannerService.TeamNotesService = _teamNotesService;
         _plannerService.Configure(_cliService.ClaudeExePath, WorkingDirectory);
 
         _orchestratorService = new TeamOrchestratorService(_backlogService, _gitService);
+        _orchestratorService.TeamNotesService = _teamNotesService;
         _orchestratorService.Configure(_cliService.ClaudeExePath, WorkingDirectory, _settings);
 
-        _managerService = new ManagerService();
-        _managerService.Configure(_cliService.ClaudeExePath, WorkingDirectory);
-
         _planReviewerService = new PlanReviewerService();
+        _planReviewerService.TeamNotesService = _teamNotesService;
         _planReviewerService.Configure(_cliService.ClaudeExePath, WorkingDirectory);
 
         Team = new TeamViewModel(_backlogService, _gitService,
             () => WorkingDirectory,
             _plannerService, _analyzerService, _planReviewerService,
             _orchestratorService,
-            _notificationService, _managerService,
+            _notificationService,
             new IdeasStorageService(), _projectRegistry,
-            _settingsService, _settings);
+            _settingsService, _settings, _teamNotesService);
         Team.SetTeamTab(teamTab);
 
         // Wire "Ask in Chat" — populate input box and switch to Chat tab
@@ -121,7 +121,6 @@ public partial class MainViewModel
         _plannerService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);
         _planReviewerService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);
         _orchestratorService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);
-        _managerService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);
     }
 
     /// <summary>

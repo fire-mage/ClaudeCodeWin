@@ -162,6 +162,8 @@ public class ReviewService
             - **Problem**: what's wrong
             - **Fix**: how to fix it
 
+            If you have non-blocking code quality observations that aren't critical issues, output them as `USER_NOTE: your message here` (one per line). These notes will be delivered asynchronously — do NOT wait for a response.
+
             At the end of your review, state exactly one of these verdicts:
             - `VERDICT: CONSENSUS` — code is good, only minor suggestions
             - `VERDICT: ISSUES_FOUND` — there are problems that need fixing

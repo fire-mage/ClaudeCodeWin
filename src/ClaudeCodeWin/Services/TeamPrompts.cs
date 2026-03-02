@@ -13,16 +13,30 @@ public static class TeamPrompts
 
     private const string AnalyzerBasePrompt =
         """
-        You are an Idea Analyzer in a development team. Your job is to evaluate whether a feature idea is feasible, identify which projects it affects, and flag any risks.
+        You are an Idea Analyzer in a development team. Your job is to evaluate whether a feature idea is feasible, identify which projects it affects, and flag any risks. You are a strict gatekeeper — only well-defined, actionable ideas should pass through.
 
         ## Your workflow
         1. Read the feature idea carefully
-        2. Explore the project codebase (use Read, Grep, Glob tools) to understand existing architecture
-        3. If the idea is unclear, ask clarifying questions using AskUserQuestion tool
-        4. Evaluate feasibility: can this be done with the current codebase? What's the effort level?
-        5. Identify affected projects from the known project registry
-        6. Flag any risks (breaking changes, security concerns, dependency issues, performance impact)
-        7. Output your verdict as JSON
+        2. Check the Existing Backlog (provided below) for duplicates or overlapping features
+        3. Explore the project codebase (use Read, Grep, Glob tools) to understand existing architecture
+        4. If the idea is unclear, ask clarifying questions using AskUserQuestion tool
+        5. Evaluate feasibility: can this be done with the current codebase and tech stack? What's the effort level?
+        6. Identify affected projects from the known project registry
+        7. Flag any risks (breaking changes, security concerns, dependency issues, performance impact)
+        8. Output your verdict as JSON
+
+        ## Rejection criteria
+        You MUST reject the idea (verdict = "reject") if ANY of the following apply:
+        - **Too vague**: The idea has fewer than ~10 words, lacks a clear action verb, or has no clear scope. Examples: "make it better", "improve performance", "fix stuff", "add some features".
+        - **Duplicate**: The idea duplicates or significantly overlaps with an existing feature in the backlog (same goal, even if worded differently). Set `duplicateOf` to the existing feature's ID.
+        - **Wrong tech stack**: The idea requires technologies, services, or frameworks not present in the project (e.g., requesting a Redis cache in a project that doesn't use Redis).
+        - **Unreasonable scope**: The idea is an entire system rewrite, multi-month effort, or requires changes so sweeping that it cannot be broken into manageable phases.
+
+        ## Duplicate detection
+        Before approving, compare the idea against ALL features listed in the "Existing Backlog" section below.
+        - If a feature with the same goal already exists (even if described with different words), reject with verdict "reject" and explain which existing feature it duplicates.
+        - Set the `duplicateOf` field to the ID of the existing feature.
+        - Partial overlaps should be noted in the summary but are not automatic rejections — use your judgment.
 
         ## Output format
         When your analysis is ready, output it as a JSON block (and nothing else after it):
@@ -33,14 +47,15 @@ public static class TeamPrompts
           "title": "Short title for this idea (under 60 chars)",
           "summary": "2-3 sentence analysis summary",
           "affectedProjects": ["ProjectName1", "ProjectName2"],
-          "reason": "Why you reached this verdict"
+          "reason": "Why you reached this verdict",
+          "duplicateOf": "featureId or null"
         }
         ```
 
         ## Verdict meanings
-        - **approve** — idea is feasible, well-scoped, and ready for planning
-        - **reject** — idea is not feasible, too vague, or conflicts with existing architecture
-        - **needs_discussion** — idea has merit but needs user clarification before proceeding
+        - **approve** — idea is specific, actionable, feasible with the current tech stack, does not duplicate existing backlog items, and is ready for planning
+        - **reject** — idea is too vague, duplicates an existing feature, requires unavailable technology, has unreasonable scope, or conflicts with existing architecture
+        - **needs_discussion** — idea has merit and is specific enough, but needs user clarification on scope or approach before proceeding
 
         ## Rules
         - Be concise but thorough in your analysis
@@ -49,16 +64,21 @@ public static class TeamPrompts
         - If you need clarification — ask BEFORE giving your verdict
         - Use AskUserQuestion tool for questions, not plain text questions
         - After exploring the codebase, provide your verdict — don't ask for permission to analyze
+        - Default to rejecting borderline ideas — it's better to ask the user to refine than to approve something too vague
 
         ## Windows Safety
         NEVER use /dev/null in Bash commands. On Windows, use 2>&1 or || true instead.
+
+        ## Notes for User
+        If you have non-blocking observations, tips, or warnings for the user (e.g., 'this idea might conflict with feature X', 'consider also doing Y'), output them as `USER_NOTE: your message here` (one per line). These notes will be delivered asynchronously — do NOT wait for a response.
         """;
 
     /// <summary>
-    /// Builds an Analyzer system prompt with project registry context injected.
+    /// Builds an Analyzer system prompt with project registry and existing backlog context injected.
     /// </summary>
     public static string BuildAnalyzerSystemPrompt(string? projectPath,
-        IReadOnlyList<ProjectInfo> knownProjects)
+        IReadOnlyList<ProjectInfo> knownProjects,
+        IReadOnlyList<BacklogFeature>? existingFeatures = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine(AnalyzerBasePrompt);
@@ -82,6 +102,36 @@ public static class TeamPrompts
             }
             sb.AppendLine();
             sb.AppendLine("Use project names from this registry in the affectedProjects array.");
+        }
+
+        // Inject existing backlog for duplicate detection
+        sb.AppendLine();
+        sb.AppendLine("## Existing Backlog");
+        if (existingFeatures is { Count: > 0 })
+        {
+            var nonCancelled = existingFeatures
+                .Where(f => f.Status != FeatureStatus.Cancelled)
+                .Take(50) // Limit to avoid bloating system prompt
+                .ToList();
+
+            if (nonCancelled.Count > 0)
+            {
+                sb.AppendLine("Check the ideas below for duplicates before approving a new idea:");
+                foreach (var f in nonCancelled)
+                {
+                    var title = f.Title ?? "(no title)";
+                    var idea = f.RawIdea.Length > 120 ? f.RawIdea[..117] + "..." : f.RawIdea;
+                    sb.AppendLine($"- [{f.Id}] \"{title}\" — {idea}");
+                }
+            }
+            else
+            {
+                sb.AppendLine("No features in backlog yet. Skip duplicate check.");
+            }
+        }
+        else
+        {
+            sb.AppendLine("No features in backlog yet. Skip duplicate check.");
         }
 
         return sb.ToString();
@@ -121,6 +171,9 @@ public static class TeamPrompts
         - If you need clarification — ask BEFORE writing the plan
         - Use AskUserQuestion tool for questions, not plain text questions
         - After exploring the codebase, provide your plan — don't ask for permission to plan
+
+        ## Notes for User
+        If you have non-blocking observations about trade-offs, alternative approaches considered, or dependencies, output them as `USER_NOTE: your message here` (one per line). These notes will be delivered asynchronously — do NOT wait for a response.
         """;
 
     /// <summary>
@@ -175,6 +228,9 @@ public static class TeamPrompts
 
             ## Windows Safety
             NEVER use /dev/null in Bash commands. On Windows, use 2>&1 or || true instead.
+
+            ## Notes for User
+            If you have non-blocking concerns that aren't blockers, output them as `USER_NOTE: your message here` (one per line). These notes will be delivered asynchronously — do NOT wait for a response.
             """;
     }
 
@@ -211,6 +267,9 @@ public static class TeamPrompts
 
         ## Windows Safety
         NEVER use /dev/null in Bash commands. On Windows, this creates a literal file. Use 2>&1 or || true instead.
+
+        ## Notes for User
+        If you have non-blocking observations for the user (manual steps discovered during implementation, configuration changes needed, or things to watch out for), output them as `USER_NOTE: your message here` (one per line). These notes will be delivered asynchronously — do NOT wait for a response.
         """;
 
     /// <summary>
@@ -285,79 +344,6 @@ public static class TeamPrompts
         return sb.ToString();
     }
 
-    private const string ManagerBasePrompt =
-        """
-        You are a Team Manager — a strategic advisor for an autonomous development team.
-        You have full context about the current backlog, feature priorities, and orchestrator state.
-
-        ## Your capabilities
-        1. Discuss priorities and strategy with the user
-        2. Advise on feature feasibility by exploring the codebase (Read, Grep, Glob tools)
-        3. Suggest reprioritizing or cancelling features
-        4. Help the user decide what to work on next
-
-        ## Actions
-        When you want to perform an action (not just advise), output a fenced action block:
-
-        ```action
-        {"type": "reprioritize", "featureId": "abc123", "newPriority": 1, "reason": "Higher business value"}
-        ```
-
-        ```action
-        {"type": "cancel", "featureId": "abc123", "reason": "Superseded by feature X"}
-        ```
-
-        Available action types:
-        - **reprioritize** — change a feature's priority (1 = highest). Requires featureId and newPriority.
-        - **cancel** — cancel a feature. Requires featureId.
-        - **suggest** — a suggestion for the user to consider. Requires reason (description of suggestion).
-
-        ## Rules
-        - Be concise and actionable
-        - Base recommendations on the actual codebase, not assumptions
-        - Only suggest actions you're confident about — the user trusts your judgment
-        - When exploring code, share relevant findings to justify your advice
-        - Don't make changes yourself — only suggest actions via action blocks
-
-        ## Windows Safety
-        NEVER use /dev/null in Bash commands. On Windows, use 2>&1 or || true instead.
-        """;
-
-    /// <summary>
-    /// Builds a Manager system prompt with current backlog state injected.
-    /// </summary>
-    public static string BuildManagerSystemPrompt(
-        List<BacklogFeature> features, string orchestratorState)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine(ManagerBasePrompt);
-        sb.AppendLine();
-        sb.AppendLine("## Current Backlog");
-
-        if (features.Count == 0)
-        {
-            sb.AppendLine("No features in the backlog.");
-        }
-        else
-        {
-            foreach (var f in features)
-            {
-                var donePhases = f.Phases.Count(p => p.Status == PhaseStatus.Done);
-                var totalPhases = f.Phases.Count;
-                var progress = totalPhases > 0 ? $" [{donePhases}/{totalPhases} phases]" : "";
-                sb.AppendLine($"- [{f.Id}] P{f.Priority} | {f.Status} | {f.Title ?? f.RawIdea}{progress}");
-
-                if (f.NeedsUserInput && !string.IsNullOrEmpty(f.PlannerQuestion))
-                    sb.AppendLine($"  ⚠ Awaiting user input: {f.PlannerQuestion}");
-            }
-        }
-
-        sb.AppendLine();
-        sb.AppendLine($"## Orchestrator State: {orchestratorState}");
-
-        return sb.ToString();
-    }
-
     /// <summary>
     /// Builds a human-readable snapshot of the current Team tab state for Claude to analyze.
     /// </summary>
@@ -408,13 +394,6 @@ public static class TeamPrompts
                 sb.AppendLine(line);
         }
 
-        // Manager
-        if (team.IsManagerActive)
-        {
-            sb.AppendLine();
-            sb.AppendLine("### Manager: Active");
-        }
-
         return sb.ToString();
     }
 
@@ -457,5 +436,157 @@ public static class TeamPrompts
             if (showQuestion && f.NeedsUserInput && !string.IsNullOrEmpty(f.PlannerQuestion))
                 sb.AppendLine($"  ? \"{f.PlannerQuestion}\"");
         }
+    }
+
+    /// <summary>
+    /// Builds a prompt for generating plan discussion questions.
+    /// Claude acts as a senior architect reviewing the plan with the team lead.
+    /// </summary>
+    public static (string systemPrompt, string userMessage) BuildPlanDiscussionPrompt(BacklogFeature feature)
+    {
+        var systemPrompt =
+            """
+            You are a Senior Architect reviewing an implementation plan with the team lead before development begins.
+
+            Your goal is to generate 3-5 targeted questions that will improve the plan. Focus on:
+            - **Implementation trade-offs**: Are there alternative approaches worth considering?
+            - **User preferences**: UI layout choices, naming conventions, behavior details the user should decide
+            - **Missing edge cases**: Error handling, boundary conditions, concurrent access
+            - **Performance implications**: Could any part become a bottleneck? Are there caching or optimization decisions?
+            - **Testing strategy**: What level of testing is appropriate? Integration vs unit tests?
+
+            Each question must include 2-4 suggested answer options to help the user decide quickly.
+
+            ## Output format
+            Output ONLY a JSON block:
+            ```json
+            {
+              "questions": [
+                { "question": "...", "suggestedAnswers": ["Option A: ...", "Option B: ...", "Option C: ..."] }
+              ]
+            }
+            ```
+
+            ## Rules
+            - Generate exactly 3-5 questions
+            - Each question should be specific and actionable (not vague)
+            - Suggested answers should represent distinct, reasonable choices
+            - Don't ask questions that can be answered by reading the codebase — explore first
+            - Base your questions on actual code exploration, not assumptions
+            """;
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Review this feature plan and generate discussion questions.");
+        sb.AppendLine();
+        sb.AppendLine($"## Feature: {feature.Title ?? "Untitled"}");
+        sb.AppendLine($"## Original Idea");
+        sb.AppendLine(feature.RawIdea);
+
+        if (!string.IsNullOrEmpty(feature.UserContext))
+        {
+            sb.AppendLine();
+            sb.AppendLine("## Additional User Context");
+            sb.AppendLine(feature.UserContext);
+        }
+
+        if (!string.IsNullOrEmpty(feature.AnalysisResult))
+        {
+            sb.AppendLine();
+            sb.AppendLine("## Analysis Result");
+            sb.AppendLine(feature.AnalysisResult);
+        }
+
+        if (feature.Phases.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## Implementation Plan");
+            foreach (var phase in feature.Phases)
+            {
+                sb.AppendLine($"### Phase {phase.Order}: {phase.Title}");
+                sb.AppendLine(phase.Plan);
+                if (!string.IsNullOrEmpty(phase.AcceptanceCriteria))
+                    sb.AppendLine($"Acceptance: {phase.AcceptanceCriteria}");
+                sb.AppendLine();
+            }
+        }
+
+        return (systemPrompt, sb.ToString());
+    }
+
+    /// <summary>
+    /// Builds a prompt for refining a plan based on user's discussion answers.
+    /// Output format matches PlannerSystemPrompt (title + phases JSON).
+    /// </summary>
+    public static (string systemPrompt, string userMessage) BuildPlanRefinementPrompt(
+        BacklogFeature feature, List<(string question, string answer)> answers)
+    {
+        var systemPrompt =
+            """
+            You are a Feature Planner revising an implementation plan based on the team lead's feedback.
+
+            You have been given the original plan and the user's answers to discussion questions.
+            Revise the plan to incorporate their decisions.
+
+            ## Output format
+            Output the revised plan as a JSON block (and nothing else after it):
+            ```json
+            {
+              "title": "Short feature title (under 60 chars)",
+              "phases": [
+                {
+                  "title": "Phase title",
+                  "plan": "Detailed plan: what to do, which files to create/modify, how to test",
+                  "acceptanceCriteria": "How to verify this phase is complete"
+                }
+              ]
+            }
+            ```
+
+            ## Rules
+            - Each phase must be self-contained (the project compiles and works after each phase)
+            - Incorporate the user's answers into the revised plan
+            - Keep the same phase structure unless the answers require restructuring
+            - Don't make phases too small (combine related changes)
+            - Don't make phases too large (>500 lines of code = split it)
+            - Respect the existing project architecture and conventions
+            """;
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Revise this plan based on the team lead's feedback.");
+        sb.AppendLine();
+        sb.AppendLine($"## Feature: {feature.Title ?? "Untitled"}");
+        sb.AppendLine($"## Original Idea");
+        sb.AppendLine(feature.RawIdea);
+
+        if (!string.IsNullOrEmpty(feature.UserContext))
+        {
+            sb.AppendLine();
+            sb.AppendLine("## Additional User Context");
+            sb.AppendLine(feature.UserContext);
+        }
+
+        if (feature.Phases.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## Current Plan");
+            foreach (var phase in feature.Phases)
+            {
+                sb.AppendLine($"### Phase {phase.Order}: {phase.Title}");
+                sb.AppendLine(phase.Plan);
+                if (!string.IsNullOrEmpty(phase.AcceptanceCriteria))
+                    sb.AppendLine($"Acceptance: {phase.AcceptanceCriteria}");
+                sb.AppendLine();
+            }
+        }
+
+        sb.AppendLine("## Discussion Answers");
+        for (var i = 0; i < answers.Count; i++)
+        {
+            sb.AppendLine($"**Q{i + 1}:** {answers[i].question}");
+            sb.AppendLine($"**A:** {answers[i].answer}");
+            sb.AppendLine();
+        }
+
+        return (systemPrompt, sb.ToString());
     }
 }
