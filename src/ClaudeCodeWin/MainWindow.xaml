@@ -185,15 +185,22 @@
                                             </Border>
                                         </Grid>
 
-                                        <!-- Compact mode: rotated vertical text -->
-                                        <StackPanel x:Name="CompactModeLayout"
-                                                    HorizontalAlignment="Center"
-                                                    VerticalAlignment="Center"
-                                                    Visibility="{Binding DataContext.IsTabPanelCompact,
-                                                                 RelativeSource={RelativeSource AncestorType=Window},
-                                                                 Converter={StaticResource BoolToVis}}">
+                                        <!-- Compact mode: rotated vertical text.
+                                             Uses Grid (not StackPanel) so the title row gets a FINITE height constraint.
+                                             A vertical StackPanel gives children infinite height, and WPF's
+                                             LayoutTransform inverse rotation mishandles infinity — causing the
+                                             TextBlock to be constrained by the narrow panel width (~33px) instead. -->
+                                        <Grid x:Name="CompactModeLayout"
+                                              Visibility="{Binding DataContext.IsTabPanelCompact,
+                                                           RelativeSource={RelativeSource AncestorType=Window},
+                                                           Converter={StaticResource BoolToVis}}">
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="*"/>
+                                            </Grid.RowDefinitions>
                                             <!-- Close button -->
-                                            <Border Padding="4,2" Cursor="Hand"
+                                            <Border Grid.Row="0" Padding="4,2" Cursor="Hand"
                                                     Background="Transparent" HorizontalAlignment="Center"
                                                     MouseLeftButtonUp="TabClose_Click" Tag="{Binding}">
                                                 <TextBlock Text="x" FontSize="9"
@@ -201,7 +208,7 @@
                                                            HorizontalAlignment="Center"/>
                                             </Border>
                                             <!-- Status dots -->
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                                            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center"
                                                         Margin="0,0,0,4">
                                                 <Ellipse Width="5" Height="5" Margin="0,0,2,0"
                                                          Fill="{StaticResource PrimaryBrush}"
@@ -210,16 +217,18 @@
                                                          Fill="{StaticResource SuccessBrush}"
                                                          Visibility="{Binding HasNotification, Converter={StaticResource BoolToVis}}"/>
                                             </StackPanel>
-                                            <!-- Rotated title -->
-                                            <TextBlock Text="{Binding TabTitle}" FontSize="11"
+                                            <!-- Rotated title — the * row gives a finite height,
+                                                 which after inverse -90° rotation becomes the TextBlock's available width -->
+                                            <TextBlock Grid.Row="2" Text="{Binding TabTitle}" FontSize="11"
                                                        Foreground="{StaticResource TextBrush}"
                                                        TextTrimming="CharacterEllipsis"
-                                                       MaxWidth="400">
+                                                       VerticalAlignment="Center"
+                                                       HorizontalAlignment="Center">
                                                 <TextBlock.LayoutTransform>
                                                     <RotateTransform Angle="-90"/>
                                                 </TextBlock.LayoutTransform>
                                             </TextBlock>
-                                        </StackPanel>
+                                        </Grid>
                                     </Grid>
                                 </Border>
                                 <DataTemplate.Triggers>
