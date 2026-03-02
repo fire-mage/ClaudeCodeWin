@@ -17,6 +17,15 @@ public class BacklogService
 
     private readonly object _lock = new();
     private List<BacklogFeature> _features = [];
+    private FileSystemWatcher? _watcher;
+    private bool _isSaving;
+    private DateTime _lastExternalReload = DateTime.MinValue;
+
+    /// <summary>
+    /// Fired when backlog.json is modified externally (e.g. by Claude writing to the file).
+    /// Subscribers should refresh their UI. Raised on a background thread.
+    /// </summary>
+    public event Action? OnExternalChange;
 
     public void Load()
     {
@@ -25,6 +34,7 @@ public class BacklogService
             if (!File.Exists(BacklogPath))
             {
                 _features = [];
+                StartFileWatcher();
                 return;
             }
 
@@ -42,6 +52,47 @@ public class BacklogService
                 _features = [];
             }
         }
+
+        StartFileWatcher();
+    }
+
+    private void StartFileWatcher()
+    {
+        _watcher?.Dispose();
+        Directory.CreateDirectory(BacklogDir);
+
+        _watcher = new FileSystemWatcher(BacklogDir, "backlog.json")
+        {
+            NotifyFilter = NotifyFilters.LastWrite,
+            EnableRaisingEvents = true
+        };
+        _watcher.Changed += OnFileChanged;
+    }
+
+    private void OnFileChanged(object sender, FileSystemEventArgs e)
+    {
+        if (_isSaving) return;
+
+        // Debounce: ignore rapid successive changes
+        var now = DateTime.Now;
+        if ((now - _lastExternalReload).TotalMilliseconds < 500) return;
+        _lastExternalReload = now;
+
+        lock (_lock)
+        {
+            try
+            {
+                var json = File.ReadAllText(BacklogPath);
+                var migrated = MigrateJson(json);
+                _features = JsonSerializer.Deserialize<List<BacklogFeature>>(migrated, JsonDefaults.ReadOptions) ?? [];
+            }
+            catch
+            {
+                return; // File might be mid-write
+            }
+        }
+
+        OnExternalChange?.Invoke();
     }
 
     /// <summary>
@@ -61,9 +112,17 @@ public class BacklogService
 
     private void SaveLocked()
     {
-        Directory.CreateDirectory(BacklogDir);
-        var json = JsonSerializer.Serialize(_features, JsonDefaults.Options);
-        File.WriteAllText(BacklogPath, json);
+        _isSaving = true;
+        try
+        {
+            Directory.CreateDirectory(BacklogDir);
+            var json = JsonSerializer.Serialize(_features, JsonDefaults.Options);
+            File.WriteAllText(BacklogPath, json);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
     }
 
     public List<BacklogFeature> GetFeatures(string? projectPath = null)

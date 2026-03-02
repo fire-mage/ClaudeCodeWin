@@ -196,6 +196,12 @@ public class TeamViewModel : ViewModelBase, IDisposable
         _settingsService = settingsService;
         _settings = settings;
 
+        _backlogService.OnExternalChange += () => RunOnUI(() =>
+        {
+            Refresh();
+            _orchestratorService.NotifyNewWork();
+        });
+
         _isOrchestratorStopped = orchestratorService.State == OrchestratorState.Stopped;
         _orchestratorStatusText = orchestratorService.State switch
         {
