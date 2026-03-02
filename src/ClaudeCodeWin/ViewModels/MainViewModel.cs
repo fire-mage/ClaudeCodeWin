@@ -50,6 +50,15 @@ public partial class MainViewModel : ViewModelBase
         ## Windows Shell Safety
         **NEVER** use `/dev/null` in Bash commands (e.g. `2>/dev/null`, `> /dev/null`). On Windows, this creates a literal file named `nul` which can break cloud sync (OneDrive, Dropbox, etc.). Use `2>&1` to merge streams, or `|| true` to suppress errors.
 
+        ## Sending tasks to Team tab
+        To delegate a task to the Team pipeline for autonomous development, include a fenced code block with language tag `team-task` containing JSON:
+        - `rawIdea` (required): Full task description — self-contained, the developer agent won't have chat context
+        - `priority` (optional, default 100): Lower number = higher priority
+        - Multiple tasks = multiple blocks in one message
+        - Tasks are auto-parsed, added to backlog, and planning starts immediately
+        - Include: what to change, why, affected files/services, constraints
+        - One task = one logical change (don't merge unrelated features)
+
         ## Important rules
         - When editing tasks.json or scripts.json, the format is a JSON array with camelCase keys. After editing, remind the user to click "Reload Scripts" in the menu.
         - When you finish a task, write a brief summary of what was done and end with a completion word (e.g. "Done", "Готово") on a separate final line. Separate the summary from the working process with a horizontal rule (---). The app renders this section as a styled summary panel.

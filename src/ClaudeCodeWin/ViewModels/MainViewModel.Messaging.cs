@@ -338,7 +338,59 @@ public partial class MainViewModel
             {
                 _currentAssistantMessage.IsStreaming = false;
                 _currentAssistantMessage.IsThinking = false;
+
+                // Detect ```team-task blocks BEFORE ExtractCompletionSummary
+                // (summary extraction removes text after ---, which could contain task blocks)
+                List<FeatureProposalDetector.FeatureProposal>? teamProposals = null;
+                if (!string.IsNullOrEmpty(WorkingDirectory))
+                {
+                    var (cleaned, proposals) = FeatureProposalDetector.Extract(_currentAssistantMessage.Text);
+                    if (proposals.Count > 0)
+                    {
+                        _currentAssistantMessage.Text = cleaned;
+                        teamProposals = proposals;
+                    }
+                }
+
                 _currentAssistantMessage.ExtractCompletionSummary();
+
+                // Add detected features to backlog off the UI thread
+                if (teamProposals is not null)
+                {
+                    var wd = WorkingDirectory!;
+                    var total = teamProposals.Count;
+                    _ = Task.Run(() =>
+                    {
+                        var succeeded = 0;
+                        foreach (var p in teamProposals)
+                        {
+                            try
+                            {
+                                var feature = _backlogService.AddFeature(wd, p.RawIdea);
+                                if (p.Priority != 100)
+                                    _backlogService.ModifyFeature(feature.Id, f => f.Priority = p.Priority);
+                                _plannerService.StartPlanning(feature);
+                                succeeded++;
+                            }
+                            catch (Exception ex)
+                            {
+                                DiagnosticLogger.Log("TEAM_TASK_ERROR",
+                                    $"Failed to add task: {ex.Message}");
+                            }
+                        }
+                        return succeeded;
+                    }).ContinueWith(t => RunOnUI(() =>
+                    {
+                        var ok = t.IsFaulted ? 0 : t.Result;
+                        if (ok > 0) Team.Refresh();
+                        var msg = ok == total
+                            ? $"{ok} task(s) sent to Team pipeline"
+                            : ok > 0
+                                ? $"{ok}/{total} task(s) sent to Team pipeline ({total - ok} failed)"
+                                : $"Failed to send tasks to Team";
+                        Messages.Add(new MessageViewModel(MessageRole.System, msg));
+                    }), TaskScheduler.Default);
+                }
             }
 
             _currentAssistantMessage = null;
