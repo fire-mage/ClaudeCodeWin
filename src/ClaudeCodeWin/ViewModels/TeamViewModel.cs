@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Media;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Windows;
 using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
@@ -15,23 +14,17 @@ public class TeamViewModel : ViewModelBase, IDisposable
     private readonly GitService _gitService;
     private readonly Func<string?> _getProjectPath;
     private readonly PlannerService _plannerService;
-    private readonly AnalyzerService _analyzerService;
     private readonly PlanReviewerService _planReviewerService;
     private readonly TeamOrchestratorService _orchestratorService;
     private readonly NotificationService _notificationService;
-    private readonly IdeasStorageService _ideasStorageService;
     private readonly ProjectRegistryService _projectRegistry;
     private readonly SettingsService _settingsService;
     private readonly AppSettings _settings;
-    private readonly TeamNotesService _teamNotesService;
     private SubTab? _teamTab;
     private string _orchestratorStatusText = "Stopped";
     private bool _isOrchestratorStopped = true;
     private string _orchestratorLog = "";
     private bool _showArchive;
-    private int _unreadNotesCount;
-    private bool _showNotesPanel;
-    private string? _notesLoadedForProject;
 
     // Live chat viewer state
     private string? _activeDevelopingFeatureId;
@@ -44,8 +37,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
     private System.Windows.Threading.DispatcherTimer? _chatFlushTimer;
     private bool _chatBufferDirty;
 
-    // Pipeline collections (6 sections, Ideas is IdeasText)
-    public ObservableCollection<BacklogFeatureVM> AnalyzingFeatures { get; } = [];
+    // Pipeline collections
     public ObservableCollection<BacklogFeatureVM> PlanningFeatures { get; } = [];
     public ObservableCollection<BacklogFeatureVM> AwaitingApprovalFeatures { get; } = [];
     public ObservableCollection<BacklogFeatureVM> BacklogFeatures { get; } = [];
@@ -81,40 +73,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<BacklogFeatureVM> ArchivedFeatures { get; } = [];
     public int ArchivedCount => ArchivedFeatures.Count;
-
-    // Notes panel
-    public ObservableCollection<TeamNoteVM> Notes { get; } = [];
-
-    public int UnreadNotesCount
-    {
-        get => _unreadNotesCount;
-        private set => SetProperty(ref _unreadNotesCount, value);
-    }
-
-    public bool ShowNotesPanel
-    {
-        get => _showNotesPanel;
-        set
-        {
-            if (SetProperty(ref _showNotesPanel, value) && value)
-            {
-                var projectPath = _getProjectPath();
-                if (!string.IsNullOrEmpty(projectPath))
-                {
-                    // Re-create VMs to refresh relative timestamps
-                    _notesLoadedForProject = null;
-                    LoadNotes();
-
-                    // Mark all visible notes as read when panel opens (skip IO if nothing to mark)
-                    if (UnreadNotesCount > 0)
-                    {
-                        _teamNotesService.MarkAllRead(projectPath);
-                        UnreadNotesCount = 0;
-                    }
-                }
-            }
-        }
-    }
 
     public bool ShowArchive
     {
@@ -158,100 +116,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
     /// </summary>
     public event Action<string>? OnAskInChat;
 
-    private string _ideasText = "";
-    private System.Windows.Threading.DispatcherTimer? _ideasSaveTimer;
-    private string? _ideasPendingText;
-    private string? _ideasPendingProject;
-    private string? _ideasLoadedForProject;
-    private string _ideasSaveStatus = "";
-
-    public string IdeasText
-    {
-        get => _ideasText;
-        set
-        {
-            if (SetProperty(ref _ideasText, value))
-            {
-                IdeasSaveStatus = "Unsaved";
-                DebounceSaveIdeas();
-                SubmitIdeasCommand.RaiseCanExecuteChanged();
-            }
-        }
-    }
-
-    public string IdeasSaveStatus
-    {
-        get => _ideasSaveStatus;
-        private set => SetProperty(ref _ideasSaveStatus, value);
-    }
-
-    public bool HasProjectLoaded => !string.IsNullOrEmpty(_ideasLoadedForProject);
-
-    private void DebounceSaveIdeas()
-    {
-        _ideasPendingText = _ideasText;
-        _ideasPendingProject = _ideasLoadedForProject;
-        if (_ideasSaveTimer == null)
-        {
-            _ideasSaveTimer = new System.Windows.Threading.DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(2)
-            };
-            _ideasSaveTimer.Tick += OnIdeasSaveTimerTick;
-        }
-        _ideasSaveTimer.Stop();
-        _ideasSaveTimer.Start();
-    }
-
-    private void OnIdeasSaveTimerTick(object? sender, EventArgs e)
-    {
-        _ideasSaveTimer?.Stop();
-        if (!string.IsNullOrEmpty(_ideasPendingProject) && _ideasPendingText != null)
-        {
-            _ideasStorageService.Save(_ideasPendingProject, _ideasPendingText);
-            if (_ideasText == _ideasPendingText)
-                IdeasSaveStatus = "Saved \u2713";
-        }
-    }
-
-    private void SaveIdeasNow()
-    {
-        _ideasSaveTimer?.Stop();
-        _ideasSaveTimer = null;
-        var project = _ideasLoadedForProject;
-        if (!string.IsNullOrEmpty(project))
-        {
-            _ideasStorageService.Save(project, _ideasText);
-            IdeasSaveStatus = "Saved \u2713";
-        }
-    }
-
-    private void LoadIdeas()
-    {
-        var project = _getProjectPath();
-        if (string.IsNullOrEmpty(project)) return;
-        if (string.Equals(_ideasLoadedForProject, project, StringComparison.OrdinalIgnoreCase)) return;
-
-        // Flush pending save for the previous project before switching
-        if (_ideasSaveTimer != null)
-        {
-            _ideasSaveTimer.Stop();
-            _ideasSaveTimer = null;
-            if (!string.IsNullOrEmpty(_ideasLoadedForProject))
-                _ideasStorageService.Save(_ideasLoadedForProject, _ideasText);
-        }
-
-        _ideasLoadedForProject = project;
-        OnPropertyChanged(nameof(HasProjectLoaded));
-        var doc = _ideasStorageService.Load(project);
-        _ideasText = doc.Text;
-        IdeasSaveStatus = string.IsNullOrEmpty(_ideasText) ? "" : "Saved \u2713";
-        OnPropertyChanged(nameof(IdeasText));
-        SubmitIdeasCommand.RaiseCanExecuteChanged();
-    }
-
     // Section counts for badge binding
-    public int AnalyzingCount => AnalyzingFeatures.Count;
     public int PlanningCount => PlanningFeatures.Count;
     public int ApprovalCount => AwaitingApprovalFeatures.Count;
     public int BacklogCount => BacklogFeatures.Count;
@@ -276,17 +141,10 @@ public class TeamViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _orchestratorLog, value);
     }
 
-    public RelayCommand SubmitIdeasCommand { get; }
-    public RelayCommand SaveIdeasCommand { get; }
-    public RelayCommand ClearIdeasCommand { get; }
     public RelayCommand DeleteFeatureCommand { get; }
     public RelayCommand CancelFeatureCommand { get; }
     public RelayCommand RefreshCommand { get; }
     public RelayCommand AnswerQuestionCommand { get; }
-    public RelayCommand ApproveAnalysisCommand { get; }
-    public RelayCommand RejectAnalysisCommand { get; }
-    public RelayCommand SendToPlanningCommand { get; }
-    public RelayCommand AnswerAnalysisCommand { get; }
     public RelayCommand StartOrchestratorCommand { get; }
     public RelayCommand PauseOrchestratorCommand { get; }
     public RelayCommand HardPauseOrchestratorCommand { get; }
@@ -306,10 +164,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
     public RelayCommand DiscussPlanCommand { get; }
     public RelayCommand SubmitDiscussionCommand { get; }
     public RelayCommand CancelDiscussionCommand { get; }
-    public RelayCommand ToggleNotesPanelCommand { get; }
-    public RelayCommand DismissNoteCommand { get; }
-    public RelayCommand MarkAllReadCommand { get; }
-
     public bool AutoApprovePlans
     {
         get => _settings.AutoApprovePlans;
@@ -324,27 +178,23 @@ public class TeamViewModel : ViewModelBase, IDisposable
 
     public TeamViewModel(BacklogService backlogService, GitService gitService,
         Func<string?> getProjectPath,
-        PlannerService plannerService, AnalyzerService analyzerService,
+        PlannerService plannerService,
         PlanReviewerService planReviewerService,
         TeamOrchestratorService orchestratorService,
         NotificationService notificationService,
-        IdeasStorageService ideasStorageService, ProjectRegistryService projectRegistry,
-        SettingsService settingsService, AppSettings settings,
-        TeamNotesService teamNotesService)
+        ProjectRegistryService projectRegistry,
+        SettingsService settingsService, AppSettings settings)
     {
         _backlogService = backlogService;
         _gitService = gitService;
         _getProjectPath = getProjectPath;
         _plannerService = plannerService;
-        _analyzerService = analyzerService;
         _planReviewerService = planReviewerService;
         _orchestratorService = orchestratorService;
         _notificationService = notificationService;
-        _ideasStorageService = ideasStorageService;
         _projectRegistry = projectRegistry;
         _settingsService = settingsService;
         _settings = settings;
-        _teamNotesService = teamNotesService;
 
         _isOrchestratorStopped = orchestratorService.State == OrchestratorState.Stopped;
         _orchestratorStatusText = orchestratorService.State switch
@@ -356,25 +206,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
             OrchestratorState.WaitingForWork => "Idle",
             _ => orchestratorService.State.ToString()
         };
-
-        SubmitIdeasCommand = new RelayCommand(ExecuteSubmitIdeas,
-            () => !string.IsNullOrWhiteSpace(_ideasText)
-                  && !string.IsNullOrEmpty(_ideasLoadedForProject));
-
-        SaveIdeasCommand = new RelayCommand(SaveIdeasNow,
-            () => !string.IsNullOrEmpty(_ideasLoadedForProject));
-
-        ClearIdeasCommand = new RelayCommand(() =>
-        {
-            if (string.IsNullOrWhiteSpace(_ideasText)) return;
-            var result = MessageBox.Show("Clear all ideas?", "Confirm",
-                MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (result != MessageBoxResult.Yes) return;
-            _ideasText = "";
-            OnPropertyChanged(nameof(IdeasText));
-            SubmitIdeasCommand.RaiseCanExecuteChanged();
-            SaveIdeasNow();
-        });
 
         DeleteFeatureCommand = new RelayCommand(p =>
         {
@@ -397,12 +228,10 @@ public class TeamViewModel : ViewModelBase, IDisposable
                     MessageBoxImage.Warning);
                 if (result == MessageBoxResult.Yes)
                 {
-                    _analyzerService.StopAnalysis(vm.Id);
                     _plannerService.StopPlanning(vm.Id);
                     _plannerService.StopDiscussion(vm.Id);
                     _backlogService.DeleteFeature(vm.Id);
                     Refresh();
-                    TryStartNextAnalysis();
                 }
             }
         });
@@ -411,12 +240,10 @@ public class TeamViewModel : ViewModelBase, IDisposable
         {
             if (p is BacklogFeatureVM vm)
             {
-                _analyzerService.StopAnalysis(vm.Id);
                 _plannerService.StopPlanning(vm.Id);
                 _plannerService.StopDiscussion(vm.Id);
                 _backlogService.MarkFeatureStatus(vm.Id, FeatureStatus.Cancelled);
                 Refresh();
-                TryStartNextAnalysis();
             }
         });
 
@@ -426,10 +253,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
         {
             if (p is BacklogFeatureVM vm && !string.IsNullOrWhiteSpace(vm.AnswerText))
             {
-                // Guard: analysis questions handled by AnswerAnalysisCommand
-                if (vm.Feature.AwaitingReason == AwaitingUserReason.AnalysisQuestion)
-                    return;
-
                 // Guard: discussion questions handled by dedicated UI (not the planner answer box)
                 if (vm.IsDiscussionOpen || vm.IsDiscussionLoading)
                     return;
@@ -467,99 +290,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
                         .FirstOrDefault(f => f.Id == vm.Id);
                     if (feature is not null)
                         _plannerService.StartPlanning(feature);
-                }
-
-                Refresh();
-            }
-        });
-
-        // Analysis commands
-        ApproveAnalysisCommand = new RelayCommand(p =>
-        {
-            if (p is BacklogFeatureVM vm)
-            {
-                _analyzerService.StopAnalysis(vm.Id);
-                _backlogService.ModifyFeature(vm.Id, f =>
-                {
-                    f.Status = FeatureStatus.AnalysisDone;
-                    f.NeedsUserInput = false;
-                    f.PlannerQuestion = null;
-                    f.AwaitingReason = null;
-                });
-                Refresh();
-                TryStartNextAnalysis();
-            }
-        });
-
-        RejectAnalysisCommand = new RelayCommand(p =>
-        {
-            if (p is BacklogFeatureVM vm)
-            {
-                _analyzerService.StopAnalysis(vm.Id);
-                _backlogService.ModifyFeature(vm.Id, f =>
-                {
-                    f.Status = FeatureStatus.AnalysisRejected;
-                    f.RejectionReason = "Rejected by user";
-                    f.NeedsUserInput = false;
-                    f.PlannerQuestion = null;
-                    f.AwaitingReason = null;
-                });
-                Refresh();
-                TryStartNextAnalysis();
-            }
-        });
-
-        SendToPlanningCommand = new RelayCommand(p =>
-        {
-            if (p is BacklogFeatureVM vm && vm.Feature.Status == FeatureStatus.AnalysisDone)
-            {
-                _backlogService.ModifyFeature(vm.Id, f =>
-                {
-                    f.Status = FeatureStatus.Planning;
-                });
-
-                var feature = _backlogService.GetFeatures(_getProjectPath())
-                    .FirstOrDefault(f => f.Id == vm.Id);
-                if (feature is not null)
-                    _plannerService.StartPlanning(feature);
-                Refresh();
-            }
-        });
-
-        AnswerAnalysisCommand = new RelayCommand(p =>
-        {
-            if (p is BacklogFeatureVM vm && !string.IsNullOrWhiteSpace(vm.AnswerText)
-                && vm.Feature.AwaitingReason == AwaitingUserReason.AnalysisQuestion)
-            {
-                var answer = vm.AnswerText.Trim();
-                vm.AnswerText = "";
-
-                _backlogService.ModifyFeature(vm.Id, f =>
-                {
-                    f.NeedsUserInput = false;
-                    f.PlannerQuestion = null;
-                    f.AwaitingReason = null;
-                    f.Status = FeatureStatus.Analyzing;
-                });
-
-                var feature = _backlogService.GetFeatures(_getProjectPath())
-                    .FirstOrDefault(f => f.Id == vm.Id);
-                if (feature is null) return;
-
-                if (!_analyzerService.ResumeAnalysis(feature, answer))
-                {
-                    _analyzerService.StopAnalysis(feature.Id);
-                    _backlogService.ModifyFeature(vm.Id, f =>
-                    {
-                        f.AnalysisSessionId = null;
-                        f.UserContext = string.IsNullOrEmpty(f.UserContext)
-                            ? answer
-                            : f.UserContext + "\n" + answer;
-                    });
-                    feature = _backlogService.GetFeatures(_getProjectPath())
-                        .FirstOrDefault(f => f.Id == vm.Id);
-                    if (feature is not null)
-                        _analyzerService.StartAnalysis(feature);
                 }
 
                 Refresh();
@@ -829,38 +559,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
                 RefreshArchive();
         });
 
-        // Notes commands
-        ToggleNotesPanelCommand = new RelayCommand(() =>
-        {
-            ShowNotesPanel = !ShowNotesPanel;
-        });
-
-        DismissNoteCommand = new RelayCommand(p =>
-        {
-            if (p is string noteId)
-            {
-                var projectPath = _getProjectPath();
-                if (!string.IsNullOrEmpty(projectPath))
-                {
-                    _teamNotesService.DismissNote(projectPath, noteId);
-                    var toRemove = Notes.FirstOrDefault(n => n.NoteId == noteId);
-                    if (toRemove != null)
-                        Notes.Remove(toRemove);
-                    UnreadNotesCount = _teamNotesService.GetUnreadCount(projectPath);
-                }
-            }
-        });
-
-        MarkAllReadCommand = new RelayCommand(() =>
-        {
-            var projectPath = _getProjectPath();
-            if (!string.IsNullOrEmpty(projectPath))
-            {
-                _teamNotesService.MarkAllRead(projectPath);
-                UnreadNotesCount = 0;
-            }
-        });
-
         // Orchestrator commands
         StartOrchestratorCommand = new RelayCommand(() =>
         {
@@ -880,11 +578,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
             () => _orchestratorService.State is OrchestratorState.Running
                 or OrchestratorState.WaitingForWork
                 or OrchestratorState.SoftPaused);
-
-        // Subscribe to AnalyzerService events
-        _analyzerService.OnAnalysisComplete += HandleAnalysisComplete;
-        _analyzerService.OnQuestionAsked += HandleAnalysisQuestion;
-        _analyzerService.OnAnalysisError += HandleAnalysisError;
 
         // Subscribe to PlannerService events
         _plannerService.OnQuestionAsked += HandlePlannerQuestion;
@@ -906,110 +599,9 @@ public class TeamViewModel : ViewModelBase, IDisposable
         _orchestratorService.OnActiveTaskChanged += HandleActiveTaskChanged;
         _orchestratorService.OnDevTextDelta += HandleDevTextDelta;
         _orchestratorService.OnReviewTextDelta += HandleReviewTextDelta;
-
-        // Subscribe to TeamNotesService events
-        _teamNotesService.OnNoteAdded += HandleNoteAdded;
     }
 
     public void SetTeamTab(SubTab tab) => _teamTab = tab;
-
-    private void ExecuteSubmitIdeas()
-    {
-        var project = _ideasLoadedForProject;
-        if (string.IsNullOrEmpty(project) || string.IsNullOrWhiteSpace(_ideasText))
-            return;
-
-        var ideas = ParseIdeas(_ideasText);
-        if (ideas.Count == 0) return;
-
-        foreach (var idea in ideas)
-            _backlogService.AddFeature(project, idea);
-
-        _ideasText = "";
-        OnPropertyChanged(nameof(IdeasText));
-        SubmitIdeasCommand.RaiseCanExecuteChanged();
-        SaveIdeasNow();
-        Refresh();
-        TryStartPendingPlanning();
-    }
-
-    private static List<string> ParseIdeas(string text)
-    {
-        // Normalize Windows line endings — WPF TextBox produces \r\n
-        text = text.Replace("\r\n", "\n").Replace("\r", "\n");
-
-        var ideas = new List<string>();
-
-        // Check if text uses list markers (- , * , 1. 2. etc.)
-        var hasListMarkers = Regex.IsMatch(text, @"(?m)^[\s]*[-*]\s|^[\s]*\d+\.\s");
-
-        if (hasListMarkers)
-        {
-            // Split by list markers: lines starting with "- ", "* ", or "1. "
-            var lines = text.Split('\n');
-            // Start with empty string so preamble text before first marker becomes an idea
-            var current = "";
-
-            foreach (var line in lines)
-            {
-                var trimmed = line.TrimStart();
-                if (Regex.IsMatch(trimmed, @"^[-*]\s|^\d+\.\s"))
-                {
-                    // Save previous item (preamble or prior list item)
-                    var cleaned = current.Trim();
-                    if (cleaned.Length > 0)
-                        ideas.Add(cleaned);
-                    // Strip the marker
-                    current = Regex.Replace(trimmed, @"^[-*]\s|^\d+\.\s", "");
-                }
-                else if (!string.IsNullOrWhiteSpace(line))
-                {
-                    // Continuation line
-                    current += " " + trimmed;
-                }
-            }
-
-            // Don't forget the last item
-            var lastCleaned = current.Trim();
-            if (lastCleaned.Length > 0)
-                ideas.Add(lastCleaned);
-        }
-        else
-        {
-            // Split by double newline
-            var parts = Regex.Split(text, @"\n\s*\n");
-            foreach (var part in parts)
-            {
-                var cleaned = part.Trim();
-                if (cleaned.Length > 0)
-                    ideas.Add(cleaned);
-            }
-        }
-
-        // Fallback: if no split produced results, treat entire text as one idea
-        if (ideas.Count == 0)
-        {
-            var cleaned = text.Trim();
-            if (cleaned.Length > 0)
-                ideas.Add(cleaned);
-        }
-
-        return ideas;
-    }
-
-    /// <summary>
-    /// Attempt to start analysis for an Analyzing feature.
-    /// </summary>
-    private void TryStartAnalysis(BacklogFeature feature)
-    {
-        if (feature.Status != FeatureStatus.Analyzing) return;
-        if (_analyzerService.IsAnalyzing(feature.Id)) return;
-        if (_analyzerService.HasActiveSessions) return; // Sequential: one analysis at a time
-
-        EnsureAnalyzerConfigured();
-        _analyzerService.StartAnalysis(feature);
-        Refresh();
-    }
 
     /// <summary>
     /// Attempt to start planning for a PlanningFailed feature.
@@ -1033,36 +625,13 @@ public class TeamViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Start analysis for the next queued Analyzing feature (sequential, one at a time).
-    /// </summary>
-    private void TryStartNextAnalysis()
-    {
-        var projectPath = _getProjectPath();
-        if (string.IsNullOrEmpty(projectPath)) return;
-        if (_analyzerService.HasActiveSessions) return;
-
-        var next = _backlogService.GetFeatures(projectPath)
-            .Where(f => f.Status == FeatureStatus.Analyzing)
-            .OrderBy(f => f.Priority)
-            .FirstOrDefault();
-
-        if (next is not null)
-            TryStartAnalysis(next);
-    }
-
-    /// <summary>
-    /// Start analysis/planning for pending features (called on startup/refresh if needed).
-    /// Analysis is sequential (one at a time); planning-failed retries are separate.
+    /// Start planning for pending features (called on startup/refresh if needed).
     /// </summary>
     public void TryStartPendingPlanning()
     {
         var projectPath = _getProjectPath();
         if (string.IsNullOrEmpty(projectPath)) return;
 
-        // Sequential: start only the first pending analysis
-        TryStartNextAnalysis();
-
-        // Planning-failed retries are independent of analysis queue
         var failedFeatures = _backlogService.GetFeatures(projectPath)
             .Where(f => f.Status == FeatureStatus.PlanningFailed)
             .OrderBy(f => f.Priority)
@@ -1070,94 +639,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
 
         foreach (var feature in failedFeatures)
             TryStartPlanning(feature);
-    }
-
-    private void EnsureAnalyzerConfigured()
-    {
-        var projectPath = _getProjectPath();
-        var existingFeatures = _backlogService.GetFeatures(projectPath);
-        var prompt = TeamPrompts.BuildAnalyzerSystemPrompt(projectPath, _projectRegistry.Projects, existingFeatures);
-        _analyzerService.UpdateSystemPrompt(prompt);
-    }
-
-    // --- Analysis event handlers ---
-
-    private void HandleAnalysisComplete(string featureId, AnalysisResult result)
-    {
-        RunOnUI(() =>
-        {
-            _backlogService.ModifyFeature(featureId, f =>
-            {
-                f.AnalysisResult = result.Summary;
-                f.AnalysisSessionId = result.SessionId;
-                f.AffectedProjects = result.AffectedProjects;
-                f.NeedsUserInput = false;
-                f.PlannerQuestion = null;
-
-                if (!string.IsNullOrEmpty(result.Title))
-                    f.Title = result.Title;
-
-                switch (result.Verdict.ToLowerInvariant())
-                {
-                    case "approve":
-                        f.Status = FeatureStatus.AnalysisDone;
-                        break;
-                    case "reject":
-                        f.Status = FeatureStatus.AnalysisRejected;
-                        var reason = result.Reason ?? "Rejected by analyzer";
-                        if (!string.IsNullOrEmpty(result.DuplicateOf))
-                            reason = $"Duplicate of [{result.DuplicateOf}]. {reason}";
-                        f.RejectionReason = reason;
-                        break;
-                    case "needs_discussion":
-                    default:
-                        f.Status = FeatureStatus.AwaitingUser;
-                        f.AwaitingReason = AwaitingUserReason.AnalysisQuestion;
-                        f.NeedsUserInput = true;
-                        f.PlannerQuestion = result.Reason ?? result.Summary;
-                        break;
-                }
-            });
-            Refresh();
-            _notificationService.NotifyIfInactive();
-            TryStartNextAnalysis();
-        });
-    }
-
-    private void HandleAnalysisQuestion(string featureId, string question)
-    {
-        var sessionId = _analyzerService.GetSessionId(featureId);
-
-        RunOnUI(() =>
-        {
-            _backlogService.ModifyFeature(featureId, f =>
-            {
-                if (!string.IsNullOrEmpty(sessionId))
-                    f.AnalysisSessionId = sessionId;
-                f.Status = FeatureStatus.AwaitingUser;
-                f.AwaitingReason = AwaitingUserReason.AnalysisQuestion;
-                f.NeedsUserInput = true;
-                f.PlannerQuestion = question;
-            });
-            Refresh();
-            _notificationService.NotifyIfInactive();
-        });
-    }
-
-    private void HandleAnalysisError(string featureId, string error)
-    {
-        RunOnUI(() =>
-        {
-            _backlogService.ModifyFeature(featureId, f =>
-            {
-                f.Status = FeatureStatus.AnalysisRejected;
-                f.RejectionReason = $"Analysis failed: {error}";
-                f.NeedsUserInput = false;
-                f.PlannerQuestion = null;
-            });
-            Refresh();
-            TryStartNextAnalysis();
-        });
     }
 
     private void HandlePlannerQuestion(string featureId, string question)
@@ -1284,7 +765,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
             ?? PlanningFeatures.FirstOrDefault(f => f.Id == featureId)
             ?? BacklogFeatures.FirstOrDefault(f => f.Id == featureId)
             ?? QueuedFeatures.FirstOrDefault(f => f.Id == featureId)
-            ?? AnalyzingFeatures.FirstOrDefault(f => f.Id == featureId)
             ?? CompletedFeatures.FirstOrDefault(f => f.Id == featureId);
     }
 
@@ -1318,12 +798,9 @@ public class TeamViewModel : ViewModelBase, IDisposable
 
     public void Refresh()
     {
-        LoadIdeas();
-        LoadNotes();
-
         // Preserve user-typed answers before clearing
         var savedAnswers = new Dictionary<string, string>();
-        foreach (var vm in PlanningFeatures.Concat(AnalyzingFeatures))
+        foreach (var vm in PlanningFeatures)
         {
             if (!string.IsNullOrEmpty(vm.AnswerText))
                 savedAnswers[vm.Id] = vm.AnswerText;
@@ -1341,7 +818,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
 
         var projectPath = _getProjectPath();
 
-        AnalyzingFeatures.Clear();
         PlanningFeatures.Clear();
         AwaitingApprovalFeatures.Clear();
         BacklogFeatures.Clear();
@@ -1361,11 +837,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
             var vm = new BacklogFeatureVM(f);
             switch (f.Status)
             {
-                case FeatureStatus.Analyzing:
-                case FeatureStatus.AnalysisDone:
-                case FeatureStatus.AnalysisRejected:
-                    AnalyzingFeatures.Add(vm);
-                    break;
                 case FeatureStatus.Planning:
                 case FeatureStatus.PlanningFailed:
                     PlanningFeatures.Add(vm);
@@ -1374,11 +845,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
                     vm.IsExpanded = true;
                     if (savedAnswers.TryGetValue(f.Id, out var savedText))
                         vm.AnswerText = savedText;
-                    // Route by awaiting reason
-                    if (f.AwaitingReason == AwaitingUserReason.AnalysisQuestion)
-                        AnalyzingFeatures.Add(vm);
-                    else
-                        PlanningFeatures.Add(vm);
+                    PlanningFeatures.Add(vm);
                     break;
                 case FeatureStatus.PlanReady:
                     vm.IsReviewInProgress = _planReviewerService.IsReviewing(f.Id);
@@ -1418,7 +885,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
             RefreshArchive();
     }
 
-    public bool IsEmpty => AnalyzingCount + PlanningCount + ApprovalCount
+    public bool IsEmpty => PlanningCount + ApprovalCount
                          + BacklogCount + QueuedCount + CompletedCount == 0;
 
     private void UpdateCounts()
@@ -1427,13 +894,11 @@ public class TeamViewModel : ViewModelBase, IDisposable
         {
             // Badge = items needing user attention (include completed features with user actions)
             var attention = PlanningFeatures.Count(f => f.NeedsUserInput)
-                          + AnalyzingFeatures.Count(f => f.NeedsUserInput)
                           + AwaitingApprovalFeatures.Count
                           + CompletedFeatures.Count(f => f.HasUserActions);
             _teamTab.BadgeCount = attention;
         }
 
-        OnPropertyChanged(nameof(AnalyzingCount));
         OnPropertyChanged(nameof(PlanningCount));
         OnPropertyChanged(nameof(ApprovalCount));
         OnPropertyChanged(nameof(BacklogCount));
@@ -1834,63 +1299,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
         OnAskInChat?.Invoke(sb.ToString());
     }
 
-    // --- Notes ---
-
-    private void HandleNoteAdded(TeamNote note)
-    {
-        RunOnUI(() =>
-        {
-            var projectPath = _getProjectPath();
-            if (string.IsNullOrEmpty(projectPath)) return;
-
-            // Only show notes for the current project
-            if (!string.Equals(note.ProjectPath, projectPath, StringComparison.OrdinalIgnoreCase))
-                return;
-
-            // Only insert into collection if notes have been loaded (avoid partial state)
-            if (_notesLoadedForProject == null)
-            {
-                // Notes not loaded yet — just update the unread count for badge
-                UnreadNotesCount = _teamNotesService.GetUnreadCount(projectPath);
-                if (!ShowNotesPanel)
-                    _notificationService.NotifyIfInactive();
-                return;
-            }
-
-            Notes.Insert(0, new TeamNoteVM(note));
-
-            // If panel is visible, mark the new note as read immediately — no notification needed
-            if (ShowNotesPanel)
-                _teamNotesService.MarkRead(projectPath, note.Id);
-            else
-                _notificationService.NotifyIfInactive();
-
-            UnreadNotesCount = _teamNotesService.GetUnreadCount(projectPath);
-        });
-    }
-
-    public void LoadNotes()
-    {
-        var projectPath = _getProjectPath();
-        if (string.IsNullOrEmpty(projectPath)) return;
-
-        // Only reload from disk when project changes; OnNoteAdded handles live updates
-        if (string.Equals(_notesLoadedForProject, projectPath, StringComparison.OrdinalIgnoreCase))
-        {
-            // Just refresh the unread count (could change from mark-read calls)
-            UnreadNotesCount = _teamNotesService.GetUnreadCount(projectPath);
-            return;
-        }
-
-        _notesLoadedForProject = projectPath;
-        var notes = _teamNotesService.Load(projectPath);
-        Notes.Clear();
-        foreach (var note in notes.OrderByDescending(n => n.Timestamp))
-            Notes.Add(new TeamNoteVM(note));
-
-        UnreadNotesCount = _teamNotesService.GetUnreadCount(projectPath);
-    }
-
     private void RefreshArchive()
     {
         ArchivedFeatures.Clear();
@@ -1906,11 +1314,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        _analyzerService.OnAnalysisComplete -= HandleAnalysisComplete;
-        _analyzerService.OnQuestionAsked -= HandleAnalysisQuestion;
-        _analyzerService.OnAnalysisError -= HandleAnalysisError;
-        _analyzerService.StopAll();
-
         _plannerService.OnQuestionAsked -= HandlePlannerQuestion;
         _plannerService.OnPlanReady -= HandlePlanReady;
         _plannerService.OnPlannerError -= HandlePlannerError;
@@ -1932,13 +1335,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
         _orchestratorService.OnReviewTextDelta -= HandleReviewTextDelta;
         _orchestratorService.Dispose();
 
-        _teamNotesService.OnNoteAdded -= HandleNoteAdded;
-
         _chatFlushTimer?.Stop();
         _chatFlushTimer = null;
-        _ideasSaveTimer?.Stop();
-        _ideasSaveTimer = null;
-        if (!string.IsNullOrEmpty(_ideasLoadedForProject))
-            _ideasStorageService.Save(_ideasLoadedForProject, _ideasText);
     }
 }

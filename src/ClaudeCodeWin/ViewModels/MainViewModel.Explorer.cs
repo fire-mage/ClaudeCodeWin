@@ -16,7 +16,6 @@ public partial class MainViewModel
 
     public TeamViewModel Team { get; private set; } = null!;
     private PlannerService _plannerService = null!;
-    private AnalyzerService _analyzerService = null!;
     private PlanReviewerService _planReviewerService = null!;
     private TeamOrchestratorService _orchestratorService = null!;
 
@@ -68,12 +67,7 @@ public partial class MainViewModel
         // Wire explorer file open event
         Explorer.OnOpenFile += OpenFileInEditor;
 
-        // Initialize AnalyzerService + PlannerService + OrchestratorService + Team VM
-        _analyzerService = new AnalyzerService();
-        _analyzerService.TeamNotesService = _teamNotesService;
-        var analyzerPrompt = TeamPrompts.BuildAnalyzerSystemPrompt(WorkingDirectory, _projectRegistry.Projects);
-        _analyzerService.Configure(_cliService.ClaudeExePath, WorkingDirectory, analyzerPrompt);
-
+        // Initialize PlannerService + OrchestratorService + Team VM
         _plannerService = new PlannerService();
         _plannerService.TeamNotesService = _teamNotesService;
         _plannerService.Configure(_cliService.ClaudeExePath, WorkingDirectory);
@@ -88,11 +82,11 @@ public partial class MainViewModel
 
         Team = new TeamViewModel(_backlogService, _gitService,
             () => WorkingDirectory,
-            _plannerService, _analyzerService, _planReviewerService,
+            _plannerService, _planReviewerService,
             _orchestratorService,
             _notificationService,
-            new IdeasStorageService(), _projectRegistry,
-            _settingsService, _settings, _teamNotesService);
+            _projectRegistry,
+            _settingsService, _settings);
         Team.SetTeamTab(teamTab);
 
         // Wire "Ask in Chat" — populate input box and switch to Chat tab
@@ -113,11 +107,6 @@ public partial class MainViewModel
         if (!string.IsNullOrEmpty(WorkingDirectory) && Directory.Exists(WorkingDirectory))
             Explorer.SetRoot(WorkingDirectory);
 
-        if (_analyzerService is not null)
-        {
-            var prompt = TeamPrompts.BuildAnalyzerSystemPrompt(WorkingDirectory, _projectRegistry.Projects);
-            _analyzerService.Configure(_cliService.ClaudeExePath, WorkingDirectory, prompt);
-        }
         _plannerService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);
         _planReviewerService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);
         _orchestratorService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);

@@ -148,7 +148,21 @@ public partial class MainViewModel
 
         if (IsProcessing)
         {
+            // Try full recall first (if Claude hasn't started responding yet)
+            if (RecallLastMessage())
+                return true;
+
+            // Claude already started streaming — cancel but preserve the user's input
+            var textToRestore = _lastSentText;
+            var attachmentsToRestore = _lastSentAttachments;
+            _lastSentText = null;
+            _lastSentAttachments = null;
             CancelProcessing();
+            if (textToRestore != null)
+                InputText = textToRestore;
+            if (attachmentsToRestore != null)
+                foreach (var att in attachmentsToRestore)
+                    AddAttachment(att);
             return true;
         }
 

@@ -5,137 +5,11 @@ using ClaudeCodeWin.ViewModels;
 namespace ClaudeCodeWin.Services;
 
 /// <summary>
-/// System prompts for team roles (Analyzer, Planner, Developer, Reviewer, Manager).
+/// System prompts for team roles (Planner, Developer, Reviewer).
 /// </summary>
 public static class TeamPrompts
 {
     public const string TeamModelId = "claude-opus-4-6";
-
-    private const string AnalyzerBasePrompt =
-        """
-        You are an Idea Analyzer in a development team. Your job is to evaluate whether a feature idea is feasible, identify which projects it affects, and flag any risks. You are a strict gatekeeper — only well-defined, actionable ideas should pass through.
-
-        ## Your workflow
-        1. Read the feature idea carefully
-        2. Check the Existing Backlog (provided below) for duplicates or overlapping features
-        3. Explore the project codebase (use Read, Grep, Glob tools) to understand existing architecture
-        4. If the idea is unclear, ask clarifying questions using AskUserQuestion tool
-        5. Evaluate feasibility: can this be done with the current codebase and tech stack? What's the effort level?
-        6. Identify affected projects from the known project registry
-        7. Flag any risks (breaking changes, security concerns, dependency issues, performance impact)
-        8. Output your verdict as JSON
-
-        ## Rejection criteria
-        You MUST reject the idea (verdict = "reject") if ANY of the following apply:
-        - **Too vague**: The idea has fewer than ~10 words, lacks a clear action verb, or has no clear scope. Examples: "make it better", "improve performance", "fix stuff", "add some features".
-        - **Duplicate**: The idea duplicates or significantly overlaps with an existing feature in the backlog (same goal, even if worded differently). Set `duplicateOf` to the existing feature's ID.
-        - **Wrong tech stack**: The idea requires technologies, services, or frameworks not present in the project (e.g., requesting a Redis cache in a project that doesn't use Redis).
-        - **Unreasonable scope**: The idea is an entire system rewrite, multi-month effort, or requires changes so sweeping that it cannot be broken into manageable phases.
-
-        ## Duplicate detection
-        Before approving, compare the idea against ALL features listed in the "Existing Backlog" section below.
-        - If a feature with the same goal already exists (even if described with different words), reject with verdict "reject" and explain which existing feature it duplicates.
-        - Set the `duplicateOf` field to the ID of the existing feature.
-        - Partial overlaps should be noted in the summary but are not automatic rejections — use your judgment.
-
-        ## Output format
-        When your analysis is ready, output it as a JSON block (and nothing else after it):
-
-        ```json
-        {
-          "verdict": "approve|reject|needs_discussion",
-          "title": "Short title for this idea (under 60 chars)",
-          "summary": "2-3 sentence analysis summary",
-          "affectedProjects": ["ProjectName1", "ProjectName2"],
-          "reason": "Why you reached this verdict",
-          "duplicateOf": "featureId or null"
-        }
-        ```
-
-        ## Verdict meanings
-        - **approve** — idea is specific, actionable, feasible with the current tech stack, does not duplicate existing backlog items, and is ready for planning
-        - **reject** — idea is too vague, duplicates an existing feature, requires unavailable technology, has unreasonable scope, or conflicts with existing architecture
-        - **needs_discussion** — idea has merit and is specific enough, but needs user clarification on scope or approach before proceeding
-
-        ## Rules
-        - Be concise but thorough in your analysis
-        - Base your evaluation on actual code exploration, not assumptions
-        - If the idea mentions projects you don't recognize, note that in the summary
-        - If you need clarification — ask BEFORE giving your verdict
-        - Use AskUserQuestion tool for questions, not plain text questions
-        - After exploring the codebase, provide your verdict — don't ask for permission to analyze
-        - Default to rejecting borderline ideas — it's better to ask the user to refine than to approve something too vague
-
-        ## Windows Safety
-        NEVER use /dev/null in Bash commands. On Windows, use 2>&1 or || true instead.
-
-        ## Notes for User
-        If you have non-blocking observations, tips, or warnings for the user (e.g., 'this idea might conflict with feature X', 'consider also doing Y'), output them as `USER_NOTE: your message here` (one per line). These notes will be delivered asynchronously — do NOT wait for a response.
-        """;
-
-    /// <summary>
-    /// Builds an Analyzer system prompt with project registry and existing backlog context injected.
-    /// </summary>
-    public static string BuildAnalyzerSystemPrompt(string? projectPath,
-        IReadOnlyList<ProjectInfo> knownProjects,
-        IReadOnlyList<BacklogFeature>? existingFeatures = null)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine(AnalyzerBasePrompt);
-        sb.AppendLine();
-
-        if (!string.IsNullOrEmpty(projectPath))
-        {
-            sb.AppendLine($"## Current Project");
-            sb.AppendLine($"Path: {projectPath}");
-            sb.AppendLine();
-        }
-
-        if (knownProjects.Count > 0)
-        {
-            sb.AppendLine("## Known Projects (from project registry)");
-            foreach (var p in knownProjects)
-            {
-                var tech = !string.IsNullOrEmpty(p.TechStack) ? $" ({p.TechStack})" : "";
-                var git = !string.IsNullOrEmpty(p.GitRemoteUrl) ? $" — {p.GitRemoteUrl}" : "";
-                sb.AppendLine($"- **{p.Name}**: {p.Path}{tech}{git}");
-            }
-            sb.AppendLine();
-            sb.AppendLine("Use project names from this registry in the affectedProjects array.");
-        }
-
-        // Inject existing backlog for duplicate detection
-        sb.AppendLine();
-        sb.AppendLine("## Existing Backlog");
-        if (existingFeatures is { Count: > 0 })
-        {
-            var nonCancelled = existingFeatures
-                .Where(f => f.Status != FeatureStatus.Cancelled)
-                .Take(50) // Limit to avoid bloating system prompt
-                .ToList();
-
-            if (nonCancelled.Count > 0)
-            {
-                sb.AppendLine("Check the ideas below for duplicates before approving a new idea:");
-                foreach (var f in nonCancelled)
-                {
-                    var title = f.Title ?? "(no title)";
-                    var idea = f.RawIdea.Length > 120 ? f.RawIdea[..117] + "..." : f.RawIdea;
-                    sb.AppendLine($"- [{f.Id}] \"{title}\" — {idea}");
-                }
-            }
-            else
-            {
-                sb.AppendLine("No features in backlog yet. Skip duplicate check.");
-            }
-        }
-        else
-        {
-            sb.AppendLine("No features in backlog yet. Skip duplicate check.");
-        }
-
-        return sb.ToString();
-    }
 
     public const string PlannerSystemPrompt =
         """
@@ -371,15 +245,14 @@ public static class TeamPrompts
         var awaiting = features.Where(f => f.Status == FeatureStatus.AwaitingUser).ToList();
         var queued = features.Where(f => f.Status == FeatureStatus.Queued).ToList();
         var planned = features.Where(f => f.Status is FeatureStatus.PlanReady or FeatureStatus.PlanApproved).ToList();
-        var planning = features.Where(f => f.Status is FeatureStatus.Analyzing or FeatureStatus.AnalysisDone
-            or FeatureStatus.AnalysisRejected or FeatureStatus.Planning or FeatureStatus.PlanningFailed).ToList();
+        var planning = features.Where(f => f.Status is FeatureStatus.Planning or FeatureStatus.PlanningFailed).ToList();
         var completed = features.Where(f => f.Status is FeatureStatus.Done or FeatureStatus.Cancelled).ToList();
 
         AppendFeatureGroup(sb, "In Progress", inProgress, showActivePhase: true);
         AppendFeatureGroup(sb, "Awaiting Your Input", awaiting, showQuestion: true);
         AppendFeatureGroup(sb, "Queue", queued);
         AppendFeatureGroup(sb, "Planned", planned);
-        AppendFeatureGroup(sb, "Analysis/Planning", planning);
+        AppendFeatureGroup(sb, "Planning", planning);
         AppendFeatureGroup(sb, "Completed", completed, showStatus: true);
 
         // Recent orchestrator log
@@ -487,13 +360,6 @@ public static class TeamPrompts
             sb.AppendLine();
             sb.AppendLine("## Additional User Context");
             sb.AppendLine(feature.UserContext);
-        }
-
-        if (!string.IsNullOrEmpty(feature.AnalysisResult))
-        {
-            sb.AppendLine();
-            sb.AppendLine("## Analysis Result");
-            sb.AppendLine(feature.AnalysisResult);
         }
 
         if (feature.Phases.Count > 0)

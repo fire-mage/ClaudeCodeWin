@@ -106,13 +106,6 @@ public class PlanReviewerService
             sb.AppendLine(feature.UserContext);
         }
 
-        if (!string.IsNullOrEmpty(feature.AnalysisResult))
-        {
-            sb.AppendLine();
-            sb.AppendLine("## Analysis Summary");
-            sb.AppendLine(feature.AnalysisResult);
-        }
-
         sb.AppendLine();
         sb.AppendLine($"## Plan Title: {feature.Title ?? "(untitled)"}");
         sb.AppendLine();

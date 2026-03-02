@@ -38,20 +38,7 @@ public class BacklogFeatureVM : ViewModelBase
     public bool NeedsUserInput => Feature.NeedsUserInput;
     public string? PlannerQuestion => Feature.PlannerQuestion;
 
-    // Analysis display properties
-    public bool IsAnalyzing => Feature.Status == FeatureStatus.Analyzing;
-    public bool IsAnalysisDone => Feature.Status == FeatureStatus.AnalysisDone;
-    public bool IsAnalysisRejected => Feature.Status == FeatureStatus.AnalysisRejected;
-    public bool ShowAnalysisActions => Feature.Status == FeatureStatus.Analyzing
-        || (Feature.Status == FeatureStatus.AwaitingUser
-            && Feature.AwaitingReason == AwaitingUserReason.AnalysisQuestion);
-    public string? AnalysisResult => Feature.AnalysisResult;
     public string? RejectionReason => Feature.RejectionReason;
-    public bool HasAnalysisResult => !string.IsNullOrEmpty(Feature.AnalysisResult);
-    public bool HasCrossProjectHint => Feature.AffectedProjects.Count > 0;
-    public string CrossProjectText => Feature.AffectedProjects.Count > 0
-        ? $"Affects: {string.Join(", ", Feature.AffectedProjects)}"
-        : "";
 
     // Planning section properties
     public bool IsPlanning => Feature.Status == FeatureStatus.Planning;

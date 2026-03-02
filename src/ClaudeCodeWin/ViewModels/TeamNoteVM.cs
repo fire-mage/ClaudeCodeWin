@@ -29,7 +29,6 @@ public class TeamNoteVM
 
         (RoleIcon, RoleLabel) = note.SourceRole.ToLowerInvariant() switch
         {
-            "analyzer" => ("\U0001F50D", "Analyzer"),
             "planner"  => ("\U0001F4CB", "Planner"),
             "developer" or "dev" => ("\U0001F528", "Developer"),
             "reviewer" or "review" => ("\U0001F441", "Reviewer"),

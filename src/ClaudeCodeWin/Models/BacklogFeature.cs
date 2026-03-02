@@ -2,13 +2,12 @@ namespace ClaudeCodeWin.Models;
 
 public enum FeatureStatus
 {
-    Analyzing, AnalysisDone, AnalysisRejected,
     Planning, PlanningFailed, AwaitingUser,
     PlanReady, PlanApproved,
     Queued, InProgress, Done, Cancelled
 }
 
-public enum AwaitingUserReason { AnalysisQuestion, PlanningQuestion }
+public enum AwaitingUserReason { PlanningQuestion }
 
 public class BacklogFeature
 {
@@ -17,7 +16,7 @@ public class BacklogFeature
     public string RawIdea { get; set; } = "";
     public string? UserContext { get; set; }
     public string? Title { get; set; }
-    public FeatureStatus Status { get; set; } = FeatureStatus.Analyzing;
+    public FeatureStatus Status { get; set; } = FeatureStatus.Planning;
     public string? PlannerSessionId { get; set; }
     public bool NeedsUserInput { get; set; }
     public string? PlannerQuestion { get; set; }
@@ -27,11 +26,7 @@ public class BacklogFeature
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
     public List<BacklogPhase> Phases { get; set; } = [];
 
-    // Analysis fields
-    public string? AnalysisResult { get; set; }
-    public string? AnalysisSessionId { get; set; }
     public string? RejectionReason { get; set; }
-    public List<string> AffectedProjects { get; set; } = [];
 
     // Plan review fields
     public string? PlanReviewVerdict { get; set; }

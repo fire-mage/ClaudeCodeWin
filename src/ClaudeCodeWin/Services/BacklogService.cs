@@ -33,7 +33,8 @@ public class BacklogService
                 var json = File.ReadAllText(BacklogPath);
                 var migrated = MigrateJson(json);
                 _features = JsonSerializer.Deserialize<List<BacklogFeature>>(migrated, JsonDefaults.ReadOptions) ?? [];
-                if (migrated != json)
+                var postFixed = PostMigrationFixup();
+                if (migrated != json || postFixed)
                     SaveLocked();
             }
             catch
@@ -44,14 +45,17 @@ public class BacklogService
     }
 
     /// <summary>
-    /// Migrate old enum values in JSON: Raw→Analyzing, Planned→PlanApproved.
-    /// Matches "status": "value" patterns to only replace enum values, not arbitrary strings.
+    /// Migrate old enum values in JSON to current FeatureStatus values.
     /// Remove after a few versions.
     /// </summary>
     private static string MigrateJson(string json)
     {
-        json = Regex.Replace(json, @"""[Ss]tatus""\s*:\s*""[Rr]aw""", @"""status"": ""Analyzing""");
-        json = Regex.Replace(json, @"""[Ss]tatus""\s*:\s*""[Pp]lanned""", @"""status"": ""PlanApproved""");
+        json = Regex.Replace(json, @"""[Ss]tatus""\s*:\s*""[Rr]aw""", @"""status"": ""planning""");
+        json = Regex.Replace(json, @"""[Ss]tatus""\s*:\s*""[Pp]lanned""", @"""status"": ""planApproved""");
+        json = Regex.Replace(json, @"""[Ss]tatus""\s*:\s*""[Aa]nalyzing""", @"""status"": ""planning""");
+        json = Regex.Replace(json, @"""[Ss]tatus""\s*:\s*""[Aa]nalysisDone""", @"""status"": ""planning""");
+        json = Regex.Replace(json, @"""[Ss]tatus""\s*:\s*""[Aa]nalysisRejected""", @"""status"": ""cancelled""");
+        json = Regex.Replace(json, @"""[Aa]waitingReason""\s*:\s*""[Aa]nalysisQuestion""", @"""awaitingReason"": ""planningQuestion""");
         return json;
     }
 
@@ -275,7 +279,11 @@ public class BacklogService
         try
         {
             var json = File.ReadAllText(ArchivePath);
-            return JsonSerializer.Deserialize<List<BacklogFeature>>(json, JsonDefaults.ReadOptions) ?? [];
+            var migrated = MigrateJson(json);
+            var list = JsonSerializer.Deserialize<List<BacklogFeature>>(migrated, JsonDefaults.ReadOptions) ?? [];
+            if (migrated != json)
+                SaveArchivedLocked(list);
+            return list;
         }
         catch
         {
@@ -288,6 +296,29 @@ public class BacklogService
         Directory.CreateDirectory(BacklogDir);
         var json = JsonSerializer.Serialize(archived, JsonDefaults.Options);
         File.WriteAllText(ArchivePath, json);
+    }
+
+    /// <summary>
+    /// Fix features that were migrated from AnalysisQuestion → PlanningQuestion
+    /// but have no planner session. Reset them to Planning so they don't show a stale question.
+    /// </summary>
+    private bool PostMigrationFixup()
+    {
+        var changed = false;
+        foreach (var f in _features)
+        {
+            if (f.Status == FeatureStatus.AwaitingUser
+                && f.AwaitingReason == AwaitingUserReason.PlanningQuestion
+                && string.IsNullOrEmpty(f.PlannerSessionId))
+            {
+                f.Status = FeatureStatus.Planning;
+                f.AwaitingReason = null;
+                f.PlannerQuestion = null;
+                f.NeedsUserInput = false;
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     private static void UpdateFeatureStatusFromPhases(BacklogFeature feature)

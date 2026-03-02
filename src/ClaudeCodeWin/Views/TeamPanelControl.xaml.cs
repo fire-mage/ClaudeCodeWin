@@ -84,41 +84,6 @@ public partial class TeamPanelControl : UserControl
             VM?.DeleteFeatureCommand.Execute(vm);
     }
 
-    // --- Analysis section handlers ---
-
-    private void ApproveAnalysis_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button btn && btn.DataContext is BacklogFeatureVM vm)
-            VM?.ApproveAnalysisCommand.Execute(vm);
-    }
-
-    private void RejectAnalysis_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button btn && btn.DataContext is BacklogFeatureVM vm)
-            VM?.RejectAnalysisCommand.Execute(vm);
-    }
-
-    private void SendToPlanning_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button btn && btn.DataContext is BacklogFeatureVM vm)
-            VM?.SendToPlanningCommand.Execute(vm);
-    }
-
-    private void AnalysisAnswerTextBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter && sender is TextBox tb && tb.DataContext is BacklogFeatureVM vm)
-        {
-            VM?.AnswerAnalysisCommand.Execute(vm);
-            e.Handled = true;
-        }
-    }
-
-    private void SendAnalysisAnswer_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button btn && btn.DataContext is BacklogFeatureVM vm)
-            VM?.AnswerAnalysisCommand.Execute(vm);
-    }
-
     // --- Plan approval section handlers ---
 
     private void ApprovePlan_Click(object sender, RoutedEventArgs e)
@@ -257,28 +222,6 @@ public partial class TeamPanelControl : UserControl
         if (sender is FrameworkElement fe && fe.DataContext is BacklogFeatureVM vm)
         {
             vm.IsErrorExpanded = !vm.IsErrorExpanded;
-            e.Handled = true;
-        }
-    }
-
-    private void QuickAddIdea_Click(object sender, RoutedEventArgs e)
-    {
-        if (VM != null && VM.HasProjectLoaded && !string.IsNullOrWhiteSpace(QuickIdeaBox.Text))
-        {
-            var text = QuickIdeaBox.Text.Trim();
-            VM.IdeasText = string.IsNullOrEmpty(VM.IdeasText)
-                ? text
-                : VM.IdeasText.TrimEnd() + "\n" + text;
-            QuickIdeaBox.Text = "";
-        }
-    }
-
-    private void QuickIdeaBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter && VM is { HasProjectLoaded: true }
-            && !string.IsNullOrWhiteSpace(QuickIdeaBox.Text))
-        {
-            QuickAddIdea_Click(sender, e);
             e.Handled = true;
         }
     }

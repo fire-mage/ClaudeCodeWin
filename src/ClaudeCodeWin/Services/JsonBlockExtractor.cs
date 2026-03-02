@@ -4,7 +4,7 @@ namespace ClaudeCodeWin.Services;
 
 /// <summary>
 /// Shared utility for extracting JSON blocks from CLI text output.
-/// Used by AnalyzerService, PlannerService, and PlanReviewerService.
+/// Used by PlannerService and PlanReviewerService.
 /// </summary>
 internal static class JsonBlockExtractor
 {

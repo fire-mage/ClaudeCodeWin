@@ -216,11 +216,11 @@
                                                          Fill="{StaticResource SuccessBrush}"
                                                          Visibility="{Binding HasNotification, Converter={StaticResource BoolToVis}}"/>
                                             </StackPanel>
-                                            <!-- Rotated title (MaxWidth limits pre-rotation width = post-rotation height) -->
+                                            <!-- Rotated title -->
                                             <TextBlock Text="{Binding TabTitle}" FontSize="11"
                                                        Foreground="{StaticResource TextBrush}"
                                                        TextTrimming="CharacterEllipsis"
-                                                       MaxWidth="250">
+                                                       MaxWidth="400">
                                                 <TextBlock.LayoutTransform>
                                                     <RotateTransform Angle="-90"/>
                                                 </TextBlock.LayoutTransform>
