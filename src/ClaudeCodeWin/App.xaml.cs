@@ -340,6 +340,7 @@ public partial class App : Application
             tabHost.SessionPctText = sessionPct;
             tabHost.SessionExtraText = sessionExtra;
             tabHost.WeekPctText = weekPct;
+            tabHost.WeekExtraText = weekExtra;
             tabHost.UsageText = $"Session: {sessionPct}{sessionExtra}Week: {weekPct}{weekExtra}";
         };
     }

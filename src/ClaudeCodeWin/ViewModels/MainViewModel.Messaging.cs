@@ -147,9 +147,7 @@ public partial class MainViewModel
             finalPrompt = $"{preamble}\n\n{text}";
         }
 
-        _currentAssistantMessage = new MessageViewModel(MessageRole.Assistant) { IsStreaming = true, IsThinking = true };
-        _isFirstDelta = true;
-        Messages.Add(_currentAssistantMessage);
+        _messageAssembler.BeginAssistantMessage();
 
         // Send via persistent process (starts process if needed)
         await Task.Run(() => _cliService.SendMessage(finalPrompt, attachments));
@@ -161,17 +159,7 @@ public partial class MainViewModel
         {
             if (_activeSendGeneration != _sendGeneration) return;
             ResetNudgeActivity();
-            if (_currentAssistantMessage is null) return;
-
-            // If tools were used since the last text block, start a new message bubble
-            if (_hadToolsSinceLastText)
-            {
-                _currentAssistantMessage.IsStreaming = false;
-                _currentAssistantMessage = new MessageViewModel(MessageRole.Assistant) { IsStreaming = true };
-                Messages.Add(_currentAssistantMessage);
-                _hadToolsSinceLastText = false;
-                _isFirstDelta = true;
-            }
+            _messageAssembler.HandleTextBlockStart();
         });
     }
 
@@ -181,20 +169,8 @@ public partial class MainViewModel
         {
             if (_activeSendGeneration != _sendGeneration) return;
             ResetNudgeActivity();
-            if (_currentAssistantMessage is not null)
-            {
-                if (_isFirstDelta)
-                {
-                    _isFirstDelta = false;
-                    _hasResponseStarted = true;
-                    _currentAssistantMessage.IsThinking = false;
-                    _currentAssistantMessage.Text = text;
-                }
-                else
-                {
-                    _currentAssistantMessage.Text += text;
-                }
-            }
+            _messageAssembler.HandleTextDelta(text);
+            _hasResponseStarted = _messageAssembler.CurrentMessage is not null;
         });
     }
 
@@ -204,11 +180,7 @@ public partial class MainViewModel
         {
             if (_activeSendGeneration != _sendGeneration) return;
             ResetNudgeActivity();
-            if (_currentAssistantMessage is not null)
-            {
-                _currentAssistantMessage.ThinkingText += text;
-                _currentAssistantMessage.ResetThinkingTimer();
-            }
+            _messageAssembler.HandleThinkingDelta(text);
         });
     }
 
@@ -218,36 +190,12 @@ public partial class MainViewModel
         {
             if (_activeSendGeneration != _sendGeneration) return;
             ResetNudgeActivity();
-            if (_currentAssistantMessage is not null)
-            {
-                _hadToolsSinceLastText = true;
+            _messageAssembler.HandleToolUseStarted(toolName, toolUseId, input);
+            _hasResponseStarted = _messageAssembler.CurrentMessage is not null;
 
-                if (_isFirstDelta)
-                {
-                    _isFirstDelta = false;
-                    _hasResponseStarted = true;
-                    _currentAssistantMessage.IsThinking = false;
-                }
-
-                // Check if this tool use already exists (update with complete input)
-                var existing = _currentAssistantMessage.ToolUses
-                    .FirstOrDefault(t => t.ToolUseId == toolUseId && !string.IsNullOrEmpty(toolUseId));
-
-                if (existing is not null)
-                {
-                    // Update existing with complete input (from content_block_stop)
-                    existing.UpdateInput(input);
-                }
-                else
-                {
-                    _currentAssistantMessage.ToolUses.Add(new ToolUseViewModel(toolName, toolUseId, input));
-                }
-
-                // Update TodoWrite progress in status bar
-                if (toolName == "TodoWrite")
-                    UpdateTodoProgress(input);
-            }
-
+            // Business logic that stays in MainViewModel
+            if (toolName == "TodoWrite")
+                UpdateTodoProgress(input);
             TryRegisterProjectFromToolUse(toolName, input);
             UpdateEffectiveProject(toolName, input);
             TryTrackBackgroundTask(toolName, toolUseId, input);
@@ -260,21 +208,7 @@ public partial class MainViewModel
         {
             if (_activeSendGeneration != _sendGeneration) return;
             ResetNudgeActivity();
-            if (_currentAssistantMessage is null) return;
-
-            // Find the tool use by ID and set its result
-            var tool = _currentAssistantMessage.ToolUses
-                .FirstOrDefault(t => t.ToolUseId == toolUseId)
-                ?? _currentAssistantMessage.ToolUses.LastOrDefault(t => t.ToolName == toolName);
-
-            if (tool is not null)
-            {
-                // Truncate large results for display
-                tool.ResultContent = content.Length > 5000
-                    ? content[..5000] + $"\n\n... ({content.Length:N0} chars total)"
-                    : content;
-            }
-
+            _messageAssembler.HandleToolResult(toolName, toolUseId, content);
             TryUpdateBackgroundTask(toolName, toolUseId, content);
         });
     }
@@ -306,70 +240,63 @@ public partial class MainViewModel
             // Skip stale callbacks from a cancelled CLI process
             if (_activeSendGeneration != _sendGeneration) return;
 
-            if (_currentAssistantMessage is not null)
+            // Detect ```team-task blocks BEFORE HandleCompleted (which calls ExtractCompletionSummary)
+            // (summary extraction removes text after ---, which could contain task blocks)
+            List<FeatureProposalDetector.FeatureProposal>? teamProposals = null;
+            var currentMsg = _messageAssembler.CurrentMessage;
+            if (currentMsg is not null && !string.IsNullOrEmpty(WorkingDirectory))
             {
-                _currentAssistantMessage.IsStreaming = false;
-                _currentAssistantMessage.IsThinking = false;
-
-                // Detect ```team-task blocks BEFORE ExtractCompletionSummary
-                // (summary extraction removes text after ---, which could contain task blocks)
-                List<FeatureProposalDetector.FeatureProposal>? teamProposals = null;
-                if (!string.IsNullOrEmpty(WorkingDirectory))
+                var (cleaned, proposals) = FeatureProposalDetector.Extract(currentMsg.Text);
+                if (proposals.Count > 0)
                 {
-                    var (cleaned, proposals) = FeatureProposalDetector.Extract(_currentAssistantMessage.Text);
-                    if (proposals.Count > 0)
-                    {
-                        _currentAssistantMessage.Text = cleaned;
-                        teamProposals = proposals;
-                    }
-                }
-
-                _currentAssistantMessage.ExtractCompletionSummary();
-
-                // Add detected features to backlog off the UI thread
-                if (teamProposals is not null)
-                {
-                    var wd = WorkingDirectory!;
-                    var total = teamProposals.Count;
-                    _ = Task.Run(() =>
-                    {
-                        var succeeded = 0;
-                        foreach (var p in teamProposals)
-                        {
-                            try
-                            {
-                                var feature = _backlogService.AddFeature(wd, p.RawIdea);
-                                if (p.Priority != 100)
-                                    _backlogService.ModifyFeature(feature.Id, f => f.Priority = p.Priority);
-                                _plannerService.StartPlanning(feature);
-                                succeeded++;
-                            }
-                            catch (Exception ex)
-                            {
-                                DiagnosticLogger.Log("TEAM_TASK_ERROR",
-                                    $"Failed to add task: {ex.Message}");
-                            }
-                        }
-                        return succeeded;
-                    }).ContinueWith(t => RunOnUI(() =>
-                    {
-                        var ok = t.IsFaulted ? 0 : t.Result;
-                        if (ok > 0) Team.Refresh();
-                        var msg = ok == total
-                            ? $"{ok} task(s) sent to Team pipeline"
-                            : ok > 0
-                                ? $"{ok}/{total} task(s) sent to Team pipeline ({total - ok} failed)"
-                                : $"Failed to send tasks to Team";
-                        Messages.Add(new MessageViewModel(MessageRole.System, msg));
-                    }), TaskScheduler.Default);
+                    currentMsg.Text = cleaned;
+                    teamProposals = proposals;
                 }
             }
 
-            _currentAssistantMessage = null;
-            _hadToolsSinceLastText = false;
+            _messageAssembler.HandleCompleted();
+
+            // Add detected features to backlog off the UI thread
+            if (teamProposals is not null)
+            {
+                var wd = WorkingDirectory!;
+                var total = teamProposals.Count;
+                _ = Task.Run(() =>
+                {
+                    var succeeded = 0;
+                    foreach (var p in teamProposals)
+                    {
+                        try
+                        {
+                            var feature = _backlogService.AddFeature(wd, p.RawIdea);
+                            if (p.Priority != 100)
+                                _backlogService.ModifyFeature(feature.Id, f => f.Priority = p.Priority);
+                            _plannerService.StartPlanning(feature);
+                            succeeded++;
+                        }
+                        catch (Exception ex)
+                        {
+                            DiagnosticLogger.Log("TEAM_TASK_ERROR",
+                                $"Failed to add task: {ex.Message}");
+                        }
+                    }
+                    return succeeded;
+                }).ContinueWith(t => RunOnUI(() =>
+                {
+                    var ok = t.IsFaulted ? 0 : t.Result;
+                    if (ok > 0) Team.Refresh();
+                    var msg = ok == total
+                        ? $"{ok} task(s) sent to Team pipeline"
+                        : ok > 0
+                            ? $"{ok}/{total} task(s) sent to Team pipeline ({total - ok} failed)"
+                            : $"Failed to send tasks to Team";
+                    Messages.Add(new MessageViewModel(MessageRole.System, msg));
+                }), TaskScheduler.Default);
+            }
+
             IsProcessing = false;
             StopNudgeTimer();
-            ClearAllThinking();
+            _messageAssembler.ClearAllThinking();
             StatusText = "";
             UpdateCta(CtaState.WaitingForUser);
 
@@ -529,8 +456,12 @@ public partial class MainViewModel
         if (_taskRunnerService is null || string.IsNullOrEmpty(WorkingDirectory))
             return;
 
-        // Check conditions: changed files + completion marker
-        if (ChangedFiles.Count == 0 || !DetectCompletionMarker())
+        // Check conditions: changed files + completion marker.
+        // When review cycle completed, the cycle itself is the completion signal —
+        // skip marker check (fix responses end with REVIEW_QUALITY: LOW, not "Done").
+        if (ChangedFiles.Count == 0)
+            return;
+        if (!_reviewCycleCompleted && !DetectCompletionMarker())
             return;
 
         // Determine effective projects from changed file paths (not just WorkingDirectory)
@@ -647,18 +578,11 @@ public partial class MainViewModel
             // Skip stale callbacks from a cancelled CLI process
             if (_activeSendGeneration != _sendGeneration) return;
 
-            if (_currentAssistantMessage is not null)
-            {
-                _currentAssistantMessage.IsStreaming = false;
-                _currentAssistantMessage.IsThinking = false;
-                if (string.IsNullOrEmpty(_currentAssistantMessage.Text))
-                    _currentAssistantMessage.Text = $"Error: {error}";
-            }
+            _messageAssembler.HandleError(error);
 
-            _currentAssistantMessage = null;
             IsProcessing = false;
             StopNudgeTimer();
-            ClearAllThinking();
+            _messageAssembler.ClearAllThinking();
             StatusText = "Error";
             UpdateCta(CtaState.WaitingForUser);
 

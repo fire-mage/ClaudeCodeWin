@@ -143,9 +143,9 @@ public partial class MainViewModel
     /// </summary>
     private string? FindTaskIdForToolResult(string toolUseId)
     {
-        if (_currentAssistantMessage is null) return null;
+        if (_messageAssembler.CurrentMessage is null) return null;
 
-        var toolVm = _currentAssistantMessage.ToolUses
+        var toolVm = _messageAssembler.CurrentMessage.ToolUses
             .FirstOrDefault(t => t.ToolUseId == toolUseId);
 
         if (toolVm?.Input is null || !toolVm.Input.StartsWith('{'))

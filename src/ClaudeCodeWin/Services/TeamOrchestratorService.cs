@@ -61,6 +61,16 @@ public class TeamOrchestratorService : IDisposable
     public event Action<string>? OnDevTextDelta;
     public event Action<string>? OnReviewTextDelta;
     public event Action<string>? OnError;
+
+    // Structured events for rich team chat rendering
+    public event Action? OnDevTextBlockStart;
+    public event Action<string>? OnDevThinkingDelta;
+    public event Action<string, string, string>? OnDevToolUseStarted;  // toolName, toolUseId, input
+    public event Action<string, string, string>? OnDevToolResult;       // toolName, toolUseId, content
+    public event Action? OnDevCompleted;
+    public event Action<string>? OnDevError;
+    public event Action? OnReviewCompleted;
+    public event Action<string>? OnReviewError;
     public event Action<IReadOnlyList<SessionHealthInfo>>? OnHealthSnapshot;
     public event Action<string?>? OnActiveTaskChanged; // featureId or null when cleared
     public event Action<bool>? OnSoftPauseRequested; // true = requested, false = cleared
@@ -110,6 +120,14 @@ public class TeamOrchestratorService : IDisposable
     private void RaiseError(string msg) => RaiseEvent(() => OnError?.Invoke(msg));
     private void RaiseHealthSnapshot(IReadOnlyList<SessionHealthInfo> items) => RaiseEvent(() => OnHealthSnapshot?.Invoke(items));
     private void RaiseActiveTaskChanged(string? featureId) => RaiseEvent(() => OnActiveTaskChanged?.Invoke(featureId));
+    private void RaiseDevTextBlockStart() => RaiseEvent(() => OnDevTextBlockStart?.Invoke());
+    private void RaiseDevThinkingDelta(string text) => RaiseEvent(() => OnDevThinkingDelta?.Invoke(text));
+    private void RaiseDevToolUseStarted(string n, string id, string inp) => RaiseEvent(() => OnDevToolUseStarted?.Invoke(n, id, inp));
+    private void RaiseDevToolResult(string n, string id, string c) => RaiseEvent(() => OnDevToolResult?.Invoke(n, id, c));
+    private void RaiseDevCompleted() => RaiseEvent(() => OnDevCompleted?.Invoke());
+    private void RaiseDevError(string err) => RaiseEvent(() => OnDevError?.Invoke(err));
+    private void RaiseReviewCompleted() => RaiseEvent(() => OnReviewCompleted?.Invoke());
+    private void RaiseReviewError(string err) => RaiseEvent(() => OnReviewError?.Invoke(err));
 
     private void RaiseEvent(Action action)
     {
@@ -524,6 +542,12 @@ public class TeamOrchestratorService : IDisposable
             OnDevTextDelta?.Invoke(text);
         };
 
+        // Structured events for rich chat rendering (via RaiseEvent for consistent delivery order)
+        cli.OnTextBlockStart += () => RaiseDevTextBlockStart();
+        cli.OnThinkingDelta += text => RaiseDevThinkingDelta(text);
+        cli.OnToolUseStarted += (name, id, input) => RaiseDevToolUseStarted(name, id, input);
+        cli.OnToolResult += (name, id, content) => RaiseDevToolResult(name, id, content);
+
         cli.OnSessionStarted += (sessionId, _, _) =>
         {
             lock (_lock) session.DevSessionId = sessionId;
@@ -540,6 +564,7 @@ public class TeamOrchestratorService : IDisposable
 
         cli.OnCompleted += result =>
         {
+            RaiseDevCompleted();
             lock (_lock)
             {
                 if (_activeSession != session) return; // stale callback
@@ -553,6 +578,7 @@ public class TeamOrchestratorService : IDisposable
 
         cli.OnError += error =>
         {
+            RaiseDevError(error);
             lock (_lock)
             {
                 if (_activeSession != session) return; // stale callback
@@ -734,6 +760,7 @@ public class TeamOrchestratorService : IDisposable
 
         reviewer.OnReviewCompleted += (fullText, verdict) =>
         {
+            RaiseReviewCompleted();
             lock (_lock)
             {
                 if (_activeSession != session) return; // stale callback
@@ -744,6 +771,7 @@ public class TeamOrchestratorService : IDisposable
 
         reviewer.OnError += error =>
         {
+            RaiseReviewError(error);
             lock (_lock)
             {
                 if (_activeSession != session) return;

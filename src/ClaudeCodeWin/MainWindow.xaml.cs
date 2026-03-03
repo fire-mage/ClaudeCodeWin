@@ -101,6 +101,11 @@ public partial class MainWindow : Window
         // Wire up initial tab
         SubscribeToActiveTab();
 
+        // Show welcome for the initial tab immediately (avoids delayed popup appearance
+        // that previously waited for update check to complete before showing ReturningPanel)
+        if (TabHost.ActiveTab?.ShowWelcome == true)
+            ShowWelcomeScreen();
+
         // Set window icon from embedded resource
         try
         {
@@ -118,10 +123,8 @@ public partial class MainWindow : Window
             // Icon not found — not critical, continue without it
         }
 
-        // Track scroll position for "scroll to bottom" button
-        ChatScrollViewer.ScrollChanged += ChatScrollViewer_ScrollChanged;
-
-        // Auto-scroll is handled per-tab via SubscribeToActiveTab()
+        // Wire bookmark toggle event from ChatControl
+        ChatDisplay.BookmarkToggled += UpdateBookmarksButton;
 
         // Apply compact mode before first render to prevent visual jump
         ApplyTabPanelMode();
@@ -135,7 +138,6 @@ public partial class MainWindow : Window
     private void OnActiveTabChanged()
     {
         SubscribeToActiveTab();
-        _isUserNearBottom = true;
 
         // Show welcome screen for new/blank tabs
         if (TabHost.ActiveTab?.ShowWelcome == true)
@@ -143,7 +145,7 @@ public partial class MainWindow : Window
 
         Dispatcher.BeginInvoke(() =>
         {
-            ChatScrollViewer.ScrollToEnd();
+            ChatDisplay.ScrollToEnd();
             ComposerControl.FocusFirst();
         });
     }
@@ -162,41 +164,7 @@ public partial class MainWindow : Window
                 Dispatcher.BeginInvoke(StartFinalizeLabelBlink);
         };
         tab.FinalizeActions.OnFinalizeCollapse = () => Dispatcher.BeginInvoke(AnimateFinalizeCollapse);
-
-        // Auto-scroll when messages change or text streams in
-        if (tab.Messages is INotifyCollectionChanged ncc)
-        {
-            ncc.CollectionChanged += (_, args) =>
-            {
-                if (tab != TabHost.ActiveTab) return; // only scroll for active tab
-
-                ScrollToBottomIfAtBottom();
-
-                if (args.NewItems is not null)
-                {
-                    foreach (MessageViewModel msg in args.NewItems)
-                    {
-                        msg.PropertyChanged += (_, pe) =>
-                        {
-                            if (tab != TabHost.ActiveTab) return;
-                            if (pe.PropertyName is nameof(MessageViewModel.Text)
-                                or nameof(MessageViewModel.IsThinking)
-                                or nameof(MessageViewModel.HasToolUses))
-                                ScrollToBottomIfAtBottom();
-                        };
-
-                        if (msg.ToolUses is INotifyCollectionChanged toolNcc)
-                        {
-                            toolNcc.CollectionChanged += (_, _) =>
-                            {
-                                if (tab != TabHost.ActiveTab) return;
-                                ScrollToBottomIfAtBottom();
-                            };
-                        }
-                    }
-                }
-            };
-        }
+        // Auto-scroll is handled by ChatControl internally via Messages DependencyProperty
     }
 
     private void TabHeader_Click(object sender, MouseButtonEventArgs e)
@@ -791,49 +759,6 @@ public partial class MainWindow : Window
         InsertAutocomplete();
     }
 
-    private bool _isUserNearBottom = true;
-
-    private bool IsNearBottom()
-    {
-        var sv = ChatScrollViewer;
-        return sv.VerticalOffset >= sv.ScrollableHeight - 50;
-    }
-
-    private void ScrollToBottomIfAtBottom()
-    {
-        if (_isUserNearBottom)
-        {
-            // Use Loaded priority so WPF finishes layout/measure before we scroll
-            Dispatcher.InvokeAsync(() =>
-                ChatScrollViewer.ScrollToEnd(),
-                System.Windows.Threading.DispatcherPriority.Loaded);
-        }
-    }
-
-    private void ChatScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
-    {
-        // Only update user intent when the user actually scrolled (not when content grew)
-        if (e.ExtentHeightChange == 0)
-        {
-            _isUserNearBottom = IsNearBottom();
-        }
-        ScrollToBottomButton.Visibility = IsNearBottom()
-            ? Visibility.Collapsed
-            : Visibility.Visible;
-    }
-
-    private void ScrollToBottomButton_Click(object sender, RoutedEventArgs e)
-    {
-        ChatScrollViewer.ScrollToEnd();
-    }
-
-    private void CopyAllMessage_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is MenuItem menuItem && menuItem.Tag is string text && !string.IsNullOrEmpty(text))
-            Clipboard.SetText(text);
-    }
-
-
     private void ModelIndicator_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (sender is FrameworkElement element
@@ -846,95 +771,6 @@ public partial class MainWindow : Window
             e.Handled = true;
         }
     }
-
-    private void AttachmentImage_Loaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is System.Windows.Controls.Image img && img.Tag is string filePath)
-        {
-            try
-            {
-                var ext = Path.GetExtension(filePath);
-                var imageExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                    { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" };
-
-                if (!imageExts.Contains(ext) || !File.Exists(filePath))
-                    return;
-
-                var bitmap = new BitmapImage();
-                bitmap.BeginInit();
-                bitmap.UriSource = new Uri(filePath, UriKind.Absolute);
-                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.DecodePixelWidth = 400; // thumbnail
-                bitmap.EndInit();
-                bitmap.Freeze();
-
-                img.Source = bitmap;
-                img.Visibility = Visibility.Visible;
-            }
-            catch
-            {
-                // Can't load image — keep collapsed
-            }
-        }
-    }
-
-    private void InlineImage_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (sender is FrameworkElement fe && fe.DataContext is string filePath && File.Exists(filePath))
-            ShowImagePreviewWindow(this, filePath);
-    }
-
-    private void ThinkingToggle_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (sender is FrameworkElement fe && fe.DataContext is ViewModels.MessageViewModel vm)
-            vm.IsThinkingExpanded = !vm.IsThinkingExpanded;
-    }
-
-    private void AttachmentPreview_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (sender is FrameworkElement fe && fe.DataContext is Models.FileAttachment att
-            && att.IsImage && File.Exists(att.FilePath))
-            ShowImagePreviewWindow(this, att.FilePath, att.FileName);
-    }
-
-    public static void ShowImagePreviewWindow(Window owner, string filePath, string? title = null)
-    {
-        var bitmap = new BitmapImage();
-        bitmap.BeginInit();
-        bitmap.UriSource = new Uri(filePath, UriKind.Absolute);
-        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-        bitmap.EndInit();
-
-        var image = new System.Windows.Controls.Image
-        {
-            Source = bitmap,
-            Stretch = Stretch.Uniform,
-            StretchDirection = StretchDirection.DownOnly
-        };
-
-        var previewWindow = new Window
-        {
-            Title = title ?? Path.GetFileName(filePath),
-            Width = Math.Min(bitmap.PixelWidth + 40, 1200),
-            Height = Math.Min(bitmap.PixelHeight + 60, 800),
-            MinWidth = 300,
-            MinHeight = 200,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = owner,
-            Background = (Brush)owner.FindResource("BackgroundBrush"),
-            Content = new ScrollViewer
-            {
-                Content = image,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Padding = new Thickness(8)
-            }
-        };
-
-        previewWindow.ShowDialog();
-    }
-
-    private void MenuItem_OpenProject_Click(object sender, RoutedEventArgs e) => OpenProjectInNewTab();
 
     private void OpenProjectTab_Click(object sender, RoutedEventArgs e) => OpenProjectInNewTab();
 
@@ -1031,21 +867,6 @@ public partial class MainWindow : Window
         scaleTransform.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleYProperty, scaleYAnim);
     }
 
-    private void ToggleBookmark_Click(object sender, RoutedEventArgs e)
-    {
-        // Walk up the visual tree from the context menu to find the MessageViewModel
-        if (sender is MenuItem menuItem)
-        {
-            var contextMenu = menuItem.Parent as ContextMenu;
-            var textBox = contextMenu?.PlacementTarget as System.Windows.Controls.TextBox;
-            if (textBox?.DataContext is MessageViewModel msg)
-            {
-                msg.IsBookmarked = !msg.IsBookmarked;
-                menuItem.Header = msg.IsBookmarked ? "Remove Bookmark" : "Bookmark";
-                UpdateBookmarksButton();
-            }
-        }
-    }
 
     private void UpdateBookmarksButton()
     {
@@ -1080,10 +901,7 @@ public partial class MainWindow : Window
 
     private void ScrollToMessage(MessageViewModel msg)
     {
-        // Find the container for this message and scroll to it
-        var container = MessagesControl.ItemContainerGenerator.ContainerFromItem(msg) as FrameworkElement;
-        if (container is not null)
-            container.BringIntoView();
+        ChatDisplay.ScrollToMessage(msg);
     }
 
     private void MenuItem_Settings_Click(object sender, RoutedEventArgs e)
@@ -1092,26 +910,14 @@ public partial class MainWindow : Window
         dlg.ShowDialog();
     }
 
-    private void MenuItem_HealthCheck_Click(object sender, RoutedEventArgs e)
-    {
-        var depService = new Services.ClaudeCodeDependencyService();
-        var healthService = new Services.HealthCheckService(depService);
-        new HealthCheckWindow(healthService, ViewModel.WorkingDirectory) { Owner = this }.ShowDialog();
-    }
-
     private void MenuItem_About_Click(object sender, RoutedEventArgs e)
     {
-        new AboutWindow { Owner = this }.ShowDialog();
+        new AboutWindow(ViewModel.WorkingDirectory) { Owner = this }.ShowDialog();
     }
 
     private void MenuItem_FeatureRequest_Click(object sender, RoutedEventArgs e)
     {
         new FeatureRequestWindow(_settings, _settingsService) { Owner = this }.ShowDialog();
-    }
-
-    private void MenuItem_ActivationCode_Click(object sender, RoutedEventArgs e)
-    {
-        new ActivationCodeWindow(_settings, _settingsService) { Owner = this }.ShowDialog();
     }
 
     // ===== Ask Claude Menu =====

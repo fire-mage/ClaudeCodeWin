@@ -35,6 +35,7 @@ public partial class SettingsWindow : Window
         ContextSnapshotCheck.IsChecked = settings.ContextSnapshotEnabled;
         UpdateInstructionsSummary();
         UpdateServersSummary();
+        UpdateActivationSummary();
 
         _initialized = true;
     }
@@ -102,6 +103,21 @@ public partial class SettingsWindow : Window
         });
 
         ServersSummary.Text = string.Join("  |  ", parts);
+    }
+
+    private void ManageActivationCode_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new ActivationCodeWindow(_settings, _settingsService) { Owner = this };
+        dlg.ShowDialog();
+        UpdateActivationSummary();
+    }
+
+    private void UpdateActivationSummary()
+    {
+        if (!string.IsNullOrEmpty(_settings.ActivationCode) && _settings.ActivatedFeatures.Count > 0)
+            ActivationSummary.Text = $"Active code: {_settings.ActivationCode}  |  Features: {string.Join(", ", _settings.ActivatedFeatures)}";
+        else
+            ActivationSummary.Text = "No activation code applied";
     }
 
     private void Close_Click(object sender, RoutedEventArgs e)

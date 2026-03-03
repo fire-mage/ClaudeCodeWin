@@ -36,7 +36,7 @@ public partial class MainViewModel
             ShowNudgeButton = false;
 
         // Reset thinking duration timer to show time since last screen activity
-        _currentAssistantMessage?.ResetThinkingTimer();
+        _messageAssembler.CurrentMessage?.ResetThinkingTimer();
     }
 
     private void StartNudgeTimer()

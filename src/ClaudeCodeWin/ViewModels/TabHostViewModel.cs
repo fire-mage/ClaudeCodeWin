@@ -37,6 +37,7 @@ public class TabHostViewModel : ViewModelBase
     private string _sessionPctText = "";
     private string _sessionExtraText = "";
     private string _weekPctText = "";
+    private string _weekExtraText = "";
     private string _usageText = "";
     private bool _isTabPanelCompact;
     private bool _isTeamPanelVisible;
@@ -96,6 +97,12 @@ public class TabHostViewModel : ViewModelBase
     {
         get => _weekPctText;
         set => SetProperty(ref _weekPctText, value);
+    }
+
+    public string WeekExtraText
+    {
+        get => _weekExtraText;
+        set => SetProperty(ref _weekExtraText, value);
     }
 
     public string UsageText

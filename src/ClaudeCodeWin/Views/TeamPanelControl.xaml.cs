@@ -7,37 +7,14 @@ namespace ClaudeCodeWin.Views;
 
 public partial class TeamPanelControl : UserControl
 {
-    private TeamViewModel? _subscribedVm;
-
     public TeamPanelControl()
     {
         InitializeComponent();
-        DataContextChanged += OnDataContextChanged;
-    }
-
-    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
-    {
-        if (_subscribedVm != null)
-            _subscribedVm.PropertyChanged -= OnVmPropertyChanged;
-        _subscribedVm = DataContext as TeamViewModel;
-        if (_subscribedVm != null)
-            _subscribedVm.PropertyChanged += OnVmPropertyChanged;
-    }
-
-    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(TeamViewModel.LiveChatText))
+        Unloaded += (_, _) =>
         {
-            // Auto-scroll if already near bottom
-            Dispatcher.InvokeAsync(() =>
-            {
-                if (ChatScrollViewer == null) return;
-                var isNearBottom = ChatScrollViewer.VerticalOffset >=
-                    ChatScrollViewer.ScrollableHeight - 20;
-                if (isNearBottom)
-                    ChatScrollViewer.ScrollToEnd();
-            }, System.Windows.Threading.DispatcherPriority.Background);
-        }
+            _teamChatWindow?.Close();
+            _teamChatWindow = null;
+        };
     }
 
     private TeamViewModel? VM => DataContext as TeamViewModel;
@@ -226,10 +203,26 @@ public partial class TeamPanelControl : UserControl
         }
     }
 
+    private TeamChatWindow? _teamChatWindow;
+
     private void ViewChat_Click(object sender, RoutedEventArgs e)
     {
-        if (VM != null)
-            VM.IsDevChatVisible = !VM.IsDevChatVisible;
+        if (VM == null) return;
+
+        // If the window is already open, just bring it to front
+        if (_teamChatWindow is not null && _teamChatWindow.IsLoaded)
+        {
+            _teamChatWindow.Activate();
+            return;
+        }
+
+        _teamChatWindow = new TeamChatWindow
+        {
+            DataContext = VM,
+            Owner = System.Windows.Window.GetWindow(this)
+        };
+        _teamChatWindow.Closed += (_, _) => _teamChatWindow = null;
+        _teamChatWindow.Show();
     }
 
     private void LogHeader_Click(object sender, MouseButtonEventArgs e)

@@ -7,10 +7,12 @@ namespace ClaudeCodeWin;
 public partial class AboutWindow : Window
 {
     private const string Email = "claudecodewin.support@main.fish";
+    private readonly string? _workingDirectory;
 
-    public AboutWindow()
+    public AboutWindow(string? workingDirectory = null)
     {
         InitializeComponent();
+        _workingDirectory = workingDirectory;
 
         var infoVersion = typeof(AboutWindow).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
@@ -39,6 +41,13 @@ public partial class AboutWindow : Window
     {
         Clipboard.SetText(Email);
         CopyEmailButton.Content = "Copied!";
+    }
+
+    private void HealthCheck_Click(object sender, RoutedEventArgs e)
+    {
+        var depService = new Services.ClaudeCodeDependencyService();
+        var healthService = new Services.HealthCheckService(depService);
+        new HealthCheckWindow(healthService, _workingDirectory) { Owner = this }.ShowDialog();
     }
 
     private void Close_Click(object sender, RoutedEventArgs e)

@@ -91,10 +91,8 @@ public partial class MainViewModel : ViewModelBase
     private bool _isReviewInProgress;
     private string _statusText = "";
     private string _modelName = "";
-    private MessageViewModel? _currentAssistantMessage;
+    private readonly ChatMessageAssembler _messageAssembler;
     private bool _showWelcome;
-    private bool _isFirstDelta;
-    private bool _hadToolsSinceLastText;
     private bool _hasResponseStarted;
     private string? _lastSentText;
     private List<FileAttachment>? _lastSentAttachments;
@@ -455,6 +453,7 @@ public partial class MainViewModel : ViewModelBase
         _backlogService = backlogService;
         _teamNotesService = teamNotesService;
         _devKbService = devKbService;
+        _messageAssembler = new ChatMessageAssembler(Messages);
 
         SendCommand = new RelayCommand(() => _ = SendMessageAsync());
         CancelCommand = new RelayCommand(() => CancelProcessing(), () => IsProcessing || IsReviewInProgress);

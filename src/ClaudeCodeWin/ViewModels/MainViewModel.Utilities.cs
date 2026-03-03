@@ -108,10 +108,10 @@ public partial class MainViewModel
         UpdateCta(CtaState.WaitingForUser);
 
         // Remove the assistant "thinking" bubble
-        if (_currentAssistantMessage is not null)
+        if (_messageAssembler.CurrentMessage is not null)
         {
-            Messages.Remove(_currentAssistantMessage);
-            _currentAssistantMessage = null;
+            Messages.Remove(_messageAssembler.CurrentMessage);
+            _messageAssembler.Reset();
         }
 
         // Remove the user message that was just sent
@@ -198,14 +198,14 @@ public partial class MainViewModel
         StatusText = "Cancelled";
         UpdateCta(CtaState.WaitingForUser);
 
-        if (_currentAssistantMessage is not null)
+        if (_messageAssembler.CurrentMessage is not null)
         {
-            _currentAssistantMessage.IsStreaming = false;
-            _currentAssistantMessage.IsThinking = false;
-            _currentAssistantMessage = null;
+            _messageAssembler.CurrentMessage.IsStreaming = false;
+            _messageAssembler.CurrentMessage.IsThinking = false;
+            _messageAssembler.Reset();
         }
 
-        ClearAllThinking();
+        _messageAssembler.ClearAllThinking();
 
         if (_teamPausedForConflict)
             ResumeTeamAfterConflict();
@@ -216,14 +216,7 @@ public partial class MainViewModel
     /// Prevents stale "thinking" indicators when _currentAssistantMessage was reassigned
     /// (e.g. by HandleTextBlockStart) and the old message wasn't properly cleared.
     /// </summary>
-    private void ClearAllThinking()
-    {
-        foreach (var msg in Messages)
-        {
-            if (msg.IsThinking)
-                msg.IsThinking = false;
-        }
-    }
+    private void ClearAllThinking() => _messageAssembler.ClearAllThinking();
 
 
     public void AddTaskOutput(string taskName, string output)
@@ -297,7 +290,7 @@ public partial class MainViewModel
     {
         var mainWindow = Application.Current.MainWindow;
         if (mainWindow is not null)
-            ClaudeCodeWin.MainWindow.ShowImagePreviewWindow(mainWindow, att.FilePath, att.FileName);
+            Infrastructure.ImagePreviewHelper.ShowPreviewWindow(mainWindow, att.FilePath, att.FileName);
     }
 
     private void UpdateTodoProgress(string inputJson)

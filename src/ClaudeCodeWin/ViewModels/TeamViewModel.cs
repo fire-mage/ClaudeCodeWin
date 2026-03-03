@@ -26,16 +26,19 @@ public class TeamViewModel : ViewModelBase, IDisposable
     private string _orchestratorLog = "";
     private bool _showArchive;
 
-    // Live chat viewer state
+    // Live chat viewer state (plain-text for inline preview)
     private string? _activeDevelopingFeatureId;
     private string _devChatText = "";
     private string _reviewChatText = "";
-    private bool _isDevChatVisible;
     private string _devChatLabel = "Development";
     private readonly StringBuilder _devChatBuffer = new();
     private readonly StringBuilder _reviewChatBuffer = new();
     private System.Windows.Threading.DispatcherTimer? _chatFlushTimer;
     private bool _chatBufferDirty;
+
+    // Rich team chat (structured messages for popup window)
+    private readonly ChatMessageAssembler _teamChatAssembler;
+    public ObservableCollection<MessageViewModel> TeamChatMessages { get; } = [];
 
     // Pipeline collections
     public ObservableCollection<BacklogFeatureVM> PlanningFeatures { get; } = [];
@@ -83,7 +86,23 @@ public class TeamViewModel : ViewModelBase, IDisposable
     public string? ActiveDevelopingFeatureId
     {
         get => _activeDevelopingFeatureId;
-        private set => SetProperty(ref _activeDevelopingFeatureId, value);
+        private set
+        {
+            SetProperty(ref _activeDevelopingFeatureId, value);
+            OnPropertyChanged(nameof(ActiveFeatureTitle));
+        }
+    }
+
+    /// <summary>Title of the currently active feature (for TeamChatWindow header).</summary>
+    public string ActiveFeatureTitle
+    {
+        get
+        {
+            if (_activeDevelopingFeatureId is null) return "No active task";
+            var feature = _backlogService.GetFeatures(_getProjectPath())
+                .FirstOrDefault(f => f.Id == _activeDevelopingFeatureId);
+            return feature?.Title ?? feature?.RawIdea ?? _activeDevelopingFeatureId;
+        }
     }
 
     public string DevChatText
@@ -96,12 +115,6 @@ public class TeamViewModel : ViewModelBase, IDisposable
     {
         get => _reviewChatText;
         private set => SetProperty(ref _reviewChatText, value);
-    }
-
-    public bool IsDevChatVisible
-    {
-        get => _isDevChatVisible;
-        set => SetProperty(ref _isDevChatVisible, value);
     }
 
     public string DevChatLabel
@@ -606,6 +619,18 @@ public class TeamViewModel : ViewModelBase, IDisposable
         _orchestratorService.OnActiveTaskChanged += HandleActiveTaskChanged;
         _orchestratorService.OnDevTextDelta += HandleDevTextDelta;
         _orchestratorService.OnReviewTextDelta += HandleReviewTextDelta;
+
+        // Structured events for rich team chat
+        _teamChatAssembler = new ChatMessageAssembler(TeamChatMessages);
+        _orchestratorService.OnDevTextBlockStart += HandleDevTextBlockStart;
+        _orchestratorService.OnDevThinkingDelta += HandleDevThinkingDelta;
+        _orchestratorService.OnDevToolUseStarted += HandleDevToolUseStarted;
+        _orchestratorService.OnDevToolResult += HandleDevToolResult;
+        _orchestratorService.OnDevCompleted += HandleDevCompleted;
+        _orchestratorService.OnDevError += HandleDevError;
+        _orchestratorService.OnReviewCompleted += HandleReviewCompleted;
+        _orchestratorService.OnReviewError += HandleReviewError;
+        _orchestratorService.OnPhaseStarted += HandlePhaseStarted;
     }
 
     public string ProjectName
@@ -1035,13 +1060,16 @@ public class TeamViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(ReviewChatText));
             DevChatLabel = "Development";
             _showingReviewChat = false;
+            _reviewBubbleStarted = false;
             OnPropertyChanged(nameof(LiveChatText));
+
+            TeamChatMessages.Clear();
+            _teamChatAssembler.Reset();
 
             if (featureId == null)
             {
                 SessionHealthItems.Clear();
                 OnPropertyChanged(nameof(HasActiveSession));
-                IsDevChatVisible = false;
             }
 
             // Update IsActiveDeveloping on backlog items
@@ -1057,8 +1085,13 @@ public class TeamViewModel : ViewModelBase, IDisposable
             _devChatBuffer.Append(text);
             _showingReviewChat = false;
             EnsureChatFlushTimer();
+
+            // Feed structured assembler (text blocks are handled via OnDevTextBlockStart)
+            _teamChatAssembler.HandleTextDelta(text);
         });
     }
+
+    private bool _reviewBubbleStarted;
 
     private void HandleReviewTextDelta(string text)
     {
@@ -1067,7 +1100,82 @@ public class TeamViewModel : ViewModelBase, IDisposable
             _reviewChatBuffer.Append(text);
             _showingReviewChat = true;
             EnsureChatFlushTimer();
+
+            // Start review bubble on first review text delta
+            if (!_reviewBubbleStarted)
+            {
+                _reviewBubbleStarted = true;
+                _teamChatAssembler.AddSystemMessage("── Review ──");
+                _teamChatAssembler.BeginAssistantMessage("Reviewer");
+            }
+            _teamChatAssembler.HandleTextDelta(text);
         });
+    }
+
+    // ── Structured event handlers for rich team chat ──
+
+    private void HandleDevTextBlockStart() =>
+        RunOnUI(() =>
+        {
+            EnsureDevAssistantMessage();
+            _teamChatAssembler.HandleTextBlockStart();
+        });
+
+    private void HandleDevThinkingDelta(string text) =>
+        RunOnUI(() =>
+        {
+            EnsureDevAssistantMessage();
+            _teamChatAssembler.HandleThinkingDelta(text);
+        });
+
+    private void HandleDevToolUseStarted(string name, string id, string input) =>
+        RunOnUI(() =>
+        {
+            EnsureDevAssistantMessage();
+            _teamChatAssembler.HandleToolUseStarted(name, id, input);
+        });
+
+    private void HandleDevToolResult(string name, string id, string content) =>
+        RunOnUI(() =>
+        {
+            EnsureDevAssistantMessage();
+            _teamChatAssembler.HandleToolResult(name, id, content);
+        });
+
+    private void HandleDevCompleted() =>
+        RunOnUI(() => _teamChatAssembler.HandleCompleted());
+
+    private void HandleDevError(string error) =>
+        RunOnUI(() => _teamChatAssembler.HandleError(error));
+
+    private void HandleReviewCompleted() =>
+        RunOnUI(() =>
+        {
+            _teamChatAssembler.HandleCompleted();
+            _reviewBubbleStarted = false;
+        });
+
+    private void HandleReviewError(string error) =>
+        RunOnUI(() => _teamChatAssembler.HandleError(error));
+
+    private void HandlePhaseStarted(string featureId, string phaseId) => RunOnUI(() =>
+    {
+        _reviewBubbleStarted = false;
+        _teamChatAssembler.AddSystemMessage($"── Development: {phaseId} ──");
+        _teamChatAssembler.BeginAssistantMessage();
+    });
+
+    /// <summary>
+    /// Defensively ensure an assistant message exists for dev output.
+    /// Handles fix cycles and health-check restarts where RaisePhaseStarted is not called.
+    /// </summary>
+    private void EnsureDevAssistantMessage()
+    {
+        if (_teamChatAssembler.CurrentMessage is null)
+        {
+            _teamChatAssembler.AddSystemMessage("── Fix ──");
+            _teamChatAssembler.BeginAssistantMessage();
+        }
     }
 
     private void EnsureChatFlushTimer()
@@ -1353,6 +1461,15 @@ public class TeamViewModel : ViewModelBase, IDisposable
         _orchestratorService.OnActiveTaskChanged -= HandleActiveTaskChanged;
         _orchestratorService.OnDevTextDelta -= HandleDevTextDelta;
         _orchestratorService.OnReviewTextDelta -= HandleReviewTextDelta;
+        _orchestratorService.OnDevTextBlockStart -= HandleDevTextBlockStart;
+        _orchestratorService.OnDevThinkingDelta -= HandleDevThinkingDelta;
+        _orchestratorService.OnDevToolUseStarted -= HandleDevToolUseStarted;
+        _orchestratorService.OnDevToolResult -= HandleDevToolResult;
+        _orchestratorService.OnDevCompleted -= HandleDevCompleted;
+        _orchestratorService.OnDevError -= HandleDevError;
+        _orchestratorService.OnReviewCompleted -= HandleReviewCompleted;
+        _orchestratorService.OnReviewError -= HandleReviewError;
+        _orchestratorService.OnPhaseStarted -= HandlePhaseStarted;
         _orchestratorService.Dispose();
 
         _chatFlushTimer?.Stop();
