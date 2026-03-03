@@ -99,6 +99,11 @@ public partial class MainViewModel
 
             var preamble = SystemInstruction;
 
+            // Inject required developer KB articles
+            var devKbSection = _devKbService?.BuildRequiredArticlesSection();
+            if (!string.IsNullOrEmpty(devKbSection))
+                preamble += devKbSection;
+
             if (_settings.ContextSnapshotEnabled)
             {
                 // Wait for background snapshot generation (max 10s)

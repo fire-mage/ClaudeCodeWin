@@ -17,7 +17,7 @@
         <TextBlock Grid.Row="0" Text="Knowledge Base" FontSize="18" FontWeight="Bold"
                    Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,4"/>
 
-        <TextBlock Grid.Row="1" TextWrapping="Wrap" FontSize="12"
+        <TextBlock Grid.Row="1" x:Name="SubtitleLabel" TextWrapping="Wrap" FontSize="12"
                    Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12">
             Articles Claude has curated for this project. Claude manages this list automatically.
         </TextBlock>
@@ -65,7 +65,7 @@
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="90"/>
-                            <ColumnDefinition Width="55"/>
+                            <ColumnDefinition Width="60"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
@@ -73,21 +73,21 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <!-- Date -->
+                        <!-- Date / source label -->
                         <TextBlock Grid.Row="0" Grid.Column="0"
-                                   Text="{Binding Date, StringFormat='{}{0:MMM dd, HH:mm}'}"
+                                   Text="{Binding Date}"
                                    FontSize="11"
                                    Foreground="{StaticResource TextSecondaryBrush}"
                                    VerticalAlignment="Center"/>
 
-                        <!-- Source -->
+                        <!-- Source badge -->
                         <TextBlock Grid.Row="0" Grid.Column="1"
                                    Text="{Binding Source}"
                                    FontSize="11"
                                    Foreground="{StaticResource TextSecondaryBrush}"
                                    VerticalAlignment="Center"/>
 
-                        <!-- When to read -->
+                        <!-- When to read / title -->
                         <TextBlock Grid.Row="0" Grid.Column="2"
                                    Text="{Binding WhenToRead}"
                                    FontSize="13"

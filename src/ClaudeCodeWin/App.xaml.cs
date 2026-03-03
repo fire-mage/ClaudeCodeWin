@@ -102,12 +102,16 @@ public partial class App : Application
             backlogService.Load();
             var teamNotesService = new TeamNotesService();
 
+            // Developer Knowledge Base (sync from S3)
+            var devKbService = new DevKbService();
+            _ = Task.Run(() => devKbService.SyncAsync()); // fire-and-forget
+
             // Create TabHostViewModel (manages multiple tabs)
             var tabHost = new TabHostViewModel(
                 notificationService, settingsService, settings, gitService,
                 updateService, fileIndexService, chatHistoryService,
                 projectRegistry, contextSnapshotService, usageService,
-                backlogService, teamNotesService);
+                backlogService, teamNotesService, devKbService);
 
             // Determine which project paths to restore (new multi-tab or legacy single)
             var tabPaths = (settings.OpenTabPaths is { Count: > 0 }
@@ -205,6 +209,7 @@ public partial class App : Application
             // Knowledge Base
             var knowledgeBaseService = new KnowledgeBaseService();
             mainWindow.SetKnowledgeBaseService(knowledgeBaseService);
+            mainWindow.SetDevKbService(devKbService);
 
             // Update check first, then welcome flow (to avoid overlapping popups)
             var hasUpdate = await tabHost.Update.CheckOnStartupAsync();

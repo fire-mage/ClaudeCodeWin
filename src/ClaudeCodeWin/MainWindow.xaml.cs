@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private readonly ChatHistoryService _chatHistoryService;
     private readonly ProjectRegistryService _projectRegistry;
     private KnowledgeBaseService? _knowledgeBaseService;
+    private DevKbService? _devKbService;
     private CancellationTokenSource? _autocompleteCts;
     private bool _isAtMentionMode;
     private int _atMentionStart; // index of '@' in the text
@@ -1148,6 +1149,7 @@ public partial class MainWindow : Window
     // ===== Ask Claude Menu =====
 
     public void SetKnowledgeBaseService(KnowledgeBaseService service) => _knowledgeBaseService = service;
+    public void SetDevKbService(DevKbService service) => _devKbService = service;
 
     private void MenuItem_Marketplace_Click(object sender, RoutedEventArgs e)
     {
@@ -1320,10 +1322,11 @@ public partial class MainWindow : Window
     private void MenuItem_KnowledgeBase_Click(object sender, RoutedEventArgs e)
     {
         var workDir = ViewModel.WorkingDirectory;
-        var entries = !string.IsNullOrEmpty(workDir) && _knowledgeBaseService is not null
+        var localEntries = !string.IsNullOrEmpty(workDir) && _knowledgeBaseService is not null
             ? _knowledgeBaseService.LoadEntries(workDir)
             : [];
-        new KnowledgeBaseWindow(entries) { Owner = this }.ShowDialog();
+        var devArticles = _devKbService?.GetAllArticles() ?? [];
+        new KnowledgeBaseWindow(localEntries, devArticles) { Owner = this }.ShowDialog();
     }
 
     // ===== Welcome Back Screen (inline) =====
