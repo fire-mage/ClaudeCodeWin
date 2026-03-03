@@ -16,6 +16,14 @@ public partial class NotepadControl : UserControl
     {
         base.OnKeyDown(e);
 
+        if (e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control && DataContext is NotepadViewModel vmSave)
+        {
+            if (vmSave.SaveNoteCommand.CanExecute(null))
+                vmSave.SaveNoteCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.F2 && DataContext is NotepadViewModel vm)
         {
             if (vm.RenameNoteCommand.CanExecute(null))

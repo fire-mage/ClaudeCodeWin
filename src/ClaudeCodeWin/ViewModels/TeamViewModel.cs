@@ -20,7 +20,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
     private readonly ProjectRegistryService _projectRegistry;
     private readonly SettingsService _settingsService;
     private readonly AppSettings _settings;
-    private SubTab? _teamTab;
+    private string _projectName = "";
     private string _orchestratorStatusText = "Stopped";
     private bool _isOrchestratorStopped = true;
     private string _orchestratorLog = "";
@@ -599,6 +599,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
         // Subscribe to Orchestrator events
         _orchestratorService.OnLog += HandleOrchestratorLog;
         _orchestratorService.OnStateChanged += HandleOrchestratorStateChanged;
+        _orchestratorService.OnSoftPauseRequested += HandleSoftPauseRequested;
         _orchestratorService.OnPhaseCompleted += HandleOrchestratorPhaseCompleted;
         _orchestratorService.OnError += HandleOrchestratorError;
         _orchestratorService.OnHealthSnapshot += HandleHealthSnapshot;
@@ -607,7 +608,14 @@ public class TeamViewModel : ViewModelBase, IDisposable
         _orchestratorService.OnReviewTextDelta += HandleReviewTextDelta;
     }
 
-    public void SetTeamTab(SubTab tab) => _teamTab = tab;
+    public string ProjectName
+    {
+        get => _projectName;
+        set => SetProperty(ref _projectName, value);
+    }
+
+    public int PendingTaskCount => PlanningFeatures.Count + AwaitingApprovalFeatures.Count
+        + BacklogFeatures.Count + QueuedFeatures.Count;
 
     /// <summary>
     /// Attempt to start planning for a PlanningFailed feature.
@@ -896,21 +904,13 @@ public class TeamViewModel : ViewModelBase, IDisposable
 
     private void UpdateCounts()
     {
-        if (_teamTab != null)
-        {
-            // Badge = items needing user attention (include completed features with user actions)
-            var attention = PlanningFeatures.Count(f => f.NeedsUserInput)
-                          + AwaitingApprovalFeatures.Count
-                          + CompletedFeatures.Count(f => f.HasUserActions);
-            _teamTab.BadgeCount = attention;
-        }
-
         OnPropertyChanged(nameof(PlanningCount));
         OnPropertyChanged(nameof(ApprovalCount));
         OnPropertyChanged(nameof(BacklogCount));
         OnPropertyChanged(nameof(QueuedCount));
         OnPropertyChanged(nameof(CompletedCount));
         OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(PendingTaskCount));
     }
 
     private const int MaxLogLines = 200;
@@ -937,8 +937,10 @@ public class TeamViewModel : ViewModelBase, IDisposable
             OrchestratorStatusText = state switch
             {
                 OrchestratorState.Stopped => "Stopped",
-                OrchestratorState.Running => "Running",
-                OrchestratorState.SoftPaused => "Pausing...",
+                OrchestratorState.Running => _orchestratorService.IsSoftPauseRequested
+                    ? "Pausing after current task..."
+                    : "Running",
+                OrchestratorState.SoftPaused => "Paused",
                 OrchestratorState.HardPaused => "Paused",
                 OrchestratorState.WaitingForWork => "Idle",
                 _ => state.ToString()
@@ -948,6 +950,17 @@ public class TeamViewModel : ViewModelBase, IDisposable
             StartOrchestratorCommand.RaiseCanExecuteChanged();
             PauseOrchestratorCommand.RaiseCanExecuteChanged();
             HardPauseOrchestratorCommand.RaiseCanExecuteChanged();
+        });
+    }
+
+    private void HandleSoftPauseRequested(bool requested)
+    {
+        RunOnUI(() =>
+        {
+            if (requested && _orchestratorService.State == OrchestratorState.Running)
+                OrchestratorStatusText = "Pausing after current task...";
+            else if (!requested && _orchestratorService.State == OrchestratorState.Running)
+                OrchestratorStatusText = "Running";
         });
     }
 
@@ -1333,6 +1346,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
 
         _orchestratorService.OnLog -= HandleOrchestratorLog;
         _orchestratorService.OnStateChanged -= HandleOrchestratorStateChanged;
+        _orchestratorService.OnSoftPauseRequested -= HandleSoftPauseRequested;
         _orchestratorService.OnPhaseCompleted -= HandleOrchestratorPhaseCompleted;
         _orchestratorService.OnError -= HandleOrchestratorError;
         _orchestratorService.OnHealthSnapshot -= HandleHealthSnapshot;

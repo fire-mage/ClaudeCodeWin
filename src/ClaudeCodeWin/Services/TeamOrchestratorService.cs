@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net.Http;
 using System.Text;
+using System.Text.RegularExpressions;
 using ClaudeCodeWin.Models;
 
 namespace ClaudeCodeWin.Services;
@@ -16,6 +17,8 @@ namespace ClaudeCodeWin.Services;
 /// </summary>
 public class TeamOrchestratorService : IDisposable
 {
+    private static readonly Regex BugWordRegex = new(@"\bBUG\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly BacklogService _backlogService;
     private readonly GitService _gitService;
 
@@ -60,10 +63,12 @@ public class TeamOrchestratorService : IDisposable
     public event Action<string>? OnError;
     public event Action<IReadOnlyList<SessionHealthInfo>>? OnHealthSnapshot;
     public event Action<string?>? OnActiveTaskChanged; // featureId or null when cleared
+    public event Action<bool>? OnSoftPauseRequested; // true = requested, false = cleared
 
     public OrchestratorState State { get { lock (_lock) return _state; } }
     public bool IsRunning { get { lock (_lock) return _state == OrchestratorState.Running; } }
     public bool IsPaused { get { lock (_lock) return _state is OrchestratorState.SoftPaused or OrchestratorState.HardPaused; } }
+    public bool IsSoftPauseRequested { get { lock (_lock) return _softPauseRequested; } }
 
     public string? GetActiveFeatureId() { lock (_lock) return _activeSession?.FeatureId; }
 
@@ -222,7 +227,9 @@ public class TeamOrchestratorService : IDisposable
         lock (_lock)
         {
             _softPauseRequested = false;
+            RaiseEvent(() => OnSoftPauseRequested?.Invoke(false));
         }
+        FlushDeferredEvents();
     }
 
     /// <summary>
@@ -244,6 +251,7 @@ public class TeamOrchestratorService : IDisposable
             else
             {
                 RaiseLog("Soft pause requested. Current phase will finish.");
+                RaiseEvent(() => OnSoftPauseRequested?.Invoke(true));
             }
         }
         FlushDeferredEvents();
@@ -867,10 +875,13 @@ public class TeamOrchestratorService : IDisposable
         session.DevResponse.Clear();
         session.ReviewResponse.Clear();
 
+        // Condense review text for later rounds to reduce token usage
+        var reviewForFix = CondenseReviewForFix(reviewText, _reviewAttempt);
+
         var fixPrompt = $"""
             A code reviewer found issues in your work:
 
-            {reviewText}
+            {reviewForFix}
 
             Please fix all the issues identified above. After fixing, provide a summary of changes.
 
@@ -879,7 +890,7 @@ public class TeamOrchestratorService : IDisposable
             - If the issues were mostly style preferences, minor suggestions without real impact, or false positives → end with `REVIEW_QUALITY: LOW`
             """;
 
-        // Re-create dev CLI and resume the session
+        // Re-create dev CLI; for rounds > 2, use fresh session to avoid context bloat
         var workDir = session.DevCli?.WorkingDirectory ?? _workingDirectory;
         session.DevCli?.StopSession();
 
@@ -894,8 +905,10 @@ public class TeamOrchestratorService : IDisposable
             ModelOverride = TeamPrompts.TeamModelId
         };
 
-        if (session.DevSessionId is not null)
+        if (_reviewAttempt <= 2 && session.DevSessionId is not null)
             devCli.RestoreSession(session.DevSessionId);
+        else if (_reviewAttempt > 2)
+            RaiseLog($"Fix round {_reviewAttempt}: using fresh session (context optimization).");
         else
             RaiseLog("Warning: no session ID for fix retry, developer context may be lost.");
 
@@ -1371,6 +1384,85 @@ public class TeamOrchestratorService : IDisposable
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// For later review rounds (3+), extract only actionable items (CRITICAL/WARNING/BUG)
+    /// to reduce token usage when the developer starts a fresh session.
+    /// </summary>
+    private static string CondenseReviewForFix(string reviewText, int attempt)
+    {
+        if (attempt <= 2 || reviewText.Length < 2000)
+            return reviewText;
+
+        var lines = reviewText.Split('\n');
+        var sb = new StringBuilder();
+        var capturing = false;
+        var inCodeBlock = false;
+        string? lastSectionHeader = null;
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.TrimStart();
+
+            // Track code blocks — keep them if we're capturing (they contain fix context)
+            if (trimmed.StartsWith("```"))
+            {
+                inCodeBlock = !inCodeBlock;
+                if (capturing) { sb.AppendLine(line); continue; }
+                continue;
+            }
+
+            if (inCodeBlock) { if (capturing) sb.AppendLine(line); continue; }
+
+            // Section boundary: markdown header (##) or verdict/summary lines end the current capture
+            var isSectionBoundary = trimmed.StartsWith('#')
+                || trimmed.StartsWith("VERDICT", StringComparison.OrdinalIgnoreCase)
+                || trimmed.StartsWith("USER_NOTE", StringComparison.OrdinalIgnoreCase);
+
+            if (isSectionBoundary)
+            {
+                if (capturing) capturing = false;
+                if (trimmed.StartsWith('#')) lastSectionHeader = line;
+            }
+
+            var wroteAsHeader = false;
+            if (trimmed.Contains("CRITICAL", StringComparison.OrdinalIgnoreCase)
+                || trimmed.Contains("WARNING", StringComparison.OrdinalIgnoreCase)
+                || BugWordRegex.IsMatch(trimmed)
+                || trimmed.Contains("**Severity**", StringComparison.OrdinalIgnoreCase))
+            {
+                // Retroactively include the section header for context
+                if (!capturing && lastSectionHeader != null)
+                {
+                    sb.AppendLine(lastSectionHeader);
+                    wroteAsHeader = (lastSectionHeader == line);
+                    lastSectionHeader = null;
+                }
+                capturing = true;
+            }
+
+            if (capturing && !wroteAsHeader)
+                sb.AppendLine(line);
+        }
+
+        // Unclosed code block — condensation unreliable, fall back to truncation
+        if (inCodeBlock)
+            return TruncateAtLine(reviewText, 3000, "[...truncated for context optimization]");
+
+        var condensed = sb.ToString().Trim();
+        if (condensed.Length < 100)
+            return TruncateAtLine(reviewText, 3000, "[...truncated for context optimization]");
+
+        return TruncateAtLine(condensed, 3000, "[...truncated]");
+    }
+
+    private static string TruncateAtLine(string text, int maxLen, string suffix)
+    {
+        if (text.Length <= maxLen) return text;
+        var cutoff = text.LastIndexOf('\n', maxLen);
+        if (cutoff < 100) cutoff = maxLen;
+        return text[..cutoff] + "\n" + suffix;
     }
 }
 

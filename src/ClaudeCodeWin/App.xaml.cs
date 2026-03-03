@@ -333,12 +333,14 @@ public partial class App : Application
             var sessionExtra = string.IsNullOrEmpty(sessionCountdown)
                 ? " | " : $" ({sessionCountdown}) | ";
             var weekPct = $"{usageService.WeeklyUtilization:F0}%";
+            var weekCountdown = usageService.GetWeeklyCountdown();
+            var weekExtra = string.IsNullOrEmpty(weekCountdown) ? "" : $" ({weekCountdown})";
 
             // Usage is global (API-level), update TabHost-level properties
             tabHost.SessionPctText = sessionPct;
             tabHost.SessionExtraText = sessionExtra;
             tabHost.WeekPctText = weekPct;
-            tabHost.UsageText = $"Session: {sessionPct}{sessionExtra}Week: {weekPct}";
+            tabHost.UsageText = $"Session: {sessionPct}{sessionExtra}Week: {weekPct}{weekExtra}";
         };
     }
 

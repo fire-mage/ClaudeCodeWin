@@ -48,12 +48,8 @@ public partial class MainViewModel
             OnPropertyChanged(nameof(IsExplorerActive));
             OnPropertyChanged(nameof(IsChatActive));
             OnPropertyChanged(nameof(IsFileEditorActive));
-            OnPropertyChanged(nameof(IsTeamActive));
             OnPropertyChanged(nameof(IsNotepadActive));
             OnPropertyChanged(nameof(ActiveFileTab));
-
-            if (IsTeamActive)
-                Team.Refresh();
 
             if (IsNotepadActive)
             {
@@ -66,7 +62,6 @@ public partial class MainViewModel
     public bool IsExplorerActive => _activeSubTab?.Type == SubTabType.Explorer;
     public bool IsChatActive => _activeSubTab?.Type == SubTabType.Chat;
     public bool IsFileEditorActive => _activeSubTab?.Type == SubTabType.FileEditor;
-    public bool IsTeamActive => _activeSubTab?.Type == SubTabType.Team;
     public bool IsNotepadActive => _activeSubTab?.Type == SubTabType.Notepad;
     public SubTab? ActiveFileTab => _activeSubTab?.Type == SubTabType.FileEditor ? _activeSubTab : null;
 
@@ -76,7 +71,6 @@ public partial class MainViewModel
     private void InitializeSubTabs()
     {
         var chatTab = new SubTab(SubTabType.Chat, "Task Discussion");
-        var teamTab = new SubTab(SubTabType.Team, "Task Queue");
         var notepadTab = new SubTab(SubTabType.Notepad, "Notepad");
         var explorerTab = new SubTab(SubTabType.Explorer, "File Explorer");
 
@@ -85,9 +79,8 @@ public partial class MainViewModel
         Notepad = new NotepadViewModel(notepadStorage);
 
         SubTabs.Add(chatTab);       // 1. Task Discussion
-        SubTabs.Add(teamTab);       // 2. Task Queue
-        SubTabs.Add(notepadTab);    // 3. Notepad
-        SubTabs.Add(explorerTab);   // 4. File Explorer
+        SubTabs.Add(notepadTab);    // 2. Notepad
+        SubTabs.Add(explorerTab);   // 3. File Explorer
 
         // Wire explorer file open event
         Explorer.OnOpenFile += OpenFileInEditor;
@@ -113,7 +106,10 @@ public partial class MainViewModel
             _notificationService,
             _projectRegistry,
             _settingsService, _settings);
-        Team.SetTeamTab(teamTab);
+
+        // Set project name for global Team popup
+        Team.ProjectName = Path.GetFileName(WorkingDirectory ?? "") is { Length: > 0 } name
+            ? name : "New Tab";
 
         // Wire "Ask in Chat" — populate input box and switch to Chat tab
         Team.OnAskInChat += text =>
@@ -132,6 +128,10 @@ public partial class MainViewModel
     {
         if (!string.IsNullOrEmpty(WorkingDirectory) && Directory.Exists(WorkingDirectory))
             Explorer.SetRoot(WorkingDirectory);
+
+        // Update Team project name for global popup header
+        if (Team != null)
+            Team.ProjectName = Path.GetFileName(WorkingDirectory ?? "") is { Length: > 0 } name ? name : "New Tab";
 
         _plannerService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);
         _planReviewerService?.Configure(_cliService.ClaudeExePath, WorkingDirectory);

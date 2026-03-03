@@ -30,12 +30,16 @@ public class TabHostViewModel : ViewModelBase
     // Project uniqueness: prevent the same project from being open in two tabs
     private readonly HashSet<string> _openProjects = new(StringComparer.OrdinalIgnoreCase);
 
+    // Track Team PropertyChanged handlers for proper unsubscribe on tab close
+    private readonly Dictionary<MainViewModel, System.ComponentModel.PropertyChangedEventHandler> _teamHandlers = new();
+
     private MainViewModel? _activeTab;
     private string _sessionPctText = "";
     private string _sessionExtraText = "";
     private string _weekPctText = "";
     private string _usageText = "";
     private bool _isTabPanelCompact;
+    private bool _isTeamPanelVisible;
 
     // CLI executable path (shared across all tabs)
     public string ClaudeExePath { get; set; } = "claude";
@@ -115,6 +119,17 @@ public class TabHostViewModel : ViewModelBase
 
     public bool IsTabPanelFull => !_isTabPanelCompact;
 
+    public bool IsTeamPanelVisible
+    {
+        get => _isTeamPanelVisible;
+        set => SetProperty(ref _isTeamPanelVisible, value);
+    }
+
+    public int TotalPendingCount => Tabs.Sum(t => t.Team?.PendingTaskCount ?? 0);
+
+    public string TeamButtonText => TotalPendingCount > 0 ? $"Team ({TotalPendingCount})" : "Team";
+
+    public RelayCommand ToggleTeamPanelCommand { get; }
     public RelayCommand CloseTabCommand { get; }
     public RelayCommand ToggleTabPanelCompactCommand { get; }
 
@@ -166,6 +181,16 @@ public class TabHostViewModel : ViewModelBase
                 _activeTab.StatusText = text;
         };
 
+        ToggleTeamPanelCommand = new RelayCommand(() =>
+        {
+            IsTeamPanelVisible = !IsTeamPanelVisible;
+            if (IsTeamPanelVisible)
+            {
+                foreach (var tab in Tabs)
+                    tab.Team?.Refresh();
+            }
+        });
+
         CloseTabCommand = new RelayCommand(p =>
         {
             if (p is MainViewModel tab)
@@ -181,7 +206,45 @@ public class TabHostViewModel : ViewModelBase
             _settingsService.Save(_settings);
         });
 
-        Tabs.CollectionChanged += (_, _) => OnPropertyChanged(nameof(ShowTabStrip));
+        Tabs.CollectionChanged += (_, e) =>
+        {
+            OnPropertyChanged(nameof(ShowTabStrip));
+            RefreshTeamBadge();
+        };
+    }
+
+    /// <summary>
+    /// Subscribes to a tab's Team.PendingTaskCount changes to update the global badge.
+    /// </summary>
+    private void SubscribeToTeamChanges(MainViewModel tab)
+    {
+        // Team is initialized in MainViewModel constructor (InitializeSubTabs),
+        // so it's always available by the time CreateTab returns.
+        if (tab.Team is null)
+        {
+            DiagnosticLogger.Log("TEAM_SUBSCRIBE", "WARNING: Team is null, badge won't update for this tab");
+            return;
+        }
+
+        System.ComponentModel.PropertyChangedEventHandler handler = (_, e) =>
+        {
+            if (e.PropertyName == nameof(TeamViewModel.PendingTaskCount))
+                RefreshTeamBadge();
+        };
+        tab.Team.PropertyChanged += handler;
+        _teamHandlers[tab] = handler;
+    }
+
+    private void UnsubscribeTeamChanges(MainViewModel tab)
+    {
+        if (_teamHandlers.Remove(tab, out var handler) && tab.Team is not null)
+            tab.Team.PropertyChanged -= handler;
+    }
+
+    private void RefreshTeamBadge()
+    {
+        OnPropertyChanged(nameof(TotalPendingCount));
+        OnPropertyChanged(nameof(TeamButtonText));
     }
 
     public MainViewModel CreateTab()
@@ -218,6 +281,9 @@ public class TabHostViewModel : ViewModelBase
         Tabs.Add(tab);
         ActiveTab = tab;
 
+        // Subscribe to Team pipeline changes for global badge
+        SubscribeToTeamChanges(tab);
+
         return tab;
     }
 
@@ -232,6 +298,7 @@ public class TabHostViewModel : ViewModelBase
             _openProjects.Remove(System.IO.Path.GetFullPath(tab.WorkingDirectory));
 
         // Clean up resources
+        UnsubscribeTeamChanges(tab);
         tab.Dispose();
 
         var index = Tabs.IndexOf(tab);
@@ -276,7 +343,10 @@ public class TabHostViewModel : ViewModelBase
     public void DisposeAll()
     {
         foreach (var tab in Tabs)
+        {
+            UnsubscribeTeamChanges(tab);
             tab.Dispose();
+        }
     }
 
     /// <summary>

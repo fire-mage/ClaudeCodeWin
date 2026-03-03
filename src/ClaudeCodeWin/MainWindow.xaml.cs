@@ -532,6 +532,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Escape closes Team overlay (highest priority — it covers all content)
+        if (e.Key == Key.Escape && TabHost.IsTeamPanelVisible)
+        {
+            TabHost.IsTeamPanelVisible = false;
+            e.Handled = true;
+            return;
+        }
+
         // Escape fallback — when focus is outside the composer (chat, buttons, file explorer)
         // The composer handles Escape internally via EscapePressed event when it has focus.
         if (e.Key == Key.Escape && !ComposerControl.HasTextFocus)

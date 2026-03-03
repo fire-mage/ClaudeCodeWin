@@ -325,11 +325,6 @@
                         <views:FileExplorerControl DataContext="{Binding Explorer}"/>
                     </Border>
 
-                    <!-- Team panel -->
-                    <Border Visibility="{Binding IsTeamActive, Converter={StaticResource BoolToVis}}">
-                        <views:TeamPanelControl DataContext="{Binding Team}"/>
-                    </Border>
-
                     <!-- Notepad panel -->
                     <Border Visibility="{Binding IsNotepadActive, Converter={StaticResource BoolToVis}}">
                         <views:NotepadControl DataContext="{Binding Notepad}"/>
@@ -1748,6 +1743,7 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Button Grid.Column="0"
@@ -1763,12 +1759,19 @@
                             Style="{StaticResource SecondaryButton}"
                             FontSize="11" Padding="8,3"
                             ToolTip="Browse and reopen previous conversations"
+                            VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <Button Grid.Column="2"
+                            Content="{Binding DataContext.TeamButtonText, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Command="{Binding DataContext.ToggleTeamPanelCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Style="{StaticResource SecondaryButton}"
+                            FontSize="11" Padding="8,3"
+                            ToolTip="Toggle Team pipeline panel"
                             VerticalAlignment="Center" Margin="0,0,8,0"/>
                     <!-- Vertical separator -->
-                    <Rectangle Grid.Column="2" Width="1" Height="16"
+                    <Rectangle Grid.Column="3" Width="1" Height="16"
                                Fill="{StaticResource BorderBrush}"
                                VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <CheckBox Grid.Column="3"
+                    <CheckBox Grid.Column="4"
                               IsChecked="{Binding UseReviewer, Mode=TwoWay}"
                               VerticalAlignment="Center"
                               HorizontalAlignment="Left"
@@ -2090,6 +2093,67 @@
                     </Grid> <!-- End of chat panel -->
 
                 </Grid> <!-- End of content switching area -->
+
+                <!-- ═══ Team Pipeline overlay (global popup, all projects) ═══ -->
+                <Border Grid.RowSpan="2" Panel.ZIndex="20"
+                        Background="{StaticResource BackgroundBrush}"
+                        Visibility="{Binding DataContext.IsTeamPanelVisible,
+                            RelativeSource={RelativeSource AncestorType=Window},
+                            Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>  <!-- Header -->
+                            <RowDefinition Height="*"/>     <!-- Project sections -->
+                        </Grid.RowDefinitions>
+
+                        <!-- Header bar -->
+                        <Border Grid.Row="0" Padding="12,8"
+                                Background="{StaticResource SurfaceBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="0,0,0,1">
+                            <Grid>
+                                <TextBlock Text="Team Pipeline"
+                                           FontSize="15" FontWeight="SemiBold"
+                                           Foreground="{StaticResource PrimaryBrush}"
+                                           VerticalAlignment="Center"/>
+                                <Button HorizontalAlignment="Right"
+                                        Content="&#x2715;" FontSize="14"
+                                        Padding="6,2" Cursor="Hand"
+                                        Foreground="{StaticResource TextSecondaryBrush}"
+                                        Background="Transparent" BorderThickness="0"
+                                        Command="{Binding DataContext.ToggleTeamPanelCommand,
+                                            RelativeSource={RelativeSource AncestorType=Window}}"
+                                        ToolTip="Close Team panel"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Scrollable project sections -->
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                      Padding="0,4">
+                            <ItemsControl ItemsSource="{Binding DataContext.Tabs,
+                                              RelativeSource={RelativeSource AncestorType=Window}}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:MainViewModel}">
+                                        <Border Margin="0,0,0,2"
+                                                BorderBrush="{StaticResource BorderBrush}"
+                                                BorderThickness="0,0,0,1">
+                                            <!-- Project header + TeamPanelControl -->
+                                            <Expander IsExpanded="True">
+                                                <Expander.Header>
+                                                    <TextBlock Text="{Binding Team.ProjectName}"
+                                                               FontSize="13" FontWeight="SemiBold"
+                                                               Foreground="{StaticResource AccentBrush}"/>
+                                                </Expander.Header>
+                                                <views:TeamPanelControl DataContext="{Binding Team}"
+                                                                        Margin="0,0,0,4"/>
+                                            </Expander>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
 
             </Grid> <!-- End of content area -->
 

@@ -7,7 +7,6 @@ public enum SubTabType
     Explorer,
     Chat,
     FileEditor,
-    Team,
     Notepad
 }
 

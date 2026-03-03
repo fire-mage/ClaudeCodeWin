@@ -56,6 +56,7 @@ public class NotepadViewModel : ViewModelBase
     }
 
     public ICommand CreateNoteCommand { get; }
+    public ICommand SaveNoteCommand { get; }
     public ICommand DeleteNoteCommand { get; }
     public ICommand RenameNoteCommand { get; }
     public ICommand CommitRenameCommand { get; }
@@ -81,6 +82,7 @@ public class NotepadViewModel : ViewModelBase
         _autoSaveTimer.Tick += AutoSaveTimer_Tick;
 
         CreateNoteCommand = new RelayCommand(_ => CreateNote());
+        SaveNoteCommand = new RelayCommand(_ => SaveNote(), _ => !string.IsNullOrWhiteSpace(NoteContent));
         DeleteNoteCommand = new RelayCommand(_ => DeleteNote(), _ => SelectedNote != null);
         RenameNoteCommand = new RelayCommand(_ => StartRename(), _ => SelectedNote != null);
         CommitRenameCommand = new RelayCommand(_ => CommitRename());
@@ -149,6 +151,12 @@ public class NotepadViewModel : ViewModelBase
             try { _storage.SaveNote(_selectedNote, _noteContent); }
             catch (Exception ex) { DiagnosticLogger.Log("NOTEPAD_AUTOSAVE_TICK_ERROR", ex.Message); }
         }
+        else if (!string.IsNullOrWhiteSpace(_noteContent))
+        {
+            // Auto-create file for unsaved text (silent — no UI from timer)
+            try { CreateAndSaveNewNote(); }
+            catch (Exception ex) { DiagnosticLogger.Log("NOTEPAD_AUTOCREATE_ERROR", ex.Message); }
+        }
     }
 
     private void StartAutoSaveTimer()
@@ -167,6 +175,11 @@ public class NotepadViewModel : ViewModelBase
                 try { _storage.SaveNote(_selectedNote, _noteContent); }
                 catch (Exception ex) { DiagnosticLogger.Log("NOTEPAD_FLUSH_ERROR", ex.Message); }
             }
+            else if (!string.IsNullOrWhiteSpace(_noteContent))
+            {
+                try { CreateAndSaveNewNote(); }
+                catch (Exception ex) { DiagnosticLogger.Log("NOTEPAD_FLUSH_CREATE_ERROR", ex.Message); }
+            }
         }
     }
 
@@ -183,6 +196,46 @@ public class NotepadViewModel : ViewModelBase
             MessageBox.Show($"Failed to create note: {ex.Message}", "Error",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private void SaveNote()
+    {
+        if (_selectedNote != null)
+        {
+            _autoSaveTimer.Stop();
+            try { _storage.SaveNote(_selectedNote, _noteContent); }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to save note: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_noteContent)) return;
+
+        _autoSaveTimer.Stop(); // Prevent FlushAutoSave from re-entering CreateAndSaveNewNote
+        try { CreateAndSaveNewNote(); }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to save note: {ex.Message}", "Error",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>
+    /// Creates a new note file with date-based name and saves current content.
+    /// Throws on error — caller decides whether to show UI or log silently.
+    /// </summary>
+    private void CreateAndSaveNewNote()
+    {
+        var name = _storage.CreateNote($"Note {DateTime.Now:yyyy-MM-dd HH.mm}");
+        var content = _noteContent;
+        _storage.SaveNote(name, content);   // Save FIRST — so LoadSelectedNoteContent reads real content
+        Notes.Add(name);
+        _suppressAutoSave = true;
+        try { SelectedNote = name; }
+        finally { _suppressAutoSave = false; }
     }
 
     private void DeleteNote()

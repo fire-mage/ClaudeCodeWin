@@ -1,3 +1,4 @@
+using System.IO;
 using ClaudeCodeWin.Models;
 using ClaudeCodeWin.Services;
 
@@ -5,6 +6,31 @@ namespace ClaudeCodeWin.ViewModels;
 
 public partial class MainViewModel
 {
+    // ── File-type blocklists for auto-review trigger ───────────────────
+    // Anything NOT in these lists is considered reviewable (code/config).
+
+    private static readonly HashSet<string> TextDocExtensions = new(StringComparer.OrdinalIgnoreCase)
+    { ".txt", ".md", ".mdx", ".rst", ".adoc", ".log", ".csv" };
+
+    private static readonly HashSet<string> MediaBinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico", ".svg", ".tiff",
+        ".mp3", ".mp4", ".wav", ".avi", ".mkv", ".mov", ".flac", ".ogg", ".webm",
+        ".ttf", ".otf", ".woff", ".woff2", ".eot",
+        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+        ".zip", ".tar", ".gz", ".7z", ".rar",
+        ".exe", ".dll", ".so", ".dylib", ".o", ".obj", ".class", ".pyc", ".pdb",
+        ".db", ".sqlite", ".sqlite3", ".lock"
+    };
+
+    private static readonly HashSet<string> NonReviewableFileNames = new(StringComparer.OrdinalIgnoreCase)
+    { "LICENSE", "LICENCE", "CHANGELOG", "AUTHORS" };
+
+    // Full filenames of auto-generated files whose extensions (.json, .yaml) are otherwise reviewable
+    private static readonly HashSet<string> NonReviewableFullNames = new(StringComparer.OrdinalIgnoreCase)
+    { "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "composer.lock",
+      "Cargo.lock", "Pipfile.lock", "poetry.lock", "Gemfile.lock" };
+
     private ReviewService? _reviewService;
     private int _reviewAttempt;
     private bool _isAutoReviewPending;
@@ -65,16 +91,18 @@ public partial class MainViewModel
             return;
         }
 
-        // Auto-trigger first review after task completion (only if project files changed)
+        // Auto-trigger review when reviewable files (code/config) were changed.
+        // This fires per completed CLI turn (HandleCompleted + empty MessageQueue).
+        // Premature triggering (e.g. context-limit mid-task) is rare and less harmful
+        // than missing reviews entirely (the old completion-marker failure mode).
         var reviewEnabled = _settings.ReviewerEnabled;
-        var hasMarker = DetectCompletionMarker();
-        var hasProjectFiles = HasProjectFileChanges();
+        var hasReviewableFiles = HasReviewableFileChanges();
 
         DiagnosticLogger.Log("AUTO_REVIEW_CHECK",
-            $"reviewEnabled={reviewEnabled} hasMarker={hasMarker} hasProjectFiles={hasProjectFiles} " +
+            $"reviewEnabled={reviewEnabled} hasReviewableFiles={hasReviewableFiles} " +
             $"changedFiles={ChangedFiles.Count} wd={WorkingDirectory}");
 
-        if (reviewEnabled && hasMarker && hasProjectFiles)
+        if (reviewEnabled && hasReviewableFiles)
         {
             _reviewAttempt = 0;
             _lastReviewCriticalSnippet = null;
@@ -367,25 +395,44 @@ public partial class MainViewModel
     }
 
     /// <summary>
-    /// Returns true if any changed file is within the project's working directory
-    /// (excludes memory files, KB articles, and other files outside the project).
+    /// Returns true if ChangedFiles contains at least one "reviewable" file
+    /// (code or config) within the project's working directory.
+    /// Uses a blocklist approach: text/doc, media/binary, and specific filenames
+    /// are excluded. Everything else is considered reviewable.
     /// </summary>
-    private bool HasProjectFileChanges()
+    private bool HasReviewableFileChanges()
     {
         if (string.IsNullOrEmpty(WorkingDirectory) || ChangedFiles.Count == 0)
         {
-            DiagnosticLogger.Log("PROJECT_FILES", $"empty: wd={WorkingDirectory} count={ChangedFiles.Count}");
+            DiagnosticLogger.Log("REVIEWABLE_FILES",
+                $"empty: wd={WorkingDirectory} count={ChangedFiles.Count}");
             return false;
         }
 
         var wd = WorkingDirectory.Replace('\\', '/').TrimEnd('/') + "/";
-        var match = ChangedFiles.Any(f => f.Replace('\\', '/').StartsWith(wd, StringComparison.OrdinalIgnoreCase));
-        if (!match)
+
+        foreach (var file in ChangedFiles)
         {
-            DiagnosticLogger.Log("PROJECT_FILES",
-                $"no match: wd={wd} files=[{string.Join(", ", ChangedFiles.Take(5))}]");
+            var normalized = file.Replace('\\', '/');
+            if (!normalized.StartsWith(wd, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var ext = Path.GetExtension(normalized);
+            var fileName = Path.GetFileNameWithoutExtension(normalized);
+
+            if (TextDocExtensions.Contains(ext)) continue;
+            if (MediaBinaryExtensions.Contains(ext)) continue;
+            if (NonReviewableFileNames.Contains(fileName)) continue;
+            if (NonReviewableFullNames.Contains(Path.GetFileName(normalized))) continue;
+
+            DiagnosticLogger.Log("REVIEWABLE_FILES",
+                $"reviewable: {Path.GetFileName(normalized)} (ext={ext})");
+            return true;
         }
-        return match;
+
+        DiagnosticLogger.Log("REVIEWABLE_FILES",
+            $"no reviewable files in {ChangedFiles.Count} changed file(s)");
+        return false;
     }
 
     /// <summary>
