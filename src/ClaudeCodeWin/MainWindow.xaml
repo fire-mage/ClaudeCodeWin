@@ -66,9 +66,6 @@
                               ToolTip="Submit a feature request or enhancement idea for CCW."/>
                     <MenuItem Header="_About" Click="MenuItem_About_Click"
                               ToolTip="Application version, build date, and support contacts."/>
-                    <Separator/>
-                    <MenuItem Header="E_xit" Click="MenuItem_Exit_Click"
-                              ToolTip="Close the application. Window position and size are saved automatically."/>
                 </MenuItem>
             </Menu>
             <!-- Gradient accent stripe (green → orange → yellow) -->
@@ -131,10 +128,12 @@
                     </Button>
 
                     <!-- Tab list -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl ItemsSource="{Binding Tabs}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <UniformGrid Columns="1"/>
+                                <StackPanel/>
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
@@ -178,10 +177,9 @@
                                         </Grid>
 
                                         <!-- Compact mode: rotated vertical text.
-                                             Uses Grid (not StackPanel) so the title row gets a FINITE height constraint.
-                                             A vertical StackPanel gives children infinite height, and WPF's
-                                             LayoutTransform inverse rotation mishandles infinity — causing the
-                                             TextBlock to be constrained by the narrow panel width (~33px) instead. -->
+                                             Uses Grid (not StackPanel) for row layout.
+                                             MaxWidth on the TextBlock provides a finite width constraint
+                                             that after -90° rotation becomes the visual height cap. -->
                                         <Grid x:Name="CompactModeLayout"
                                               Visibility="{Binding DataContext.IsTabPanelCompact,
                                                            RelativeSource={RelativeSource AncestorType=Window},
@@ -189,7 +187,7 @@
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto"/>
                                                 <RowDefinition Height="Auto"/>
-                                                <RowDefinition Height="*"/>
+                                                <RowDefinition Height="Auto"/>
                                             </Grid.RowDefinitions>
                                             <!-- Close button -->
                                             <Border Grid.Row="0" Padding="4,2" Cursor="Hand"
@@ -209,11 +207,13 @@
                                                          Fill="{StaticResource SuccessBrush}"
                                                          Visibility="{Binding HasNotification, Converter={StaticResource BoolToVis}}"/>
                                             </StackPanel>
-                                            <!-- Rotated title — the * row gives a finite height,
-                                                 which after inverse -90° rotation becomes the TextBlock's available width -->
+                                            <!-- Rotated title — Auto row + MaxWidth caps long names;
+                                                 after -90° rotation MaxWidth limits the visual tab height -->
                                             <TextBlock Grid.Row="2" Text="{Binding TabTitle}" FontSize="11"
                                                        Foreground="{StaticResource TextBrush}"
                                                        TextTrimming="CharacterEllipsis"
+                                                       MinWidth="40"
+                                                       MaxWidth="140"
                                                        VerticalAlignment="Center"
                                                        HorizontalAlignment="Center">
                                                 <TextBlock.LayoutTransform>
@@ -238,6 +238,7 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    </ScrollViewer>
                 </DockPanel>
             </Border>
 

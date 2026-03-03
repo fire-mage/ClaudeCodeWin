@@ -803,11 +803,6 @@ public partial class MainWindow : Window
         ShowWelcomeScreen();
     }
 
-    private void MenuItem_Exit_Click(object sender, RoutedEventArgs e)
-    {
-        Close();
-    }
-
     private void MenuItem_ChatHistory_Click(object sender, RoutedEventArgs e)
     {
         var historyWindow = new ChatHistoryWindow(_chatHistoryService)

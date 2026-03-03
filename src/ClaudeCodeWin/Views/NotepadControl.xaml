@@ -5,6 +5,7 @@
 
     <UserControl.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <converters:StringToVisibilityConverter x:Key="StringToVis"/>
     </UserControl.Resources>
 
     <Grid>
@@ -30,10 +31,6 @@
                 <StackPanel Orientation="Horizontal">
                     <Button Content="+ New" ToolTip="New Note"
                             Command="{Binding CreateNoteCommand}"
-                            Style="{StaticResource ExplorerToolButton}"
-                            Padding="6,2" Margin="0,0,2,0"/>
-                    <Button Content="Save" ToolTip="Save Note (Ctrl+S)"
-                            Command="{Binding SaveNoteCommand}"
                             Style="{StaticResource ExplorerToolButton}"
                             Padding="6,2" Margin="0,0,2,0"/>
                     <Button Content="Rename" ToolTip="Rename Note (F2)"
@@ -126,17 +123,25 @@
                       Background="{StaticResource BorderBrush}"
                       ResizeBehavior="PreviousAndNext"/>
 
-        <!-- Column 2: Text editor -->
-        <TextBox Grid.Column="2"
-                 Text="{Binding NoteContent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                 Style="{StaticResource InputTextBox}"
-                 AcceptsReturn="True"
-                 AcceptsTab="True"
-                 TextWrapping="Wrap"
-                 VerticalScrollBarVisibility="Auto"
-                 FontFamily="Consolas"
-                 FontSize="14"
-                 Padding="8"
-                 BorderThickness="0"/>
+        <!-- Column 2: Text editor with overlay Save button -->
+        <Grid Grid.Column="2">
+            <TextBox Text="{Binding NoteContent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     Style="{StaticResource InputTextBox}"
+                     AcceptsReturn="True"
+                     AcceptsTab="True"
+                     TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"
+                     FontFamily="Consolas"
+                     FontSize="14"
+                     Padding="8,8,8,40"
+                     BorderThickness="0"/>
+            <Button Content="Save" ToolTip="Save Note (Ctrl+S)"
+                    Command="{Binding SaveNoteCommand}"
+                    Style="{StaticResource ExplorerToolButton}"
+                    Padding="8,4" Margin="0,0,22,12"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Visibility="{Binding SelectedNote, Converter={StaticResource StringToVis}}"/>
+        </Grid>
     </Grid>
 </UserControl>
