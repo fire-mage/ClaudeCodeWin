@@ -46,7 +46,38 @@ public partial class MainWindow : Window
 
         notificationService.Initialize(this);
 
-        InputTextBox.TextChanged += InputTextBox_TextChanged;
+        ComposerControl.ActiveTextChanged += ComposerControl_ActiveTextChanged;
+        ComposerControl.BlocksChanged += () => ViewModel.NotifyComposerChanged();
+        ComposerControl.SendRequested += () =>
+        {
+            if (AutocompletePopup.IsOpen)
+            {
+                InsertAutocomplete();
+                return;
+            }
+            if (ViewModel.SendCommand.CanExecute(null))
+            {
+                ViewModel.SendCommand.Execute(null);
+                ComposerControl.FocusFirst();
+            }
+        };
+        ComposerControl.EscapePressed += () =>
+        {
+            if (AutocompletePopup.IsOpen)
+            {
+                AutocompletePopup.IsOpen = false;
+                return true;
+            }
+            var handled = ViewModel.HandleEscape();
+            if (handled)
+                ComposerControl.FocusFirst();
+            return handled;
+        };
+        ComposerControl.RecallRequested += () =>
+        {
+            if (ViewModel.RecallLastMessage())
+                ComposerControl.FocusEnd();
+        };
         AutocompleteList.MouseDoubleClick += AutocompleteList_MouseDoubleClick;
 
         // Subscribe to tab changes
@@ -113,7 +144,7 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(() =>
         {
             ChatScrollViewer.ScrollToEnd();
-            InputTextBox.Focus();
+            ComposerControl.FocusFirst();
         });
     }
 
@@ -242,7 +273,7 @@ public partial class MainWindow : Window
             && ProjectTabColumn.ActualWidth >= MinFullPanelWidth)
             _settings.ProjectTabPanelWidth = ProjectTabColumn.ActualWidth;
 
-        InputTextBox.Focus();
+        ComposerControl.FocusFirst();
     }
 
     private const double CompactPanelWidth = 44;
@@ -395,8 +426,8 @@ public partial class MainWindow : Window
             }
         }
 
-        // Autocomplete navigation
-        if (AutocompletePopup.IsOpen)
+        // Autocomplete navigation (when composer has focus)
+        if (AutocompletePopup.IsOpen && ComposerControl.HasTextFocus)
         {
             if (e.Key == Key.Down)
             {
@@ -413,86 +444,9 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 return;
             }
-            if (e.Key == Key.Tab || e.Key == Key.Enter)
+            if (e.Key == Key.Tab)
             {
                 InsertAutocomplete();
-                e.Handled = true;
-                return;
-            }
-            if (e.Key == Key.Escape)
-            {
-                AutocompletePopup.IsOpen = false;
-                e.Handled = true;
-                return;
-            }
-        }
-
-        // Enter or Ctrl+Enter = Send (when InputTextBox is focused)
-        if (e.Key == Key.Enter && InputTextBox.IsFocused)
-        {
-            if (Keyboard.Modifiers == ModifierKeys.Shift)
-            {
-                // Shift+Enter = insert newline
-                var caretIndex = InputTextBox.CaretIndex;
-                InputTextBox.Text = InputTextBox.Text.Insert(caretIndex, "\r\n");
-                InputTextBox.CaretIndex = caretIndex + 2;
-                e.Handled = true;
-                return;
-            }
-
-            if (Keyboard.Modifiers == ModifierKeys.None || Keyboard.Modifiers == ModifierKeys.Control)
-            {
-                // Plain Enter or Ctrl+Enter = send
-                if (ViewModel.SendCommand.CanExecute(null))
-                    ViewModel.SendCommand.Execute(null);
-                e.Handled = true;
-                return;
-            }
-        }
-
-        // Escape = LIFO: pop queue → input, then cancel Claude
-        if (e.Key == Key.Escape)
-        {
-            if (ViewModel.HandleEscape())
-            {
-                e.Handled = true;
-                return;
-            }
-        }
-
-        // Up arrow: on first line — move caret to line start (or recall last message if empty)
-        if (e.Key == Key.Up && InputTextBox.IsFocused && Keyboard.Modifiers == ModifierKeys.None)
-        {
-            var caretLine = InputTextBox.GetLineIndexFromCharacterIndex(InputTextBox.CaretIndex);
-            if (caretLine <= 0)
-            {
-                if (string.IsNullOrEmpty(InputTextBox.Text))
-                {
-                    // Empty input: recall last sent message
-                    if (ViewModel.RecallLastMessage())
-                    {
-                        InputTextBox.CaretIndex = InputTextBox.Text.Length;
-                        e.Handled = true;
-                        return;
-                    }
-                }
-                else
-                {
-                    // Has text: move caret to beginning of line
-                    InputTextBox.CaretIndex = 0;
-                    e.Handled = true;
-                    return;
-                }
-            }
-        }
-
-        // Down arrow: on last line — move caret to end of text
-        if (e.Key == Key.Down && InputTextBox.IsFocused && Keyboard.Modifiers == ModifierKeys.None)
-        {
-            var caretLine = InputTextBox.GetLineIndexFromCharacterIndex(InputTextBox.CaretIndex);
-            if (caretLine >= InputTextBox.LineCount - 1)
-            {
-                InputTextBox.CaretIndex = InputTextBox.Text.Length;
                 e.Handled = true;
                 return;
             }
@@ -578,14 +532,36 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Ctrl+V = Paste (handle screenshots)
+        // Escape fallback — when focus is outside the composer (chat, buttons, file explorer)
+        // The composer handles Escape internally via EscapePressed event when it has focus.
+        if (e.Key == Key.Escape && !ComposerControl.HasTextFocus)
+        {
+            if (AutocompletePopup.IsOpen)
+            {
+                AutocompletePopup.IsOpen = false;
+                e.Handled = true;
+                return;
+            }
+            if (ViewModel.HandleEscape())
+            {
+                ComposerControl.FocusFirst();
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // Ctrl+V = Paste screenshot inline into composer
         if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control)
         {
             if (Clipboard.ContainsImage())
             {
-                HandleClipboardImage();
-                e.Handled = true;
-                return;
+                var image = Clipboard.GetImage();
+                if (image is not null)
+                {
+                    ComposerControl.PasteImage(image);
+                    e.Handled = true;
+                    return;
+                }
             }
         }
     }
@@ -637,33 +613,11 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void HandleClipboardImage()
+    private async void ComposerControl_ActiveTextChanged(TextBox tb)
     {
-        var image = Clipboard.GetImage();
-        if (image is null) return;
+        // Update placeholder immediately (no debounce)
+        ViewModel.NotifyComposerChanged();
 
-        var tempDir = Path.Combine(Path.GetTempPath(), "ClaudeCodeWin");
-        Directory.CreateDirectory(tempDir);
-        var fileName = $"screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-        var filePath = Path.Combine(tempDir, fileName);
-
-        var encoder = new PngBitmapEncoder();
-        encoder.Frames.Add(BitmapFrame.Create(image));
-        using (var stream = File.Create(filePath))
-        {
-            encoder.Save(stream);
-        }
-
-        ViewModel.AddAttachment(new FileAttachment
-        {
-            FilePath = filePath,
-            FileName = fileName,
-            IsScreenshot = true
-        });
-    }
-
-    private async void InputTextBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
         _autocompleteCts?.Cancel();
         _autocompleteCts = new CancellationTokenSource();
         var token = _autocompleteCts.Token;
@@ -674,8 +628,8 @@ public partial class MainWindow : Window
         }
         catch (TaskCanceledException) { return; }
 
-        var text = InputTextBox.Text;
-        var caret = InputTextBox.CaretIndex;
+        var text = tb.Text;
+        var caret = tb.CaretIndex;
 
         // Check for @-mention first
         var (isAt, atQuery, atStart) = ExtractAtMention(text, caret);
@@ -725,15 +679,17 @@ public partial class MainWindow : Window
     {
         try
         {
-            var rect = InputTextBox.GetRectFromCharacterIndex(caretIndex);
+            var focusedTb = ComposerControl.FocusedTextBox;
+            if (focusedTb is null) return;
+
+            var rect = focusedTb.GetRectFromCharacterIndex(caretIndex);
             if (rect.IsEmpty) return;
 
-            // Position popup at the caret X, above the caret line (like Intellisense going upward)
-            AutocompletePopup.HorizontalOffset = rect.Left;
-            // Negative offset to show above: go up from caret position
-            // With Placement="Relative", offset is from top-left of TextBox
-            // We want to show ABOVE the current line, so subtract estimated popup height
-            AutocompletePopup.VerticalOffset = rect.Top;
+            // Transform position from TextBox coords to ComposerBorder coords
+            var pos = focusedTb.TranslatePoint(new Point(rect.Left, rect.Top), ComposerBorder);
+
+            AutocompletePopup.HorizontalOffset = pos.X;
+            AutocompletePopup.VerticalOffset = pos.Y;
             AutocompletePopup.Placement = System.Windows.Controls.Primitives.PlacementMode.Relative;
 
             // After rendering, adjust to show above
@@ -741,7 +697,7 @@ public partial class MainWindow : Window
             {
                 if (AutocompletePopup.Child is FrameworkElement child && child.ActualHeight > 0)
                 {
-                    AutocompletePopup.VerticalOffset = rect.Top - child.ActualHeight - 4;
+                    AutocompletePopup.VerticalOffset = pos.Y - child.ActualHeight - 4;
                 }
             }, System.Windows.Threading.DispatcherPriority.Loaded);
         }
@@ -790,16 +746,20 @@ public partial class MainWindow : Window
     {
         if (AutocompleteList.SelectedItem is not string selected) return;
 
-        var text = InputTextBox.Text;
-        var caret = InputTextBox.CaretIndex;
+        // Use LastActiveTextBox as fallback — FocusedTextBox is null when autocomplete list has focus
+        var activeTb = ComposerControl.FocusedTextBox ?? ComposerControl.LastActiveTextBox;
+        if (activeTb is null) return;
+
+        var text = activeTb.Text;
+        var caret = activeTb.CaretIndex;
 
         if (_isAtMentionMode)
         {
             // Replace from @ to caret with @selected + space
             var insertion = "@" + selected + " ";
             var newText = text[.._atMentionStart] + insertion + text[caret..];
-            InputTextBox.Text = newText;
-            InputTextBox.CaretIndex = _atMentionStart + insertion.Length;
+            activeTb.Text = newText;
+            activeTb.CaretIndex = _atMentionStart + insertion.Length;
         }
         else
         {
@@ -810,8 +770,8 @@ public partial class MainWindow : Window
             start++;
 
             var newText = text[..start] + selected + text[caret..];
-            InputTextBox.Text = newText;
-            InputTextBox.CaretIndex = start + selected.Length;
+            activeTb.Text = newText;
+            activeTb.CaretIndex = start + selected.Length;
         }
 
         _isAtMentionMode = false;
@@ -1373,7 +1333,7 @@ public partial class MainWindow : Window
         ViewModel.ShowWelcome = false;
         FirstTimePanel.Visibility = Visibility.Visible;
         ReturningPanel.Visibility = Visibility.Collapsed;
-        InputTextBox.Focus();
+        ComposerControl.FocusFirst();
     }
 
     private static string ExtractProjectName(string? path)

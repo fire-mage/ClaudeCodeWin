@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Threading;
 using ClaudeCodeWin.Infrastructure;
@@ -11,22 +12,29 @@ public partial class MainViewModel
 {
     private async Task SendMessageAsync()
     {
-        var text = InputText?.Trim();
+        var (text, inlineAttachments) = BuildComposerContent();
         if (string.IsNullOrEmpty(text))
             return;
 
-        // If Claude is busy, queue the message (including any attachments).
+        // Bar attachments only for queue/recall (inline markers are already in text).
+        List<FileAttachment>? barAttachments = Attachments.Count > 0 ? [.. Attachments] : null;
+
+        // Merge bar + inline attachments for the actual CLI send.
+        // Both need to be passed as real file attachments so the API receives image data.
+        List<FileAttachment>? allAttachments = barAttachments;
+        if (inlineAttachments != null)
+            allAttachments = [.. (allAttachments ?? []), .. inlineAttachments];
+
+        // If Claude is busy, queue the message (including all attachments — bar + inline).
+        // Inline images must be included so the CLI can send actual image data on auto-send.
         // Note: during the review-fix cycle, IsProcessing is true but IsReviewInProgress
         // is false (cleared when verdict arrived). User messages are intentionally queued
         // here (not blocked) — they will be sent after the fix completes and before the
         // next auto-review triggers.
         if (IsProcessing)
         {
-            List<FileAttachment>? queuedAttachments = Attachments.Count > 0 ? [.. Attachments] : null;
-            MessageQueue.Add(new QueuedMessage(text, queuedAttachments));
-            InputText = string.Empty;
-            if (queuedAttachments is not null)
-                Attachments.Clear();
+            MessageQueue.Add(new QueuedMessage(text, allAttachments));
+            ClearComposer();
             return;
         }
 
@@ -42,11 +50,18 @@ public partial class MainViewModel
         _exitPlanModeAutoCount = 0;
 
         // If there's a pending control request (AskUserQuestion / ExitPlanMode),
-        // treat the typed message as the user's custom answer
+        // treat the typed message as the user's custom answer.
+        // Use only plain text from TextBlocks — inline image markers would pollute the answer.
         if (_pendingControlRequestId is not null)
         {
-            InputText = string.Empty;
-            HandleControlAnswer(text);
+            var answerText = string.Join("", ComposerBlocks.OfType<TextComposerBlock>().Select(t => t.Text)).Trim();
+            if (string.IsNullOrEmpty(answerText))
+            {
+                Messages.Add(new MessageViewModel(MessageRole.System, "Please type a text answer."));
+                return;
+            }
+            ClearComposer();
+            HandleControlAnswer(answerText);
             return;
         }
 
@@ -54,9 +69,9 @@ public partial class MainViewModel
         _currentTaskStartIndex = Messages.Count; // Will point to the user message about to be added
         _reviewCycleCompleted = false; // Allow review for the new task
         ChangedFiles.Clear(); // Clear only on user-initiated messages (not queued or review-fix)
-        InputText = string.Empty;
+        ClearComposer();
 
-        await SendDirectAsync(text, Attachments.Count > 0 ? [.. Attachments] : null);
+        await SendDirectAsync(text, allAttachments);
     }
 
     private async Task SendDirectAsync(string text, List<FileAttachment>? attachments, string? participantLabel = null)
@@ -74,9 +89,6 @@ public partial class MainViewModel
         if (attachments is not null)
             userMsg.Attachments = [.. attachments];
         Messages.Add(userMsg);
-
-        if (attachments is not null)
-            Attachments.Clear();
 
         _lastSentText = text;
         _lastSentAttachments = attachments;
@@ -701,4 +713,50 @@ public partial class MainViewModel
         if (wasSoftPaused)
             Messages.Add(new MessageViewModel(MessageRole.System, "Team resumed."));
     }
+
+    // ─── Composer helpers ───
+
+    /// <summary>
+    /// Build the final prompt text from composer blocks. Inline images become [Screenshot:] markers
+    /// interleaved with text, and their FileAttachment objects are collected separately so the CLI
+    /// can send the actual image data to the API (not just the path string).
+    /// </summary>
+    private (string text, List<FileAttachment>? inlineAttachments) BuildComposerContent()
+    {
+        var sb = new StringBuilder();
+        List<FileAttachment>? inlineAtts = null;
+        foreach (var block in ComposerBlocks)
+        {
+            switch (block)
+            {
+                case TextComposerBlock tb:
+                    sb.Append(tb.Text);
+                    break;
+                case ImageComposerBlock ib:
+                    (inlineAtts ??= []).Add(ib.Attachment);
+                    sb.AppendLine();
+                    sb.AppendLine(ib.Attachment.IsScreenshot
+                        ? $"[Screenshot: {ib.FilePath}]"
+                        : $"[File: {ib.FilePath}]");
+                    break;
+            }
+        }
+        return (sb.ToString().Trim(), inlineAtts);
+    }
+
+    /// <summary>Reset composer blocks only (preserves attachment bar).</summary>
+    public void ClearComposerText()
+    {
+        ComposerBlocks.Clear();
+        ComposerBlocks.Add(new TextComposerBlock());
+        OnPropertyChanged(nameof(IsComposerEmpty));
+    }
+
+    /// <summary>Full reset: composer blocks + attachment bar.</summary>
+    public void ClearComposer()
+    {
+        ClearComposerText();
+        Attachments.Clear();
+    }
+
 }

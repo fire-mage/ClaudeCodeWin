@@ -54,6 +54,7 @@ public partial class App : Application
     private async void Application_Startup(object sender, StartupEventArgs e)
     {
         SetupCrashHandlers();
+        CleanupOldScreenshots();
 
         try
         {
@@ -439,6 +440,28 @@ public partial class App : Application
             return failedVersion;
         }
         catch { return null; }
+    }
+
+    /// <summary>Delete temp screenshots older than 24 hours to prevent unbounded disk growth.</summary>
+    private static void CleanupOldScreenshots()
+    {
+        try
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), "ClaudeCodeWin");
+            if (!Directory.Exists(tempDir)) return;
+
+            var cutoff = DateTime.Now.AddHours(-24);
+            foreach (var file in Directory.GetFiles(tempDir, "screenshot_*.png"))
+            {
+                try
+                {
+                    if (File.GetCreationTime(file) < cutoff)
+                        File.Delete(file);
+                }
+                catch { /* Skip locked/in-use files, continue with next */ }
+            }
+        }
+        catch { /* Non-critical cleanup — don't crash on failure */ }
     }
 
     private static void CheckInstructionDeduplication(string? workingDir)

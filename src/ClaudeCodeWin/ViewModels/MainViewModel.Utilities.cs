@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows;
 using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
@@ -124,7 +125,8 @@ public partial class MainViewModel
         }
 
         // Restore text and attachments to the input box
-        InputText = _lastSentText;
+        // Strip inline markers — images are restored as bar attachments
+        InputText = StripInlineMarkers(_lastSentText);
         if (_lastSentAttachments is not null)
         {
             foreach (var att in _lastSentAttachments)
@@ -142,7 +144,10 @@ public partial class MainViewModel
         {
             var last = MessageQueue[^1];
             MessageQueue.RemoveAt(MessageQueue.Count - 1);
-            InputText = last.Text;
+            InputText = StripInlineMarkers(last.Text);
+            if (last.Attachments != null)
+                foreach (var att in last.Attachments)
+                    AddAttachment(att);
             return true;
         }
 
@@ -159,7 +164,7 @@ public partial class MainViewModel
             _lastSentAttachments = null;
             CancelProcessing();
             if (textToRestore != null)
-                InputText = textToRestore;
+                InputText = StripInlineMarkers(textToRestore);
             if (attachmentsToRestore != null)
                 foreach (var att in attachmentsToRestore)
                     AddAttachment(att);
@@ -372,5 +377,17 @@ public partial class MainViewModel
             _ => ""
         };
         OnPropertyChanged(nameof(HasCta));
+    }
+
+    /// <summary>
+    /// Strip [Screenshot: path] and [File: path] markers from text.
+    /// Used when restoring text to the composer — inline images are already
+    /// restored as bar attachments, so the markers are redundant.
+    /// </summary>
+    private static string StripInlineMarkers(string text)
+    {
+        if (!text.Contains("[Screenshot:") && !text.Contains("[File:"))
+            return text;
+        return Regex.Replace(text, @"\r?\n?\[(?:Screenshot|File): [^\]]+\]\r?\n?", "\n").Trim();
     }
 }

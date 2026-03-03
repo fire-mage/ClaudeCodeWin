@@ -87,7 +87,6 @@ public partial class MainViewModel : ViewModelBase
     private TaskRunnerService? _taskRunnerService;
     private Window? _ownerWindow;
 
-    private string _inputText = string.Empty;
     private bool _isProcessing;
     private bool _isReviewInProgress;
     private string _statusText = "";
@@ -156,12 +155,35 @@ public partial class MainViewModel : ViewModelBase
     public ObservableCollection<string> RecentFolders { get; } = [];
     public ObservableCollection<QueuedMessage> MessageQueue { get; } = [];
     public ObservableCollection<string> ChangedFiles { get; } = [];
+    public ObservableCollection<ComposerBlock> ComposerBlocks { get; } = [new TextComposerBlock()];
 
+    /// <summary>
+    /// Computed proxy: reads/writes the first TextComposerBlock's text.
+    /// Keeps backward compatibility with code that sets InputText directly.
+    /// WARNING: The setter calls ClearComposerText(), which destroys ALL composer blocks
+    /// (including inline images) and replaces them with a single empty TextBlock.
+    /// Use only for restoring plain text (recall, queue pop, scripts).
+    /// </summary>
     public string InputText
     {
-        get => _inputText;
-        set => SetProperty(ref _inputText, value);
+        get => string.Join("", ComposerBlocks.OfType<TextComposerBlock>().Select(t => t.Text));
+        set
+        {
+            ClearComposerText();
+            if (ComposerBlocks[0] is TextComposerBlock tb)
+                tb.Text = value ?? "";
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsComposerEmpty));
+        }
     }
+
+    public bool IsComposerEmpty =>
+        ComposerBlocks.Count == 1
+        && ComposerBlocks[0] is TextComposerBlock tb
+        && string.IsNullOrWhiteSpace(tb.Text);
+
+    /// <summary>Call from View when composer content changes (text or block structure).</summary>
+    public void NotifyComposerChanged() => OnPropertyChanged(nameof(IsComposerEmpty));
 
     public bool IsProcessing
     {
@@ -501,7 +523,7 @@ public partial class MainViewModel : ViewModelBase
             if (p is QueuedMessage qm)
             {
                 MessageQueue.Remove(qm);
-                InputText = qm.Text;
+                InputText = StripInlineMarkers(qm.Text);
                 // Restore attachments back to the attachment bar
                 if (qm.Attachments is not null)
                 {

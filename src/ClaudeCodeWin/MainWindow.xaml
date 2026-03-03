@@ -1741,15 +1741,34 @@
                                Opacity="0.85"/>
                 </Border>
 
-                <!-- Use Reviewer toggle + New Chat / History buttons -->
+                <!-- New Chat / History buttons + separator + Use Reviewer toggle -->
                 <Grid Grid.Row="4" Margin="16,4,16,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <CheckBox Grid.Column="0"
+                    <Button Grid.Column="0"
+                            Content="New Chat"
+                            Command="{Binding NewSessionCommand}"
+                            Style="{StaticResource SecondaryButton}"
+                            FontSize="11" Padding="8,3"
+                            ToolTip="Start a new chat (Ctrl+N)"
+                            VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <Button Grid.Column="1"
+                            Content="History"
+                            Click="MenuItem_ChatHistory_Click"
+                            Style="{StaticResource SecondaryButton}"
+                            FontSize="11" Padding="8,3"
+                            ToolTip="Browse and reopen previous conversations"
+                            VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <!-- Vertical separator -->
+                    <Rectangle Grid.Column="2" Width="1" Height="16"
+                               Fill="{StaticResource BorderBrush}"
+                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <CheckBox Grid.Column="3"
                               IsChecked="{Binding UseReviewer, Mode=TwoWay}"
                               VerticalAlignment="Center"
                               HorizontalAlignment="Left"
@@ -1761,8 +1780,8 @@
                                     <Setter.Value>
                                         <ControlTemplate TargetType="CheckBox">
                                             <StackPanel Orientation="Horizontal">
-                                                <Border Width="14" Height="14" CornerRadius="2"
-                                                        BorderBrush="{StaticResource TextSecondaryBrush}"
+                                                <Border x:Name="CheckBorder" Width="14" Height="14" CornerRadius="2"
+                                                        BorderBrush="{StaticResource ErrorBrush}"
                                                         BorderThickness="1"
                                                         Background="Transparent"
                                                         VerticalAlignment="Center" Margin="0,0,5,0">
@@ -1777,6 +1796,7 @@
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsChecked" Value="True">
                                                     <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                                                    <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{StaticResource TextSecondaryBrush}"/>
                                                 </Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
@@ -1784,26 +1804,19 @@
                                 </Setter>
                             </Style>
                         </CheckBox.Style>
-                        <TextBlock Text="Use Reviewer" FontSize="11"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock x:Name="ReviewerLabel" Text="Use Reviewer" FontSize="11">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding UseReviewer}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </CheckBox>
-                    <!-- Spacer column="1" -->
-                    <Button Grid.Column="2"
-                            Content="New Chat"
-                            Command="{Binding NewSessionCommand}"
-                            Style="{StaticResource TabAddButton}"
-                            FontSize="11" Padding="6,2"
-                            Foreground="{StaticResource TextSecondaryBrush}"
-                            ToolTip="Start a new chat (Ctrl+N)"
-                            VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <Button Grid.Column="3"
-                            Content="History"
-                            Click="MenuItem_ChatHistory_Click"
-                            Style="{StaticResource TabAddButton}"
-                            FontSize="11" Padding="6,2"
-                            Foreground="{StaticResource TextSecondaryBrush}"
-                            ToolTip="Browse and reopen previous conversations"
-                            VerticalAlignment="Center"/>
                 </Grid>
 
                 <!-- Input area -->
@@ -1814,13 +1827,19 @@
                     </Grid.ColumnDefinitions>
 
                     <Grid Grid.Column="0">
-                        <TextBox x:Name="InputTextBox"
-                                 Style="{StaticResource InputTextBox}"
-                                 Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
-                                 IsEnabled="{Binding Update.IsUpdating, Converter={StaticResource InverseBool}}"
-                                 MaxHeight="200"
-                                 MinHeight="40"
-                                 VerticalAlignment="Stretch"/>
+                        <Border Background="{StaticResource SurfaceBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1" CornerRadius="4"
+                                Padding="10,8"
+                                x:Name="ComposerBorder">
+                            <views:MessageComposerControl
+                                x:Name="ComposerControl"
+                                ComposerBlocks="{Binding ComposerBlocks}"
+                                IsEnabled="{Binding Update.IsUpdating, Converter={StaticResource InverseBool}}"
+                                MaxHeight="180"
+                                MinHeight="22"
+                                VerticalAlignment="Stretch"/>
+                        </Border>
                         <!-- Placeholder text -->
                         <TextBlock Text="Type your message here... (Enter to send, Shift+Enter for newline)"
                                    IsHitTestVisible="False"
@@ -1834,10 +1853,7 @@
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding InputText}" Value="">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding InputText}" Value="{x:Null}">
+                                        <DataTrigger Binding="{Binding IsComposerEmpty}" Value="True">
                                             <Setter Property="Visibility" Value="Visible"/>
                                         </DataTrigger>
                                     </Style.Triggers>
@@ -1846,7 +1862,7 @@
                         </TextBlock>
                         <!-- Autocomplete popup -->
                         <Popup x:Name="AutocompletePopup"
-                               PlacementTarget="{Binding ElementName=InputTextBox}"
+                               PlacementTarget="{Binding ElementName=ComposerBorder}"
                                Placement="Relative"
                                StaysOpen="False"
                                AllowsTransparency="True"
