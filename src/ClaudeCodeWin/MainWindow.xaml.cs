@@ -1098,6 +1098,39 @@ public partial class MainWindow : Window
         new KnowledgeBaseWindow(localEntries, devArticles) { Owner = this }.ShowDialog();
     }
 
+    private void MenuItem_FullProjectReview_Click(object sender, RoutedEventArgs e)
+    {
+        var workDir = ViewModel.WorkingDirectory;
+        if (string.IsNullOrEmpty(workDir))
+        {
+            MessageBox.Show("No project folder is open. Open a project first.",
+                "No Project", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var projectName = System.IO.Path.GetFileName(workDir);
+        var result = MessageBox.Show(
+            $"This will launch a full code review of \"{projectName}\" — module by module, in background.\n\n" +
+            "The process may take several hours and is ideal for overnight runs.\n" +
+            "Progress will be shown in the Team tab.\n\nContinue?",
+            "Full Project Review", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        ViewModel.Messages.Add(new ViewModels.MessageViewModel(
+            Models.MessageRole.System, "Starting Full Project Review — analyzing project structure..."));
+        ViewModel.StartFullProjectReview(status =>
+        {
+            if (Dispatcher.HasShutdownStarted) return;
+            try
+            {
+                Dispatcher.InvokeAsync(() => ViewModel.Messages.Add(
+                    new ViewModels.MessageViewModel(Models.MessageRole.System, status)));
+            }
+            catch (Exception) { /* window already closed or dispatcher shut down */ }
+        });
+    }
+
     // ===== Welcome Back Screen (inline) =====
 
     public void ShowWelcomeScreen()

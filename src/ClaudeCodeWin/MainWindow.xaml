@@ -52,6 +52,9 @@
                               ToolTip="Provide a skill, article, or URL for Claude to study and add to its Knowledge Base."/>
                     <MenuItem Header="_Knowledge Base..." Click="MenuItem_KnowledgeBase_Click"
                               ToolTip="View the articles Claude has saved in its personal Knowledge Base for this project."/>
+                    <Separator/>
+                    <MenuItem Header="Full Project _Review..." Click="MenuItem_FullProjectReview_Click"
+                              ToolTip="Launch a comprehensive module-by-module code review of the entire project.&#x0a;Runs in the background via the Team pipeline. Ideal for overnight runs."/>
                 </MenuItem>
                 <MenuItem Header="_App"
                           ToolTip="Project management, updates, and application information">

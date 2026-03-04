@@ -20,6 +20,7 @@ public partial class MainViewModel
     private PlannerService _plannerService = null!;
     private PlanReviewerService _planReviewerService = null!;
     private TeamOrchestratorService _orchestratorService = null!;
+    private ProjectReviewService? _projectReviewService;
 
     public SubTab? ActiveSubTab
     {
@@ -261,6 +262,43 @@ public partial class MainViewModel
             : tab.FilePath;
 
         InputText = $"Please review this file `{relPath}`:\n\n```\n{tab.Content}\n```";
+    }
+
+    /// <summary>
+    /// Launches a full project review: discovers modules, creates backlog phases,
+    /// and lets the Team pipeline process them sequentially in background.
+    /// </summary>
+    public bool IsFullProjectReviewRunning => _projectReviewService?.IsRunning == true;
+
+    public void StartFullProjectReview(Action<string>? onStatus = null)
+    {
+        if (string.IsNullOrEmpty(WorkingDirectory)) return;
+        if (_projectReviewService?.IsRunning == true)
+        {
+            onStatus?.Invoke("A Full Project Review is already in progress.");
+            return;
+        }
+
+        // Reuse existing service instance if available, create new only on first call
+        if (_projectReviewService == null)
+        {
+            var service = new ProjectReviewService(_backlogService);
+            service.Configure(_cliService.ClaudeExePath);
+            _projectReviewService = service;
+        }
+
+        // Clear previous event handlers to avoid stale callbacks
+        _projectReviewService.ClearEvents();
+
+        _projectReviewService.OnStatusUpdate += msg => onStatus?.Invoke(msg);
+        _projectReviewService.OnCompleted += featureId =>
+        {
+            _orchestratorService?.NotifyNewWork();
+            onStatus?.Invoke("Full Project Review is queued. Track progress in the Team tab.");
+        };
+        _projectReviewService.OnError += error => onStatus?.Invoke($"Review failed: {error}");
+
+        _projectReviewService.StartFullReview(WorkingDirectory);
     }
 
     public RelayCommand CloseFileTabCommand { get; private set; } = null!;
