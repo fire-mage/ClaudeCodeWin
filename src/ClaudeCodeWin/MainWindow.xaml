@@ -1094,6 +1094,7 @@
                             Command="{Binding NewSessionCommand}"
                             Style="{StaticResource SecondaryButton}"
                             FontSize="11" Padding="8,3"
+                            BorderBrush="#5BA65B" BorderThickness="1"
                             ToolTip="Start a new chat (Ctrl+N)"
                             VerticalAlignment="Center" Margin="0,0,4,0"/>
                     <Button Grid.Column="1"
