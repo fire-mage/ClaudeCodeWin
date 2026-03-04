@@ -144,7 +144,21 @@ public partial class MainViewModel
             if (!string.IsNullOrEmpty(sshInfo))
                 preamble += $"\n\n<ssh-access>\n{sshInfo}\n</ssh-access>";
 
+            // Inject expired/expiring API key warnings into prompt
+            var apiKeyWarnings = new List<string>();
+            foreach (var key in _settings.ApiKeys)
+            {
+                var (days, isExpired, _) = key.GetExpiryStatus();
+                if (isExpired)
+                    apiKeyWarnings.Add($"{key.ServiceName} (expired {-days}d ago)");
+            }
+            if (apiKeyWarnings.Count > 0)
+                preamble += $"\n\n<expired-api-keys>The following API keys are expired and should NOT be used: {string.Join(", ", apiKeyWarnings)}. Ask the user to update them in Settings > API Keys.</expired-api-keys>";
+
             finalPrompt = $"{preamble}\n\n{text}";
+
+            // Check for expiring/expired API keys (UI notification)
+            CheckApiKeyExpiry();
         }
 
         _messageAssembler.BeginAssistantMessage();

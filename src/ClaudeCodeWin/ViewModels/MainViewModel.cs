@@ -48,18 +48,11 @@ public partial class MainViewModel : ViewModelBase
         - When connecting via SSH or deploying, always use the configured SSH key with `-i` flag.
         - Refer to the known servers list for host/port/user details instead of asking the user.
 
-        ## Windows Shell Safety
-        **NEVER** use `/dev/null` in Bash commands (e.g. `2>/dev/null`, `> /dev/null`). On Windows, this creates a literal file named `nul` which can break cloud sync (OneDrive, Dropbox, etc.). Use `2>&1` to merge streams, or `|| true` to suppress errors.
+        ## Windows Shell Safety (fallback)
+        - NEVER use `/dev/null` in Bash commands. On Windows, this creates a literal file named `nul` which breaks OneDrive sync. Use `2>&1` or `|| true` instead.
 
-        ## Sending tasks to Team tab
-        To delegate a task to the Team pipeline for autonomous development, include a fenced code block with language tag `team-task` containing JSON:
-        - `rawIdea` (required): Full task description — self-contained, the developer agent won't have chat context
-        - `priority` (optional, default 100): Lower number = higher priority
-        - Multiple tasks = multiple blocks in one message
-        - Tasks are auto-parsed, added to backlog, and planning starts immediately
-        - Include: what to change, why, affected files/services, constraints
-        - One task = one logical change (don't merge unrelated features)
-        - **NEVER write directly to backlog.json** — always use `team-task` code blocks in your chat response. The app parses them automatically.
+        ## Team task delegation (fallback)
+        - To delegate work to the Team pipeline, use `team-task` fenced code blocks with JSON: `{"rawIdea": "description", "priority": 100}`. **NEVER write directly to backlog.json.**
 
         ## Important rules
         - When editing tasks.json or scripts.json, the format is a JSON array with camelCase keys. After editing, remind the user to click "Reload Scripts" in the menu.
@@ -129,6 +122,7 @@ public partial class MainViewModel : ViewModelBase
     // Preamble injection: set true whenever context may have been lost
     // (new session, session restore, context compaction, chat history load)
     private bool _needsPreambleInjection = true;
+    private bool _apiKeyExpiryChecked;
 
     // ExitPlanMode auto-confirm state
     private int _exitPlanModeAutoCount;

@@ -1,0 +1,70 @@
+{
+  "version": 2,
+  "updatedAt": "2026-03-04T00:00:00Z",
+  "articles": [
+    {
+      "id": "team-management-basics",
+      "title": "Team Management Best Practices",
+      "tags": ["team", "management", "orchestrator"],
+      "whenToRead": "When managing Team tab, configuring team orchestration, or delegating tasks",
+      "isRequired": true,
+      "contentMd": "# Team Management Best Practices\n\n## Delegating Tasks\n- Use `team-task` fenced code blocks in chat to delegate work to the Team pipeline\n- Each task must be self-contained — the developer agent has no chat context\n- One task = one logical change. Do not merge unrelated features\n- Include: what to change, why, affected files/services, constraints\n- Set priority (lower number = higher priority, default 100)\n- **NEVER write directly to backlog.json** — always use `team-task` code blocks\n\n## Task Format\n````\n```team-task\n{\"rawIdea\": \"Full task description\", \"priority\": 10}\n```\n````\n\n## Task Quality\n- Write clear, specific task descriptions — vague tasks produce vague results\n- Include acceptance criteria when possible\n- Reference specific file paths and function names\n- Mention any constraints (no new dependencies, backwards compatibility, etc.)\n\n## Monitoring\n- Use the Team Status script (Ctrl+Shift+T) to check orchestrator state\n- Monitor the Team tab pipeline: Ideas → Analysis → Planning → Approval → Backlog → Queue → Completed\n- Watch for stalled tasks — they may need clarification or breaking into smaller pieces\n\n## When NOT to Delegate\n- Architectural decisions requiring user input — discuss first, then delegate implementation\n- Quick single-file fixes — faster to do directly\n- Tasks requiring interactive exploration — the team agent works autonomously\n- Cross-project changes — team works within one project directory"
+    },
+    {
+      "id": "figma-design-to-code",
+      "title": "Figma Design-to-Code",
+      "tags": ["figma", "design", "mcp"],
+      "whenToRead": "When user shares a Figma link, asks to implement a design from Figma, or mentions Figma API token",
+      "isRequired": true,
+      "contentMd": "# Figma Design-to-Code\n\nUses MCP server `figma-developer-mcp` (registry: `io.github.GLips/Figma-Context-MCP`).\n\n## Tools\n- **`get_figma_data`** — get layout, styles, content from a frame\n  - `fileKey` (required): from URL `figma.com/(file|design)/<fileKey>/...`\n  - `nodeId` (optional): from URL param `node-id=`, format `1234:5678`. Always pass if present\n  - `depth` (optional): tree traversal depth. Do NOT use unless user explicitly asks\n- **`download_figma_images`** — download SVG/PNG assets\n  - `fileKey`, `nodes` (array of {nodeId, fileName, imageRef}), `localPath`, `pngScale` (default 2x)\n\n## Authentication\n- **Figma Personal Access Token** — created in Figma → Settings → Personal Access Tokens\n- Token expires every **90 days** — remind user to renew if calls fail with 403\n- Stored in MCP config (`~/.claude.json`) as env var `FIGMA_API_KEY`\n\n## Token Renewal\n```bash\nclaude mcp remove figma-context-mcp\nclaude mcp add -e FIGMA_API_KEY='NEW_TOKEN' -s user figma-context-mcp -- npx -y figma-developer-mcp\n```\n\n## Best Practices\n- Links to specific frames/groups give better results than whole file links\n- Start from the outermost container, then drill into child components\n- Download images/icons as SVG when possible, PNG for photos"
+    },
+    {
+      "id": "excel-csv-data",
+      "title": "Working with Excel & CSV Files",
+      "tags": ["excel", "csv", "data"],
+      "whenToRead": "When user asks to read, create, or modify Excel (.xlsx/.xls) or CSV files",
+      "isRequired": true,
+      "contentMd": "# Working with Excel & CSV Files\n\n## Reading CSV\n- **Small files**: Use the Read tool directly — CSV is plain text\n- **Analysis/filtering**: Use Python: `import csv` (built-in, no pip install needed)\n- **PowerShell**: `Import-Csv 'file.csv'` for quick inspection\n\n## Reading Excel (.xlsx)\n- **Python** (preferred): `pip install openpyxl` then `openpyxl.load_workbook('file.xlsx')`\n- **PowerShell**: `Import-Excel` module (may need `Install-Module ImportExcel`)\n- Claude's Read tool does NOT natively read .xlsx — use Python/PowerShell\n\n## Creating Excel\n```python\nfrom openpyxl import Workbook\nwb = Workbook()\nws = wb.active\nws.title = 'Sheet1'\nws.append(['Header1', 'Header2'])  # header row\nws.append(['value1', 'value2'])     # data row\nwb.save('output.xlsx')\n```\n\n## Creating CSV\n```python\nimport csv\nwith open('output.csv', 'w', newline='') as f:\n    writer = csv.writer(f)\n    writer.writerow(['Header1', 'Header2'])\n    writer.writerow(['value1', 'value2'])\n```\n\n## Key Tips\n- Always check if Python & openpyxl are available before using: `python3 -c \"import openpyxl\"` or `pip install openpyxl`\n- For large datasets, prefer `csv` over `openpyxl` (lower memory)\n- When converting xlsx→csv, handle multiple sheets\n- Preserve encoding: use `encoding='utf-8-sig'` for Excel compatibility"
+    },
+    {
+      "id": "word-documents",
+      "title": "Working with Word Documents",
+      "tags": ["word", "docx", "documents"],
+      "whenToRead": "When user asks to read, create, or modify Word (.docx) documents",
+      "isRequired": true,
+      "contentMd": "# Working with Word Documents (.docx)\n\n## Reading\n- Claude's Read tool does NOT natively read .docx\n- **Python**: `pip install python-docx` then read paragraphs/tables\n- **Quick text extract**: `python3 -c \"from docx import Document; [print(p.text) for p in Document('file.docx').paragraphs]\"`\n\n## Creating\n```python\nfrom docx import Document\nfrom docx.shared import Pt, Inches\n\ndoc = Document()\ndoc.add_heading('Title', level=0)\ndoc.add_paragraph('Body text here.')\n\n# Table\ntable = doc.add_table(rows=2, cols=3, style='Table Grid')\ntable.cell(0, 0).text = 'Header'\n\ndoc.save('output.docx')\n```\n\n## Formatting\n- **Bold/italic**: `run = p.add_run('text'); run.bold = True`\n- **Font size**: `run.font.size = Pt(12)`\n- **Page break**: `doc.add_page_break()`\n- **Image**: `doc.add_picture('image.png', width=Inches(4))`\n\n## Key Tips\n- Always check: `pip install python-docx` (package name is `python-docx`, import is `docx`)\n- For templates: open existing .docx, find/replace placeholders, save as new file\n- Tables: use `style='Table Grid'` for visible borders\n- Don't confuse with `docx2txt` (read-only) — `python-docx` can both read and write"
+    },
+    {
+      "id": "pdf-documents",
+      "title": "Working with PDF Files",
+      "tags": ["pdf", "documents", "reports"],
+      "whenToRead": "When user asks to read, create, merge, or manipulate PDF files",
+      "isRequired": true,
+      "contentMd": "# Working with PDF Files\n\n## Reading PDF\n- **Claude's Read tool reads PDFs natively** — just use `Read` with the file path\n- For large PDFs (>10 pages): use `pages` parameter, e.g. `pages: \"1-5\"`\n- Max 20 pages per Read request\n\n## Extracting Text Programmatically\n```python\n# pip install pdfplumber (best for tables + text)\nimport pdfplumber\nwith pdfplumber.open('file.pdf') as pdf:\n    for page in pdf.pages:\n        print(page.extract_text())\n        tables = page.extract_tables()  # structured table data\n```\n\n## Creating PDF\n```python\n# pip install reportlab\nfrom reportlab.lib.pagesizes import A4\nfrom reportlab.pdfgen import canvas\n\nc = canvas.Canvas('output.pdf', pagesize=A4)\nc.setFont('Helvetica', 12)\nc.drawString(72, 750, 'Hello World')\nc.save()\n```\n\n## Merging / Splitting\n```python\n# pip install pypdf\nfrom pypdf import PdfReader, PdfWriter\nwriter = PdfWriter()\nfor pdf_file in ['file1.pdf', 'file2.pdf']:\n    writer.append(pdf_file)\nwriter.write('merged.pdf')\n```\n\n## Key Tips\n- **Read first with Read tool** — no Python needed for inspection\n- For complex layouts (forms, signatures): use `pypdf` or `pikepdf`\n- For HTML→PDF conversion: `pip install weasyprint` or `wkhtmltopdf`\n- Always check available Python packages before installing"
+    },
+    {
+      "id": "windows-shell-safety",
+      "title": "Windows Shell Safety Rules",
+      "tags": ["windows", "shell", "safety"],
+      "whenToRead": "Always relevant — critical rules for running shell commands on Windows",
+      "isRequired": true,
+      "contentMd": "# Windows Shell Safety\n\n## /dev/null Ban\n**NEVER** use `/dev/null` in Bash commands on Windows (e.g. `2>/dev/null`, `> /dev/null`). This creates a literal file named `nul` which breaks cloud sync (OneDrive, Dropbox). Instead:\n- Suppress stderr: `2>&1` (merge streams)\n- Ignore errors: `|| true`\n- Discard output: pipe to a temp file and delete, or restructure the command\n\n## Path Conventions\n- Use forward slashes in bash: `/c/Users/...` not `C:\\Users\\...`\n- Quote paths with spaces: `\"path with spaces/file.txt\"`\n- Git Bash translates `/c/` to `C:\\` automatically\n\n## Common Pitfalls\n- `find` command: Windows `find` ≠ Unix `find`. Use Glob/Grep tools instead\n- `rm -rf`: works in Git Bash but be careful with OneDrive paths\n- Line endings: Windows uses CRLF. Use `git config core.autocrlf true`\n- `nul` file: if already created, delete manually via File Explorer (not bash)"
+    },
+    {
+      "id": "ccw-keyboard-shortcuts",
+      "title": "CCW Keyboard Shortcuts Reference",
+      "tags": ["shortcuts", "keyboard", "productivity"],
+      "whenToRead": "When user asks about keyboard shortcuts or navigation",
+      "isRequired": false,
+      "contentMd": "# CCW Keyboard Shortcuts\n\n## Chat\n- **Ctrl+Enter** — Send message\n- **Escape** — Cancel current processing\n- **Ctrl+N** — New session\n- **Ctrl+V** — Paste screenshot from clipboard\n- **Drag and drop** — Attach files\n- **Ctrl+Shift+T** — Team Status (script)\n\n## IDE / Code Editor\n- **Ctrl+S** — Save file\n- **Ctrl+F** — Find in file\n- **Ctrl+H** — Find and replace\n- **Ctrl+G** — Go to line\n- **Ctrl+Space** — IntelliSense completion"
+    },
+    {
+      "id": "cli-useful-flags",
+      "title": "Useful Claude CLI Flags",
+      "tags": ["cli", "flags", "configuration"],
+      "whenToRead": "When user asks about CLI configuration, token limits, model selection, or advanced CLI features",
+      "isRequired": false,
+      "contentMd": "# Useful Claude CLI Flags (not yet used by CCW)\n\nVerified via `claude --help` (v2.1.62). These flags could be useful for advanced users:\n\n## High Priority\n- `--effort <low|medium|high>` — thinking effort level (token savings)\n- `--max-budget-usd <N>` — spending cap per session\n- `--fallback-model <model>` — resilience: fallback if primary model unavailable\n- `--permission-mode <mode>` — 5 modes: acceptEdits, bypassPermissions, default, dontAsk, plan\n\n## Medium Priority\n- `--fork-session` — conversation branching\n- `--add-dir <path>` — expand workspace beyond working directory\n- `--allowedTools / --disallowedTools` — granular tool control\n- `--debug-file <path>` — diagnostic output to file\n- `--system-prompt / --append-system-prompt` — customizable instructions\n\n## Low Priority\n- `--agents / --agent` — custom agent definitions\n- `--mcp-config` — MCP server configuration file\n- `--file` — startup resources"
+    }
+  ]
+}

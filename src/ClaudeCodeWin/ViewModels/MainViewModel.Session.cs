@@ -125,6 +125,7 @@ public partial class MainViewModel
         _contextWarningShown = false;
         _contextWindowSize = 0;
         _needsPreambleInjection = true;
+        _apiKeyExpiryChecked = false;
         _pendingQuestionAnswers.Clear();
         _pendingQuestionMessages.Clear();
         _pendingQuestionCount = 0;

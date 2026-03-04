@@ -36,6 +36,7 @@ public partial class SettingsWindow : Window
         UpdateInstructionsSummary();
         UpdateServersSummary();
         UpdateActivationSummary();
+        UpdateApiKeysSummary();
 
         _initialized = true;
     }
@@ -118,6 +119,36 @@ public partial class SettingsWindow : Window
             ActivationSummary.Text = $"Active code: {_settings.ActivationCode}  |  Features: {string.Join(", ", _settings.ActivatedFeatures)}";
         else
             ActivationSummary.Text = "No activation code applied";
+    }
+
+    private void ManageApiKeys_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new ApiKeyDialog(_settings, _settingsService) { Owner = this };
+        dlg.ShowDialog();
+        UpdateApiKeysSummary();
+    }
+
+    private void UpdateApiKeysSummary()
+    {
+        if (_settings.ApiKeys.Count == 0)
+        {
+            ApiKeysSummary.Text = "No API keys configured";
+            return;
+        }
+
+        var parts = new List<string>();
+        foreach (var key in _settings.ApiKeys)
+        {
+            var (days, isExpired, isWarning) = key.GetExpiryStatus();
+            if (!key.ExpiresAt.HasValue)
+                parts.Add($"{key.ServiceName}: no expiry");
+            else if (isExpired)
+                parts.Add($"{key.ServiceName}: expired");
+            else
+                parts.Add($"{key.ServiceName}: {days}d{(isWarning ? " left" : "")}");
+        }
+
+        ApiKeysSummary.Text = string.Join("  |  ", parts);
     }
 
     private void Close_Click(object sender, RoutedEventArgs e)

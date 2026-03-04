@@ -383,4 +383,29 @@ public partial class MainViewModel
             return text;
         return Regex.Replace(text, @"\r?\n?\[(?:Screenshot|File): [^\]]+\]\r?\n?", "\n").Trim();
     }
+
+    private void CheckApiKeyExpiry()
+    {
+        if (_apiKeyExpiryChecked || _settings.ApiKeys.Count == 0) return;
+        _apiKeyExpiryChecked = true;
+
+        var warnings = new List<string>();
+        foreach (var key in _settings.ApiKeys)
+        {
+            var (days, isExpired, isWarning) = key.GetExpiryStatus();
+            if (isExpired)
+                warnings.Add($"{key.ServiceName} API key expired {-days} days ago");
+            else if (isWarning)
+                warnings.Add(days == 0
+                    ? $"{key.ServiceName} API key expires today"
+                    : $"{key.ServiceName} API key expires in {days} days");
+        }
+
+        if (warnings.Count > 0)
+        {
+            var msg = "API key warning: " + string.Join("; ", warnings)
+                + ". Go to Settings > API Keys to update.";
+            Messages.Add(new MessageViewModel(MessageRole.System, msg));
+        }
+    }
 }

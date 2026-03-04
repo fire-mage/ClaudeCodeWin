@@ -1,0 +1,178 @@
+<Window x:Class="ClaudeCodeWin.ApiKeyDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="API Keys"
+        Width="620" Height="460"
+        MinWidth="480" MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BackgroundBrush}">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="API Keys" FontSize="16" FontWeight="Bold"
+                       Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Content="+ Add" Click="AddKey_Click"
+                    Padding="16,6" Margin="0,0,8,0"
+                    Style="{StaticResource PrimaryButton}"/>
+            <Button Grid.Column="2" Content="Remove" x:Name="RemoveButton"
+                    Click="RemoveKey_Click"
+                    Padding="16,6" IsEnabled="False"
+                    Foreground="{StaticResource ErrorBrush}"
+                    Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource ErrorBrush}"
+                    Cursor="Hand"/>
+        </Grid>
+
+        <!-- Key list -->
+        <ListView Grid.Row="1" x:Name="KeyList"
+                  Background="{StaticResource SurfaceBrush}"
+                  BorderBrush="{StaticResource BorderBrush}"
+                  BorderThickness="1"
+                  Foreground="{StaticResource TextBrush}"
+                  SelectionChanged="KeyList_SelectionChanged"
+                  MouseDoubleClick="KeyList_MouseDoubleClick"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                    <Setter Property="Padding" Value="8,6"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListViewItem">
+                                <Border x:Name="Bd" Background="Transparent"
+                                        Padding="{TemplateBinding Padding}"
+                                        BorderBrush="{StaticResource BorderBrush}"
+                                        BorderThickness="0,0,0,1">
+                                    <ContentPresenter/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="Bd" Property="Background"
+                                                Value="{StaticResource MenuHighlightBrush}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background"
+                                                Value="{StaticResource SurfaceLightBrush}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="{Binding ServiceName}" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Text="{Binding KeyMasked}" FontSize="11"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontFamily="Cascadia Code,Consolas,Courier New"
+                                       Margin="0,2,0,0"/>
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Text="{Binding StatusText}"
+                                   Foreground="{Binding StatusBrush}"
+                                   FontSize="12" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <!-- Edit form (shown when adding/editing) -->
+        <Border Grid.Row="2" x:Name="EditPanel" Visibility="Collapsed"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1" CornerRadius="4"
+                Padding="12" Margin="0,8,0,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Service:" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextBrush}" Margin="0,0,0,6"/>
+                <TextBox Grid.Row="0" Grid.Column="1" x:Name="EditServiceName"
+                         Style="{StaticResource InputTextBox}" Margin="0,0,0,6"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Service ID:" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" Margin="0,0,0,6"/>
+                <TextBox Grid.Row="1" Grid.Column="1" x:Name="EditServiceId"
+                         Style="{StaticResource InputTextBox}" FontSize="11" Margin="0,0,0,6"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="API Key:" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextBrush}" Margin="0,0,0,6"/>
+                <PasswordBox Grid.Row="2" Grid.Column="1" x:Name="EditApiKey"
+                             Background="{StaticResource SurfaceBrush}"
+                             Foreground="{StaticResource TextBrush}"
+                             BorderBrush="{StaticResource BorderBrush}"
+                             BorderThickness="1" Padding="10,6" FontSize="13"
+                             FontFamily="Cascadia Code,Consolas,Courier New"
+                             Margin="0,0,0,6"/>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Expires:" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextBrush}" Margin="0,0,0,6"/>
+                <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,6">
+                    <DatePicker x:Name="EditExpiry"
+                                Background="{StaticResource SurfaceBrush}"
+                                Foreground="{StaticResource TextBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                Width="160"/>
+                    <TextBlock Text="Warn before:" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondaryBrush}" Margin="16,0,6,0"/>
+                    <TextBox x:Name="EditWarningDays" Width="50" Text="14"
+                             Style="{StaticResource InputTextBox}"/>
+                    <TextBlock Text="days" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondaryBrush}" Margin="6,0,0,0"/>
+                </StackPanel>
+
+                <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal"
+                            HorizontalAlignment="Right">
+                    <Button Content="Save" Click="SaveEdit_Click"
+                            Style="{StaticResource PrimaryButton}"
+                            Padding="16,6" Margin="0,0,8,0"/>
+                    <Button Content="Cancel" Click="CancelEdit_Click"
+                            Padding="16,6"
+                            Background="{StaticResource SurfaceBrush}"
+                            Foreground="{StaticResource TextBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            Cursor="Hand"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Bottom buttons -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Close" Click="Close_Click"
+                    Style="{StaticResource PrimaryButton}"
+                    Padding="24,6"/>
+        </StackPanel>
+    </Grid>
+</Window>

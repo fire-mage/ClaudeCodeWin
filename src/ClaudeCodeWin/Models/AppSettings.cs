@@ -86,4 +86,34 @@ public class AppSettings
     // Legacy migration: map old ExtremeCodeEnabled to ReviewerEnabled
     [System.Text.Json.Serialization.JsonIgnore]
     public bool ExtremeCodeEnabled { get => ReviewerEnabled; set => ReviewerEnabled = value; }
+
+    // External service API keys with expiry tracking
+    public List<ApiKeyEntry> ApiKeys { get; set; } = [];
+}
+
+public class ApiKeyEntry
+{
+    public string ServiceId { get; set; } = "";
+    public string ServiceName { get; set; } = "";
+    public string? KeyProtected { get; set; }
+    public DateTime? ExpiresAt { get; set; }
+    public int WarningDays { get; set; } = 14;
+
+    public ApiKeyEntry Clone() => new()
+    {
+        ServiceId = ServiceId, ServiceName = ServiceName,
+        KeyProtected = KeyProtected, ExpiresAt = ExpiresAt,
+        WarningDays = WarningDays
+    };
+
+    /// <summary>Returns (days until expiry, is expired, is in warning zone). Days=0 if no expiry set.</summary>
+    public (int Days, bool IsExpired, bool IsWarning) GetExpiryStatus()
+    {
+        if (!ExpiresAt.HasValue) return (0, false, false);
+        var days = (ExpiresAt.Value.Date - DateTime.Today).Days;
+        var isExpired = days < 0;
+        // WarningDays <= 0 means "don't warn" (only report expired)
+        var isWarning = !isExpired && WarningDays > 0 && days <= WarningDays;
+        return (days, isExpired, isWarning);
+    }
 }
