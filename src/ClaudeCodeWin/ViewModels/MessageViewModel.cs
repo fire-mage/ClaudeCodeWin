@@ -215,8 +215,52 @@ public class MessageViewModel : ViewModelBase
     /// <summary>
     /// Attachments sent with this message (screenshots, files).
     /// </summary>
-    public List<FileAttachment> Attachments { get; set; } = [];
+    private List<FileAttachment> _attachments = [];
+    public List<FileAttachment> Attachments
+    {
+        get => _attachments;
+        set
+        {
+            _attachments = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasAttachments));
+            OnPropertyChanged(nameof(ShowStandaloneAttachments));
+            OnPropertyChanged(nameof(StandaloneAttachments));
+        }
+    }
     public bool HasAttachments => Attachments.Count > 0;
+
+    /// <summary>
+    /// Show standalone attachments block for non-image files, or all attachments when no ContentParts.
+    /// When ContentParts exists, inline images are already shown there — only show non-image files here.
+    /// </summary>
+    public bool ShowStandaloneAttachments => HasContentParts
+        ? Attachments.Any(a => !a.IsImage)
+        : HasAttachments;
+
+    /// <summary>Attachments to display in the standalone block (excludes images when ContentParts handles them).</summary>
+    public IEnumerable<FileAttachment> StandaloneAttachments => HasContentParts
+        ? Attachments.Where(a => !a.IsImage)
+        : Attachments;
+
+    /// <summary>
+    /// Ordered content parts (text + images interleaved) for user messages with inline images.
+    /// When set, the chat bubble renders these parts in order instead of text + attachments separately.
+    /// </summary>
+    private List<MessageContentPart>? _contentParts;
+    public List<MessageContentPart>? ContentParts
+    {
+        get => _contentParts;
+        set
+        {
+            _contentParts = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasContentParts));
+            OnPropertyChanged(nameof(ShowStandaloneAttachments));
+            OnPropertyChanged(nameof(StandaloneAttachments));
+        }
+    }
+    public bool HasContentParts => ContentParts is { Count: > 0 };
 
     /// <summary>
     /// When non-null, this message shows a question with clickable option buttons.

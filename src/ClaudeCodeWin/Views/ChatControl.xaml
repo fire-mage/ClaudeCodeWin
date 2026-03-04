@@ -11,6 +11,7 @@
         <converters:RoleToBubbleBrushConverter x:Key="RoleToBubble"/>
         <converters:RoleToMaxWidthConverter x:Key="RoleToMaxWidth"/>
         <converters:EditDiffLineTypeToBrushConverter x:Key="DiffLineBrush"/>
+        <converters:NullToCollapsedConverter x:Key="NullToCollapsed"/>
     </UserControl.Resources>
 
     <Grid>
@@ -222,7 +223,7 @@
                                                      Visibility="{Binding IsThinkingExpanded, Converter={StaticResource BoolToVis}}"/>
                                         </StackPanel>
                                     </Border>
-                                    <!-- Main text (selectable) -->
+                                    <!-- Main text (selectable) — shown only when no interleaved content parts -->
                                     <TextBox Text="{Binding Text, Mode=OneWay}"
                                              IsReadOnly="True"
                                              TextWrapping="Wrap"
@@ -234,7 +235,8 @@
                                              Foreground="{StaticResource TextBrush}"
                                              SelectionBrush="{StaticResource SelectionBrush}"
                                              IsTabStop="False"
-                                             Cursor="IBeam">
+                                             Cursor="IBeam"
+                                             Visibility="{Binding HasContentParts, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
                                         <TextBox.ContextMenu>
                                             <ContextMenu>
                                                 <MenuItem Header="Copy Selection" Command="ApplicationCommands.Copy"/>
@@ -245,6 +247,70 @@
                                             </ContextMenu>
                                         </TextBox.ContextMenu>
                                     </TextBox>
+
+                                    <!-- Interleaved content parts (text + images in send order) -->
+                                    <ItemsControl ItemsSource="{Binding ContentParts}"
+                                                  Visibility="{Binding HasContentParts, Converter={StaticResource BoolToVis}}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel>
+                                                    <!-- Text part -->
+                                                    <TextBox Text="{Binding Text, Mode=OneWay}"
+                                                             IsReadOnly="True"
+                                                             TextWrapping="Wrap"
+                                                             FontFamily="Cascadia Code,Consolas,Courier New"
+                                                             FontSize="13.5"
+                                                             Background="Transparent"
+                                                             BorderThickness="0"
+                                                             Padding="0"
+                                                             Foreground="{StaticResource TextBrush}"
+                                                             SelectionBrush="{StaticResource SelectionBrush}"
+                                                             IsTabStop="False"
+                                                             Cursor="IBeam"
+                                                             Visibility="{Binding Text, Converter={StaticResource NullToCollapsed}}">
+                                                        <TextBox.ContextMenu>
+                                                            <ContextMenu>
+                                                                <MenuItem Header="Copy Selection" Command="ApplicationCommands.Copy"/>
+                                                                <MenuItem Header="Copy All" Click="CopyAllMessage_Click"
+                                                                          Tag="{Binding DataContext.Text, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
+                                                                <Separator/>
+                                                                <MenuItem Header="Bookmark" Click="ToggleBookmark_Click"/>
+                                                            </ContextMenu>
+                                                        </TextBox.ContextMenu>
+                                                    </TextBox>
+                                                    <!-- Image part -->
+                                                    <Border Background="{StaticResource SurfaceLightBrush}"
+                                                            CornerRadius="4" Padding="6,4" Margin="0,4,0,4"
+                                                            Cursor="Hand"
+                                                            Visibility="{Binding Attachment, Converter={StaticResource NullToCollapsed}}"
+                                                            MouseLeftButtonUp="AttachmentPreview_Click"
+                                                            Tag="{Binding Attachment}">
+                                                        <StackPanel>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="{Binding Attachment.FileTypeIcon}" FontSize="12"
+                                                                           Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                                                <TextBlock Text="{Binding Attachment.FileName}" FontSize="11"
+                                                                           Foreground="{StaticResource PrimaryBrush}"
+                                                                           VerticalAlignment="Center"/>
+                                                            </StackPanel>
+                                                            <Image MaxHeight="200" MaxWidth="400"
+                                                                   Stretch="Uniform" StretchDirection="DownOnly"
+                                                                   Margin="0,4,0,0"
+                                                                   HorizontalAlignment="Left"
+                                                                   Tag="{Binding Attachment.FilePath}"
+                                                                   Loaded="AttachmentImage_Loaded">
+                                                                <Image.Style>
+                                                                    <Style TargetType="Image">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </Style>
+                                                                </Image.Style>
+                                                            </Image>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
 
                                     <!-- Completion summary panel -->
                                     <Border Margin="0,8,0,0"
@@ -289,9 +355,9 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- Attachments (screenshots, files sent with this message) -->
-                                    <ItemsControl ItemsSource="{Binding Attachments}"
-                                                  Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVis}}"
+                                    <!-- Attachments: all when no ContentParts, only non-image files when ContentParts handles images -->
+                                    <ItemsControl ItemsSource="{Binding StandaloneAttachments}"
+                                                  Visibility="{Binding ShowStandaloneAttachments, Converter={StaticResource BoolToVis}}"
                                                   Margin="0,6,0,0">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>

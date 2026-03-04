@@ -245,16 +245,24 @@ public partial class ChatControl : UserControl
 
     private void ToggleBookmark_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is MenuItem menuItem)
+        if (sender is not MenuItem menuItem) return;
+        var contextMenu = menuItem.Parent as ContextMenu;
+        var target = contextMenu?.PlacementTarget as FrameworkElement;
+
+        // Walk up visual tree to find MessageViewModel (handles both standalone and interleaved parts)
+        MessageViewModel? msg = null;
+        var fe = target;
+        while (fe is not null)
         {
-            var contextMenu = menuItem.Parent as ContextMenu;
-            var textBox = contextMenu?.PlacementTarget as TextBox;
-            if (textBox?.DataContext is MessageViewModel msg)
-            {
-                msg.IsBookmarked = !msg.IsBookmarked;
-                menuItem.Header = msg.IsBookmarked ? "Remove Bookmark" : "Bookmark";
-                BookmarkToggled?.Invoke();
-            }
+            if (fe.DataContext is MessageViewModel m) { msg = m; break; }
+            fe = VisualTreeHelper.GetParent(fe) as FrameworkElement;
+        }
+
+        if (msg is not null)
+        {
+            msg.IsBookmarked = !msg.IsBookmarked;
+            menuItem.Header = msg.IsBookmarked ? "Remove Bookmark" : "Bookmark";
+            BookmarkToggled?.Invoke();
         }
     }
 
@@ -300,8 +308,11 @@ public partial class ChatControl : UserControl
 
     private void AttachmentPreview_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (sender is FrameworkElement fe && fe.DataContext is Models.FileAttachment att
-            && att.IsImage && File.Exists(att.FilePath))
+        if (sender is not FrameworkElement fe) return;
+
+        // Try Tag first (interleaved content parts), then DataContext (standalone attachments list)
+        var att = fe.Tag as Models.FileAttachment ?? fe.DataContext as Models.FileAttachment;
+        if (att is not null && att.IsImage && File.Exists(att.FilePath))
             ShowImagePreviewWindow(att.FilePath, att.FileName);
     }
 

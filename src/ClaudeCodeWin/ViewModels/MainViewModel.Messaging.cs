@@ -12,7 +12,7 @@ public partial class MainViewModel
 {
     private async Task SendMessageAsync()
     {
-        var (text, inlineAttachments) = BuildComposerContent();
+        var (text, inlineAttachments, contentParts) = BuildComposerContent();
         if (string.IsNullOrEmpty(text))
             return;
 
@@ -71,10 +71,11 @@ public partial class MainViewModel
         ChangedFiles.Clear(); // Clear only on user-initiated messages (not queued or review-fix)
         ClearComposer();
 
-        await SendDirectAsync(text, allAttachments);
+        await SendDirectAsync(text, allAttachments, contentParts: contentParts);
     }
 
-    private async Task SendDirectAsync(string text, List<FileAttachment>? attachments, string? participantLabel = null)
+    private async Task SendDirectAsync(string text, List<FileAttachment>? attachments,
+        string? participantLabel = null, List<MessageContentPart>? contentParts = null)
     {
         // Cancel any active review if this is a real user message (not an auto-review fix prompt)
         if (_reviewService?.IsActive == true && participantLabel is null)
@@ -88,6 +89,8 @@ public partial class MainViewModel
             userMsg.ReviewerLabel = participantLabel;
         if (attachments is not null)
             userMsg.Attachments = [.. attachments];
+        if (contentParts is not null)
+            userMsg.ContentParts = contentParts;
         Messages.Add(userMsg);
 
         _lastSentText = text;
@@ -658,20 +661,27 @@ public partial class MainViewModel
     /// Build the final prompt text from composer blocks. Inline images become [Screenshot:] markers
     /// interleaved with text, and their FileAttachment objects are collected separately so the CLI
     /// can send the actual image data to the API (not just the path string).
+    /// Also builds ContentParts list to preserve interleaved text/image order for chat display.
     /// </summary>
-    private (string text, List<FileAttachment>? inlineAttachments) BuildComposerContent()
+    private (string text, List<FileAttachment>? inlineAttachments, List<MessageContentPart>? contentParts) BuildComposerContent()
     {
         var sb = new StringBuilder();
         List<FileAttachment>? inlineAtts = null;
+        List<MessageContentPart>? contentParts = null;
+        bool hasImages = ComposerBlocks.Any(b => b is ImageComposerBlock);
+
         foreach (var block in ComposerBlocks)
         {
             switch (block)
             {
                 case TextComposerBlock tb:
                     sb.Append(tb.Text);
+                    if (hasImages && !string.IsNullOrEmpty(tb.Text))
+                        (contentParts ??= []).Add(MessageContentPart.CreateText(tb.Text));
                     break;
                 case ImageComposerBlock ib:
                     (inlineAtts ??= []).Add(ib.Attachment);
+                    (contentParts ??= []).Add(MessageContentPart.CreateImage(ib.Attachment));
                     sb.AppendLine();
                     sb.AppendLine(ib.Attachment.IsScreenshot
                         ? $"[Screenshot: {ib.FilePath}]"
@@ -679,7 +689,7 @@ public partial class MainViewModel
                     break;
             }
         }
-        return (sb.ToString().Trim(), inlineAtts);
+        return (sb.ToString().Trim(), inlineAtts, contentParts);
     }
 
     /// <summary>Reset composer blocks only (preserves attachment bar).</summary>

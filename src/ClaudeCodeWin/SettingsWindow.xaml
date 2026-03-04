@@ -90,32 +90,6 @@
                 </StackPanel>
             </RadioButton>
 
-            <!-- Session section -->
-            <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,20,0,16"/>
-
-            <TextBlock Text="Session" FontSize="16" FontWeight="Bold"
-                       Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,12"/>
-
-            <CheckBox x:Name="AutoConfirmCheck" Style="{StaticResource SettingsCheckBox}"
-                      Margin="0,0,0,10"
-                      Checked="AutoConfirm_Changed" Unchecked="AutoConfirm_Changed">
-                <StackPanel>
-                    <TextBlock Text="Auto-confirm Plan Mode" FontWeight="SemiBold"/>
-                    <TextBlock Text="Automatically approve Claude's plan and start implementation. Auto-disables if a loop is detected."
-                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
-                </StackPanel>
-            </CheckBox>
-
-            <CheckBox x:Name="ContextSnapshotCheck" Style="{StaticResource SettingsCheckBox}"
-                      Margin="0,0,0,10"
-                      Checked="ContextSnapshot_Changed" Unchecked="ContextSnapshot_Changed">
-                <StackPanel>
-                    <TextBlock Text="Context Snapshot" FontWeight="SemiBold"/>
-                    <TextBlock Text="Auto-generate project context snapshot on session start. Helps Claude understand the codebase immediately."
-                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
-                </StackPanel>
-            </CheckBox>
-
             <!-- Instructions section -->
             <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,20,0,16"/>
 

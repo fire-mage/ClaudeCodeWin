@@ -31,8 +31,6 @@ public partial class SettingsWindow : Window
         else
             StableRadio.IsChecked = true;
 
-        AutoConfirmCheck.IsChecked = settings.AutoConfirmPlanMode;
-        ContextSnapshotCheck.IsChecked = settings.ContextSnapshotEnabled;
         UpdateInstructionsSummary();
         UpdateServersSummary();
         UpdateActivationSummary();
@@ -49,21 +47,6 @@ public partial class SettingsWindow : Window
         _settings.UpdateChannel = channel;
         _settingsService.Save(_settings);
         _updateViewModel.SetUpdateChannel(channel);
-    }
-
-    private void AutoConfirm_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!_initialized) return;
-
-        _viewModel.AutoConfirmEnabled = AutoConfirmCheck.IsChecked == true;
-    }
-
-    private void ContextSnapshot_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!_initialized) return;
-
-        _settings.ContextSnapshotEnabled = ContextSnapshotCheck.IsChecked == true;
-        _settingsService.Save(_settings);
     }
 
     private void ManageInstructions_Click(object sender, RoutedEventArgs e)
