@@ -180,9 +180,8 @@ public class ReviewService
 
     internal static ReviewVerdict DetectVerdict(string text)
     {
-        // Look for verdict marker in the last 2000 chars
-        var tail = text.Length > 2000 ? text[^2000..] : text;
-        var upper = tail.ToUpperInvariant();
+        // No tail limit — model may append text after the verdict marker
+        var upper = text.ToUpperInvariant();
 
         if (upper.Contains("VERDICT: CONSENSUS") || upper.Contains("VERDICT:CONSENSUS"))
             return ReviewVerdict.Consensus;
@@ -202,8 +201,8 @@ public class ReviewService
     /// </summary>
     public static bool DetectReviewDismiss(string text)
     {
-        var tail = text.Length > 2000 ? text[^2000..] : text;
-        var upper = tail.ToUpperInvariant();
+        // No tail limit — model may append text after the marker
+        var upper = text.ToUpperInvariant();
         return upper.Contains("REVIEW_QUALITY: LOW") || upper.Contains("REVIEW_QUALITY:LOW");
     }
 
