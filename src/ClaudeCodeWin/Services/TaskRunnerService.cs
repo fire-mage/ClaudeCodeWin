@@ -135,8 +135,11 @@ public class TaskRunnerService
             PopulateMenuInternal(mainWindow.TasksMenu, regularTasks, mainWindow, getActiveTab);
 
             // Refresh menus when opened (picks up tasks.json changes made by Claude or manual edits)
-            mainWindow.TasksMenu.SubmenuOpened -= _submenuRefreshHandler;
-            mainWindow.DeployScriptsMenu.SubmenuOpened -= _submenuRefreshHandler;
+            if (_submenuRefreshHandler is not null)
+            {
+                mainWindow.TasksMenu.SubmenuOpened -= _submenuRefreshHandler;
+                mainWindow.DeployScriptsMenu.SubmenuOpened -= _submenuRefreshHandler;
+            }
             _submenuRefreshHandler = (_, _) => PopulateMenu(mainWindow, getActiveTab);
             mainWindow.TasksMenu.SubmenuOpened += _submenuRefreshHandler;
             mainWindow.DeployScriptsMenu.SubmenuOpened += _submenuRefreshHandler;

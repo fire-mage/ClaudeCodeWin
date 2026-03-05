@@ -91,6 +91,12 @@ public class AppSettings
 
     // External service API keys with expiry tracking
     public List<ApiKeyEntry> ApiKeys { get; set; } = [];
+
+    // Cached usage data (shown immediately on startup before API response)
+    public double CachedSessionUtilization { get; set; }
+    public double CachedWeeklyUtilization { get; set; }
+    public string? CachedSessionResetsAt { get; set; }
+    public string? CachedWeeklyResetsAt { get; set; }
 }
 
 public class ApiKeyEntry

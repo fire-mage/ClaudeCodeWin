@@ -172,7 +172,8 @@ public partial class App : Application
             CheckInstructionDeduplication(settings.WorkingDirectory);
 
             // Usage service wiring (global — same for all tabs)
-            ConfigureUsageService(tabHost, usageService);
+            ConfigureUsageService(tabHost, usageService, settingsService, settings);
+            usageService.LoadCachedUsage(settings);
             usageService.Start();
 
             // Menus (resolve active tab at click time)
@@ -317,7 +318,7 @@ public partial class App : Application
         window.ShowWelcomeScreen();
     }
 
-    private static void ConfigureUsageService(TabHostViewModel tabHost, UsageService usageService)
+    private static void ConfigureUsageService(TabHostViewModel tabHost, UsageService usageService, SettingsService settingsService, AppSettings settings)
     {
         usageService.OnUsageUpdated += () =>
         {
@@ -348,6 +349,13 @@ public partial class App : Application
             tabHost.WeekPctText = weekPct;
             tabHost.WeekExtraText = weekExtra;
             tabHost.UsageText = $"Session: {sessionPct}{sessionExtra}Week: {weekPct}{weekExtra}";
+        };
+
+        // Save usage cache after each successful API fetch (not every countdown tick)
+        usageService.OnFetchSuccess += () =>
+        {
+            usageService.SaveCachedUsage(settings);
+            settingsService.Save(settings);
         };
     }
 

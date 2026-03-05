@@ -33,10 +33,11 @@ public class UsageService
     // Events
     public event Action? OnUsageUpdated;
     public event Action<bool>? OnRateLimitChanged; // true = rate limited, false = cleared
+    public event Action? OnFetchSuccess; // fires only after successful API fetch (not countdown ticks)
 
     public UsageService()
     {
-        _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(5) };
         _pollTimer.Tick += async (_, _) => await FetchUsageAsync();
 
         _countdownTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -118,19 +119,15 @@ public class UsageService
                 // Switch poll interval: 15s during rate limit, 1min normally
                 _pollTimer.Interval = IsRateLimited
                     ? TimeSpan.FromSeconds(15)
-                    : TimeSpan.FromMinutes(1);
+                    : TimeSpan.FromMinutes(5);
                 OnRateLimitChanged?.Invoke(IsRateLimited);
             }
 
             if (!IsOnline)
-            {
                 IsOnline = true;
-                OnUsageUpdated?.Invoke();
-            }
-            else
-            {
-                OnUsageUpdated?.Invoke();
-            }
+
+            OnUsageUpdated?.Invoke();
+            OnFetchSuccess?.Invoke();
         }
         catch (HttpRequestException)
         {
@@ -206,5 +203,32 @@ public class UsageService
         }
         catch { }
         return null;
+    }
+    /// <summary>Load cached usage from settings so the panel shows immediately on startup.</summary>
+    public void LoadCachedUsage(Models.AppSettings settings)
+    {
+        if (settings.CachedSessionUtilization > 0 || settings.CachedWeeklyUtilization > 0)
+        {
+            SessionUtilization = settings.CachedSessionUtilization;
+            WeeklyUtilization = settings.CachedWeeklyUtilization;
+            SessionResetsAt = settings.CachedSessionResetsAt is not null
+                ? DateTime.Parse(settings.CachedSessionResetsAt)
+                : null;
+            WeeklyResetsAt = settings.CachedWeeklyResetsAt is not null
+                ? DateTime.Parse(settings.CachedWeeklyResetsAt)
+                : null;
+            IsLoaded = true;
+            OnUsageUpdated?.Invoke();
+        }
+    }
+
+    /// <summary>Save current usage to settings for next startup.</summary>
+    public void SaveCachedUsage(Models.AppSettings settings)
+    {
+        if (!IsLoaded) return;
+        settings.CachedSessionUtilization = SessionUtilization;
+        settings.CachedWeeklyUtilization = WeeklyUtilization;
+        settings.CachedSessionResetsAt = SessionResetsAt?.ToString("o");
+        settings.CachedWeeklyResetsAt = WeeklyResetsAt?.ToString("o");
     }
 }
