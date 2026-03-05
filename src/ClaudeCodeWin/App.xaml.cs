@@ -126,7 +126,6 @@ public partial class App : Application
 
             // Create initial tab (always created before mainWindow)
             var initialTab = tabHost.CreateTab();
-            initialTab.ShowWelcome = true;
             if (!string.IsNullOrEmpty(tabPaths[0]))
                 initialTab.SetWorkingDirectoryOnStartup(tabPaths[0]);
 
@@ -216,18 +215,8 @@ public partial class App : Application
             mainWindow.SetKnowledgeBaseService(knowledgeBaseService);
             mainWindow.SetDevKbService(devKbService);
 
-            // Update check first, then welcome flow (to avoid overlapping popups)
-            var hasUpdate = await tabHost.Update.CheckOnStartupAsync();
-            if (hasUpdate)
-            {
-                // Update overlay is showing — defer welcome flow until user dismisses it
-                tabHost.Update.OnUpdateDismissed += () =>
-                    RunWelcomeFlow(initialTab, mainWindow, chatHistoryService, projectRegistry, settings);
-            }
-            else
-            {
-                RunWelcomeFlow(initialTab, mainWindow, chatHistoryService, projectRegistry, settings);
-            }
+            // Update check (welcome screen removed — always start fresh chat)
+            await tabHost.Update.CheckOnStartupAsync();
 
             // Start periodic background checks (every 4 hours)
             tabHost.Update.StartPeriodicCheck();
@@ -300,22 +289,6 @@ public partial class App : Application
             "Login Required", MessageBoxButton.OK, MessageBoxImage.Warning);
         Shutdown();
         return false;
-    }
-
-    private static void RunWelcomeFlow(
-        MainViewModel vm, MainWindow window,
-        ChatHistoryService chatHistory, ProjectRegistryService projectRegistry,
-        AppSettings settings)
-    {
-        // Skip if welcome is already visible (shown earlier by the constructor)
-        if (vm.ShowWelcome)
-            return;
-
-        var history = chatHistory.ListAll();
-        if (history.Count == 0)
-            return;
-
-        window.ShowWelcomeScreen();
     }
 
     private static void ConfigureUsageService(TabHostViewModel tabHost, UsageService usageService, SettingsService settingsService, AppSettings settings)

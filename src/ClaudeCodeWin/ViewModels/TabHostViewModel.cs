@@ -322,7 +322,6 @@ public class TabHostViewModel : ViewModelBase
         {
             // Cannot have zero tabs — create a fresh one
             var fresh = CreateTab();
-            fresh.ShowWelcome = true;
         }
         else if (needsSwitch || ActiveTab is null)
         {

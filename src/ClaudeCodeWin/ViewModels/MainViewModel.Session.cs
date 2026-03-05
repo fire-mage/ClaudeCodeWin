@@ -71,7 +71,6 @@ public partial class MainViewModel
             _settings.RecentFolders.RemoveAt(_settings.RecentFolders.Count - 1);
 
         _settingsService.Save(_settings);
-        ShowWelcome = false;
         ProjectPath = folder;
         _registeredProjectRoots.Add(Path.GetFullPath(folder));
 
@@ -346,7 +345,6 @@ public partial class MainViewModel
             _ = Task.Run(() => RefreshAutocompleteIndex());
         }
 
-        ShowWelcome = false;
         ModelName = "";
         StatusText = "";
 
@@ -365,7 +363,6 @@ public partial class MainViewModel
         _gitRefreshTimer?.Stop();
         _gitRefreshTimer = null;
 
-        ShowWelcome = false;
         ProjectPath = "";
         NewSessionCommand.Execute(null);
     }

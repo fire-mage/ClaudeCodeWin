@@ -65,9 +65,11 @@ public class UsageService
         if (_accessToken is null)
         {
             _accessToken = ReadAccessToken();
-            if (_accessToken is null) return;
+            if (_accessToken is null)
+            {
+                return;
+            }
         }
-
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.anthropic.com/api/oauth/usage");
@@ -79,11 +81,8 @@ public class UsageService
             var response = await Http.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
-                // Token might be expired — try re-reading
                 if ((int)response.StatusCode == 401)
-                {
                     _accessToken = ReadAccessToken();
-                }
                 return;
             }
 
@@ -149,7 +148,7 @@ public class UsageService
         }
         catch
         {
-            // Other errors — silently ignore
+            // Other parse/unexpected errors — silently ignore
         }
     }
 

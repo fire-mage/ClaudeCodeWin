@@ -366,7 +366,6 @@ public partial class MainViewModel
         _ctaState = state;
         CtaText = state switch
         {
-            CtaState.Welcome => "",
             CtaState.Ready => "Start a conversation with Claude",
             CtaState.Processing => "Claude is working. Press \u2191 to recall, Escape to cancel, or send to queue.",
             CtaState.WaitingForUser => "Claude is waiting for your response",

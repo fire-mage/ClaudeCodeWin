@@ -101,11 +101,6 @@ public partial class MainWindow : Window
         // Wire up initial tab
         SubscribeToActiveTab();
 
-        // Show welcome for the initial tab immediately (avoids delayed popup appearance
-        // that previously waited for update check to complete before showing ReturningPanel)
-        if (TabHost.ActiveTab?.ShowWelcome == true)
-            ShowWelcomeScreen();
-
         // Set window icon from embedded resource
         try
         {
@@ -139,9 +134,7 @@ public partial class MainWindow : Window
     {
         SubscribeToActiveTab();
 
-        // Show welcome screen for new/blank tabs
-        if (TabHost.ActiveTab?.ShowWelcome == true)
-            ShowWelcomeScreen();
+
 
         Dispatcher.BeginInvoke(() =>
         {
@@ -404,19 +397,6 @@ public partial class MainWindow : Window
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        // Welcome back screen: Enter = New Chat (when nothing selected)
-        if (ReturningPanel.Visibility == Visibility.Visible && ViewModel.ShowWelcome)
-        {
-            if (e.Key == Key.Enter
-                && WbRecentChatsList.SelectedItem is null)
-            {
-                DismissWelcomeScreen();
-                ViewModel.NewSessionCommand.Execute(null);
-                e.Handled = true;
-                return;
-            }
-        }
-
         // Autocomplete navigation (when composer has focus)
         if (AutocompletePopup.IsOpen && ComposerControl.HasTextFocus)
         {
@@ -824,8 +804,6 @@ public partial class MainWindow : Window
 
         var newTab = TabHost.CreateTab();
         newTab.SetWorkingDirectory(dialog.SelectedProjectPath);
-        newTab.ShowWelcome = true;
-        ShowWelcomeScreen();
     }
 
     private void MenuItem_ChatHistory_Click(object sender, RoutedEventArgs e)
@@ -1261,101 +1239,4 @@ public partial class MainWindow : Window
     }
 
 
-    // ===== Welcome Back Screen (inline) =====
-
-    public void ShowWelcomeScreen()
-    {
-        // Populate project name in subtitle (use active tab's path, fall back to global)
-        var projectName = ExtractProjectName(ViewModel?.WorkingDirectory ?? _settings.WorkingDirectory);
-        WbNewChatSubtitle.Text = string.IsNullOrEmpty(projectName)
-            ? "Start a fresh conversation"
-            : $"Start a fresh conversation in {projectName}";
-
-        // Load recent chats
-        var summaries = _chatHistoryService.ListAll();
-        var recentChats = summaries
-            .Take(5)
-            .Select(s => new SessionDisplayItem
-            {
-                Id = s.Id,
-                Title = s.Title,
-                ProjectPath = s.ProjectPath,
-                ProjectName = ExtractProjectName(s.ProjectPath),
-                UpdatedAt = s.UpdatedAt,
-                MessageCount = s.MessageCount
-            })
-            .ToList();
-
-        if (recentChats.Count == 0)
-            WbContinueChatSection.Visibility = Visibility.Collapsed;
-        else
-        {
-            WbContinueChatSection.Visibility = Visibility.Visible;
-            WbRecentChatsList.ItemsSource = recentChats;
-        }
-
-        // Switch to returning-user mode
-        FirstTimePanel.Visibility = Visibility.Collapsed;
-        ReturningPanel.Visibility = Visibility.Visible;
-        ViewModel.ShowWelcome = true;
-    }
-
-    private void DismissWelcomeScreen()
-    {
-        ViewModel.ShowWelcome = false;
-        FirstTimePanel.Visibility = Visibility.Visible;
-        ReturningPanel.Visibility = Visibility.Collapsed;
-        ComposerControl.FocusFirst();
-    }
-
-    private static string ExtractProjectName(string? path)
-    {
-        if (string.IsNullOrEmpty(path)) return "";
-        return Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
-               ?? path;
-    }
-
-    // --- Section 1: New Chat ---
-
-    private void WbNewChat_Click(object sender, MouseButtonEventArgs e)
-    {
-        DismissWelcomeScreen();
-        ViewModel.NewSessionCommand.Execute(null);
-    }
-
-    // --- Section 3: Continue Previous Chat ---
-
-    private void WbRecentChats_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        WbContinueChatBtn.IsEnabled = WbRecentChatsList.SelectedItem is SessionDisplayItem;
-    }
-
-    private void WbRecentChats_DoubleClick(object sender, MouseButtonEventArgs e)
-    {
-        if (WbRecentChatsList.SelectedItem is SessionDisplayItem item)
-            WbAcceptChat(item);
-    }
-
-    private void WbContinueChat_Click(object sender, RoutedEventArgs e)
-    {
-        if (WbRecentChatsList.SelectedItem is SessionDisplayItem item)
-            WbAcceptChat(item);
-    }
-
-    private void WbAcceptChat(SessionDisplayItem item)
-    {
-        var entry = _chatHistoryService.Load(item.Id);
-        if (entry is null) return;
-
-        DismissWelcomeScreen();
-        ViewModel.LoadChatFromHistory(entry);
-    }
-
-    // --- Section 4: General Chat ---
-
-    private void WbGeneralChat_Click(object sender, MouseButtonEventArgs e)
-    {
-        DismissWelcomeScreen();
-        ViewModel.StartGeneralChat();
-    }
 }

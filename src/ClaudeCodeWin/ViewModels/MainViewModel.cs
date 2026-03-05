@@ -85,7 +85,6 @@ public partial class MainViewModel : ViewModelBase
     private string _statusText = "";
     private string _modelName = "";
     private readonly ChatMessageAssembler _messageAssembler;
-    private bool _showWelcome;
     private bool _hasResponseStarted;
     private string? _lastSentText;
     private List<FileAttachment>? _lastSentAttachments;
@@ -98,7 +97,7 @@ public partial class MainViewModel : ViewModelBase
     private string _contextPctText = "";
     private string? _currentChatId;
     private string _ctaText = "";
-    private CtaState _ctaState = CtaState.Welcome;
+    private CtaState _ctaState = CtaState.Ready;
     private int _contextWindowSize;
     private bool _contextWarningShown;
     private int _previousInputTokens;
@@ -201,12 +200,6 @@ public partial class MainViewModel : ViewModelBase
     public bool HasQueuedMessages => MessageQueue.Count > 0;
     public bool HasChangedFiles => ChangedFiles.Count > 0;
     public string ChangedFilesText => $"{ChangedFiles.Count} file(s) changed";
-
-    public bool ShowWelcome
-    {
-        get => _showWelcome;
-        set => SetProperty(ref _showWelcome, value);
-    }
 
     public string StatusText
     {
@@ -694,9 +687,8 @@ public partial class MainViewModel : ViewModelBase
         foreach (var folder in settings.RecentFolders)
             RecentFolders.Add(folder);
 
-        ShowWelcome = string.IsNullOrEmpty(settings.WorkingDirectory);
         ProjectPath = settings.WorkingDirectory ?? "";
-        UpdateCta(ShowWelcome ? CtaState.Welcome : CtaState.Ready);
+        UpdateCta(CtaState.Ready);
 
         // Restore session and git status if project was already set
         if (!string.IsNullOrEmpty(settings.WorkingDirectory))
@@ -754,7 +746,6 @@ public partial class MainViewModel : ViewModelBase
 
 internal enum CtaState
 {
-    Welcome,
     Ready,
     Processing,
     WaitingForUser,

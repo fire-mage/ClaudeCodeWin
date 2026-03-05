@@ -36,11 +36,6 @@ public class UpdateViewModel : ViewModelBase
     /// </summary>
     public event Action<string>? OnStatusTextChange;
 
-    /// <summary>
-    /// Raised when the user dismisses the update overlay (clicks "Later" or closes it after failure).
-    /// </summary>
-    public event Action? OnUpdateDismissed;
-
     public bool IsUpdating
     {
         get => _isUpdating;
@@ -264,7 +259,6 @@ public class UpdateViewModel : ViewModelBase
         UpdateFailed = false;
         UpdateDownloading = false;
         IsUpdating = false;
-        OnUpdateDismissed?.Invoke();
     }
 
     // --- CLI update methods ---

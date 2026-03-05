@@ -319,7 +319,7 @@
                                         Background="{StaticResource SurfaceBrush}"
                                         MouseLeftButtonUp="SubTab_Click" Tag="{Binding}">
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="{Binding DisplayTitle}" FontSize="12"
+                                        <TextBlock x:Name="SubTabText" Text="{Binding DisplayTitle}" FontSize="12"
                                                    Foreground="{StaticResource TextBrush}"
                                                    VerticalAlignment="Center"
                                                    TextTrimming="CharacterEllipsis"
@@ -349,6 +349,13 @@
                                     <DataTrigger Binding="{Binding IsActive}" Value="True">
                                         <Setter TargetName="SubTabBorder" Property="Background"
                                                 Value="{StaticResource SurfaceLightBrush}"/>
+                                    </DataTrigger>
+                                    <!-- Subtle highlight for the main Chat tab -->
+                                    <DataTrigger Binding="{Binding Type}" Value="Chat">
+                                        <Setter TargetName="SubTabText" Property="Foreground"
+                                                Value="{StaticResource PrimaryBrush}"/>
+                                        <Setter TargetName="SubTabText" Property="FontWeight"
+                                                Value="SemiBold"/>
                                     </DataTrigger>
                                 </DataTemplate.Triggers>
                             </DataTemplate>
@@ -689,263 +696,7 @@
                     </Border>
                 </Border>
 
-                <!-- Welcome overlay (covers full content area incl. inner tab strip) -->
-                <Border Grid.Row="0" Grid.RowSpan="2"
-                        Background="{StaticResource BackgroundBrush}"
-                        Visibility="{Binding ShowWelcome, Converter={StaticResource BoolToVis}}"
-                        Panel.ZIndex="50">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel MaxWidth="560" Margin="28,40,28,28"
-                                    HorizontalAlignment="Center">
 
-                            <!-- ===== First-time content ===== -->
-                            <StackPanel x:Name="FirstTimePanel">
-                                <TextBlock Text="Welcome to ClaudeCodeWin!"
-                                           FontSize="24" FontWeight="Bold"
-                                           Foreground="{StaticResource PrimaryBrush}"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,0,0,12"/>
-                                <TextBlock Text="Select a project folder to get started."
-                                           FontSize="14"
-                                           Foreground="{StaticResource TextSecondaryBrush}"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,0,0,24"/>
-
-                                <Button Content="Browse..."
-                                        Style="{StaticResource PrimaryButton}"
-                                        Command="{Binding SelectFolderCommand}"
-                                        HorizontalAlignment="Center"
-                                        Margin="0,0,0,24"
-                                        Padding="32,10"/>
-
-                                <!-- Recent folders -->
-                                <TextBlock Text="Recent Projects"
-                                           FontSize="14" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextBrush}"
-                                           Margin="0,0,0,8"
-                                           Visibility="{Binding RecentFolders.Count, Converter={StaticResource BoolToVis}}"/>
-
-                                <ItemsControl ItemsSource="{Binding RecentFolders}"
-                                              Visibility="{Binding RecentFolders.Count, Converter={StaticResource BoolToVis}}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Background="{StaticResource SurfaceBrush}"
-                                                    CornerRadius="6" Padding="12,8" Margin="0,0,0,4"
-                                                    Cursor="Hand">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-
-                                                    <TextBlock Grid.Column="0" Text="{Binding}"
-                                                               FontSize="13"
-                                                               Foreground="{StaticResource TextBrush}"
-                                                               VerticalAlignment="Center"
-                                                               TextTrimming="CharacterEllipsis"/>
-
-                                                    <Button Grid.Column="1"
-                                                            Style="{StaticResource ChipCloseButton}"
-                                                            Command="{Binding DataContext.ActiveTab.RemoveRecentFolderCommand,
-                                                                RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}"
-                                                            Margin="8,0,0,0"/>
-                                                </Grid>
-
-                                                <Border.InputBindings>
-                                                    <MouseBinding Gesture="LeftClick"
-                                                                  Command="{Binding DataContext.ActiveTab.OpenRecentFolderCommand,
-                                                                      RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                  CommandParameter="{Binding}"/>
-                                                </Border.InputBindings>
-
-                                                <Border.Style>
-                                                    <Style TargetType="Border">
-                                                        <Style.Triggers>
-                                                            <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
-                                                            </Trigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Border.Style>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-
-                            <!-- ===== Returning user content ===== -->
-                            <StackPanel x:Name="ReturningPanel" Visibility="Collapsed">
-
-                                <!-- Title -->
-                                <TextBlock Text="Welcome back!"
-                                           FontSize="22" FontWeight="Bold"
-                                           Foreground="{StaticResource PrimaryBrush}"
-                                           Margin="0,0,0,20"/>
-
-                                <!-- Section 1: New Chat (recommended) -->
-                                <Border x:Name="WbNewChatOption"
-                                        Background="{StaticResource SurfaceBrush}"
-                                        CornerRadius="6" Padding="14,12" Margin="0,0,0,16"
-                                        Cursor="Hand"
-                                        BorderThickness="2"
-                                        BorderBrush="{StaticResource PrimaryBrush}"
-                                        MouseLeftButtonUp="WbNewChat_Click">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="+" FontSize="20" FontWeight="Bold"
-                                                   Foreground="{StaticResource PrimaryBrush}"
-                                                   VerticalAlignment="Center" Margin="0,0,12,0"/>
-                                        <StackPanel>
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="New Chat" FontSize="15" FontWeight="SemiBold"
-                                                           Foreground="{StaticResource TextBrush}"/>
-                                                <Border Background="{StaticResource PrimaryDarkBrush}"
-                                                        CornerRadius="3" Padding="6,1" Margin="10,0,0,0"
-                                                        VerticalAlignment="Center">
-                                                    <TextBlock Text="Recommended" FontSize="10" FontWeight="SemiBold"
-                                                               Foreground="#FFFFFF"/>
-                                                </Border>
-                                            </StackPanel>
-                                            <TextBlock x:Name="WbNewChatSubtitle"
-                                                       Text="Start a fresh conversation"
-                                                       FontSize="11"
-                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
-                                        </StackPanel>
-                                    </StackPanel>
-
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Style.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="{StaticResource SurfaceLightBrush}"/>
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                </Border>
-
-                                <!-- Section 3: Continue Previous Chat -->
-                                <Border x:Name="WbContinueChatSection"
-                                        Background="{StaticResource SurfaceBrush}"
-                                        CornerRadius="6" Padding="14,12" Margin="0,0,0,16">
-                                    <StackPanel>
-                                        <TextBlock Text="Continue Previous Chat"
-                                                   FontSize="14" FontWeight="SemiBold"
-                                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                                   Margin="0,0,0,10"/>
-
-                                        <ListView x:Name="WbRecentChatsList"
-                                                  Background="Transparent"
-                                                  BorderThickness="0"
-                                                  Foreground="{StaticResource TextBrush}"
-                                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                                  SelectionChanged="WbRecentChats_SelectionChanged"
-                                                  MouseDoubleClick="WbRecentChats_DoubleClick">
-                                            <ListView.ItemContainerStyle>
-                                                <Style TargetType="ListViewItem">
-                                                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-                                                    <Setter Property="Padding" Value="0"/>
-                                                    <Setter Property="Margin" Value="0,0,0,4"/>
-                                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                                    <Setter Property="Template">
-                                                        <Setter.Value>
-                                                            <ControlTemplate TargetType="ListViewItem">
-                                                                <Border x:Name="Bd" Background="{StaticResource BackgroundBrush}"
-                                                                        Padding="12,8" CornerRadius="6"
-                                                                        BorderThickness="2" BorderBrush="Transparent"
-                                                                        Cursor="Hand">
-                                                                    <ContentPresenter/>
-                                                                </Border>
-                                                                <ControlTemplate.Triggers>
-                                                                    <Trigger Property="IsSelected" Value="True">
-                                                                        <Setter TargetName="Bd" Property="BorderBrush"
-                                                                                Value="{StaticResource PrimaryBrush}"/>
-                                                                    </Trigger>
-                                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                                        <Setter TargetName="Bd" Property="Background"
-                                                                                Value="{StaticResource SurfaceLightBrush}"/>
-                                                                    </Trigger>
-                                                                </ControlTemplate.Triggers>
-                                                            </ControlTemplate>
-                                                        </Setter.Value>
-                                                    </Setter>
-                                                </Style>
-                                            </ListView.ItemContainerStyle>
-                                            <ListView.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*"/>
-                                                            <ColumnDefinition Width="Auto"/>
-                                                        </Grid.ColumnDefinitions>
-                                                        <Grid.RowDefinitions>
-                                                            <RowDefinition Height="Auto"/>
-                                                            <RowDefinition Height="Auto"/>
-                                                        </Grid.RowDefinitions>
-
-                                                        <TextBlock Grid.Row="0" Grid.Column="0"
-                                                                   Text="{Binding Title}"
-                                                                   FontSize="13" FontWeight="SemiBold"
-                                                                   Foreground="{StaticResource TextBrush}"
-                                                                   TextTrimming="CharacterEllipsis"/>
-
-                                                        <TextBlock Grid.Row="0" Grid.Column="1"
-                                                                   Text="{Binding UpdatedAt, StringFormat='{}{0:MMM dd, HH:mm}'}"
-                                                                   FontSize="11"
-                                                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   Margin="8,0,0,0"/>
-
-                                                        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                                                                    Orientation="Horizontal" Margin="0,3,0,0">
-                                                            <TextBlock Text="{Binding ProjectName}"
-                                                                       FontSize="11"
-                                                                       Foreground="{StaticResource PrimaryBrush}"/>
-                                                            <TextBlock FontSize="11"
-                                                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                                                       Margin="10,0,0,0">
-                                                                <Run Text="{Binding MessageCount, Mode=OneWay}"/>
-                                                                <Run Text="messages"/>
-                                                            </TextBlock>
-                                                        </StackPanel>
-                                                    </Grid>
-                                                </DataTemplate>
-                                            </ListView.ItemTemplate>
-                                        </ListView>
-
-                                        <Button x:Name="WbContinueChatBtn"
-                                                Content="Continue"
-                                                Style="{StaticResource PrimaryButton}"
-                                                Click="WbContinueChat_Click"
-                                                Padding="16,6" Margin="0,10,0,0"
-                                                IsEnabled="False"
-                                                HorizontalAlignment="Left"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- Section 4: General Chat -->
-                                <Border Background="Transparent" Cursor="Hand"
-                                        MouseLeftButtonUp="WbGeneralChat_Click"
-                                        Margin="0,0,0,8">
-                                    <TextBlock FontSize="13" Foreground="{StaticResource TextSecondaryBrush}">
-                                        <Run Text="Or start a"/>
-                                        <Run Text="General Chat" Foreground="{StaticResource PrimaryBrush}"
-                                             TextDecorations="Underline"/>
-                                        <Run Text="without project binding"/>
-                                    </TextBlock>
-                                </Border>
-
-                                <!-- Hint -->
-                                <TextBlock Text="Press Enter for new chat"
-                                           FontSize="11" FontStyle="Italic"
-                                           Foreground="{StaticResource TextSecondaryBrush}"
-                                           Margin="0,4,0,0"/>
-
-                            </StackPanel>
-
-                        </StackPanel>
-                    </ScrollViewer>
-                </Border>
 
 
                 <!-- Message queue -->
@@ -1609,23 +1360,18 @@
                                FontSize="11"
                                Foreground="{StaticResource AccentBrush}"/>
                 </StackPanel>
-                <!-- Session block — labels grey, percentages gold (global usage, bound to TabHost) -->
-                <Border Grid.Column="5" VerticalAlignment="Center" Margin="0,0,16,0"
-                        Background="Transparent"
-                        DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
-                        ToolTip="Usage limits from your Anthropic subscription.&#x0a;Session resets every 5 hours, weekly every 7 days."
-                        Visibility="{Binding SessionPctText, Converter={StaticResource StringToVis}}">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock FontSize="11" VerticalAlignment="Center">
-                            <Run Text="Session: " Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <Run Text="{Binding SessionPctText, Mode=OneWay}" Foreground="{StaticResource AccentBrush}"/>
-                            <Run Text="{Binding SessionExtraText, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <Run Text="Week: " Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <Run Text="{Binding WeekPctText, Mode=OneWay}" Foreground="{StaticResource AccentBrush}"/>
-                            <Run Text="{Binding WeekExtraText, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}"/>
-                        </TextBlock>
-                    </StackPanel>
-                </Border>
+                <!-- Session block — labels grey, percentages gold (global usage from TabHost) -->
+                <StackPanel Grid.Column="5" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="0,0,16,0"
+                            ToolTip="Usage limits from your Anthropic subscription.&#x0a;Session resets every 5 hours, weekly every 7 days."
+                            Visibility="{Binding DataContext.SessionPctText, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource StringToVis}}">
+                    <TextBlock Text="Session: " FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding DataContext.SessionPctText, RelativeSource={RelativeSource AncestorType=Window}, Mode=OneWay}" FontSize="11" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding DataContext.SessionExtraText, RelativeSource={RelativeSource AncestorType=Window}, Mode=OneWay}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="Week: " FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding DataContext.WeekPctText, RelativeSource={RelativeSource AncestorType=Window}, Mode=OneWay}" FontSize="11" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding DataContext.WeekExtraText, RelativeSource={RelativeSource AncestorType=Window}, Mode=OneWay}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
                 <Border Grid.Column="7" VerticalAlignment="Center"
                         Background="Transparent"
                         MouseLeftButtonUp="ModelIndicator_Click">
