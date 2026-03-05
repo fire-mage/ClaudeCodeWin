@@ -34,7 +34,8 @@ public class RoleToBubbleBrushConverter : IValueConverter
             _ => "AssistantBubbleBrush"
         };
 
-        return Application.Current.FindResource(key);
+        // Fix: Application.Current.FindResource throws if Current is null (shutdown/design-time)
+        return Application.Current?.TryFindResource(key) ?? Brushes.Transparent;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -64,7 +65,8 @@ public class EditDiffLineTypeToBrushConverter : IValueConverter
             EditDiffLineType.Removed => "ErrorBrush",
             _ => "TextSecondaryBrush"
         };
-        return Application.Current.FindResource(key);
+        // Fix: Application.Current.FindResource throws if Current is null (shutdown/design-time)
+        return Application.Current?.TryFindResource(key) ?? Brushes.Transparent;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -82,7 +84,8 @@ public class GitStatusToBrushConverter : IValueConverter
             _ when text.Contains("clean") => "SuccessBrush",
             _ => "TextSecondaryBrush" // "no git" or empty
         };
-        return Application.Current.FindResource(key);
+        // Fix: Application.Current.FindResource throws if Current is null (shutdown/design-time)
+        return Application.Current?.TryFindResource(key) ?? Brushes.Transparent;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -109,7 +112,8 @@ public class StatusTextToBrushConverter : IValueConverter
             "Error" => "ErrorBrush",
             _ => "TextSecondaryBrush"
         };
-        return Application.Current.FindResource(key);
+        // Fix: Application.Current.FindResource throws if Current is null (shutdown/design-time)
+        return Application.Current?.TryFindResource(key) ?? Brushes.Transparent;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

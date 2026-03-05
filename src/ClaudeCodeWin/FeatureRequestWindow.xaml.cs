@@ -42,29 +42,52 @@ public partial class FeatureRequestWindow : Window
         SendButton.IsEnabled = false;
         ShowStatus("Sending...", isError: false);
 
-        var version = typeof(FeatureRequestWindow).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion?.Split('+')[0] ?? "unknown";
-
-        var (success, error) = await _api.SubmitFeatureRequestAsync(email, description, version);
-
-        if (success)
+        // FIX: wrap network call in try-catch - unhandled exception in async void crashes app
+        try
         {
-            // Remember email for next time
-            _settings.UserEmail = email;
-            _settingsService.Save(_settings);
+            var version = typeof(FeatureRequestWindow).Assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion?.Split('+')[0] ?? "unknown";
 
-            ShowStatus("Thank you! Your request has been submitted.", isError: false);
-            DescriptionBox.Text = "";
+            var (success, error) = await _api.SubmitFeatureRequestAsync(email, description, version);
 
-            // Auto-close after short delay
-            await Task.Delay(1500);
-            Close();
+            // FIX: guard UI access after await - window may have closed during network call
+            if (!IsLoaded) return;
+
+            if (success)
+            {
+                // Remember email for next time
+                _settings.UserEmail = email;
+                _settingsService.Save(_settings);
+
+                ShowStatus("Thank you! Your request has been submitted.", isError: false);
+                DescriptionBox.Text = "";
+
+                // Auto-close after short delay
+                await Task.Delay(1500);
+                // FIX: guard against window closed during delay
+                if (IsLoaded)
+                {
+                    // FIX: re-enable button in case Close() is cancelled by a Closing handler
+                    SendButton.IsEnabled = true;
+                    Close();
+                }
+            }
+            else
+            {
+                ShowStatus(error ?? "Failed to send. Please try again.", isError: true);
+            }
         }
-        else
+        catch (Exception ex)
         {
-            ShowStatus(error ?? "Failed to send. Please try again.", isError: true);
-            SendButton.IsEnabled = true;
+            // FIX: guard UI access - window may have closed during the delay above
+            if (IsLoaded)
+                ShowStatus($"Unexpected error: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            if (IsLoaded)
+                SendButton.IsEnabled = true;
         }
     }
 

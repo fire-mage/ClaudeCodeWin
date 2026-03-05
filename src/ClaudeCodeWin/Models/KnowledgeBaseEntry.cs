@@ -9,5 +9,6 @@ public class KnowledgeBaseEntry
     public string WhenToRead { get; set; } = string.Empty;
     public string File { get; set; } = string.Empty;
 
-    public string TagsDisplay => Tags.Count > 0 ? string.Join(", ", Tags) : "";
+    // Fix: null-safe — Tags can be null when deserialized from JSON with "tags": null
+    public string TagsDisplay => Tags is { Count: > 0 } ? string.Join(", ", Tags) : "";
 }

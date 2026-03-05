@@ -37,7 +37,7 @@ public class McpRegistryService
     {
         var cache = LoadCache();
         if (cache is not null && (DateTime.UtcNow - cache.FetchedAt) < CacheTtl)
-            return (DeduplicateByName(cache.Servers.Where(s => s.Packages.Count > 0).ToList()), true);
+            return (DeduplicateByName(cache.Servers.Where(s => s.Packages is { Count: > 0 }).ToList()), true);
 
         var servers = await FetchFirstPageAsync(ct);
         SaveCache(new RegistryCache { FetchedAt = DateTime.UtcNow, Servers = servers });
@@ -59,10 +59,11 @@ public class McpRegistryService
 
     public static string GenerateInstallCommand(McpRegistryServer server)
     {
-        var slug = SanitizeSlug(server.Name.Replace('/', '-'));
+        // Fix: null-safe Name access for API-sourced data
+        var slug = SanitizeSlug((server.Name ?? "").Replace('/', '-'));
 
         // Package-based servers (npm, pypi, docker) — preferred over remote
-        if (server.Packages.Count > 0)
+        if (server.Packages is { Count: > 0 })
         {
             var pkg = server.Packages[0];
             var envFlags = "";
@@ -84,11 +85,11 @@ public class McpRegistryService
             };
         }
 
-        return $"# No install command available for {server.Name}";
+        return $"# No install command available for {server.Name ?? slug}";
     }
 
     public static string GetKbTag(McpRegistryServer server)
-        => $"mcp-{SanitizeSlug(server.Name.Replace('/', '-'))}";
+        => $"mcp-{SanitizeSlug((server.Name ?? "").Replace('/', '-'))}";
 
     private async Task<List<McpRegistryServer>> FetchFirstPageAsync(CancellationToken ct)
     {
@@ -106,7 +107,7 @@ public class McpRegistryService
         var servers = response.Servers
             .Where(e => e.Server is not null)
             .Select(e => e.Server!)
-            .Where(s => s.Packages.Count > 0) // Exclude remote-only servers (OAuth not supported by CLI)
+            .Where(s => s.Packages is { Count: > 0 }) // Exclude remote-only servers (OAuth not supported by CLI)
             .ToList();
 
         return DeduplicateByName(servers);

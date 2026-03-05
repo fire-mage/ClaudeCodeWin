@@ -10,15 +10,19 @@ public class McpRegistryServer
     public List<McpPackage> Packages { get; set; } = [];
     public List<McpRemote> Remotes { get; set; } = [];
 
-    public string DisplayName => Name.Contains('/') ? Name[(Name.LastIndexOf('/') + 1)..] : Name;
-    public string AuthorDisplay => Name.Contains('/') ? Name[..Name.LastIndexOf('/')] : "unknown";
+    // Fix: null-safe — Name/Packages/Remotes can be null when deserialized from API JSON
+    public string DisplayName => string.IsNullOrEmpty(Name) ? ""
+        : Name.Contains('/') ? Name[(Name.LastIndexOf('/') + 1)..] : Name;
+
+    public string AuthorDisplay => string.IsNullOrEmpty(Name) ? "unknown"
+        : Name.Contains('/') ? Name[..Name.LastIndexOf('/')] : "unknown";
 
     public string TransportDisplay
     {
         get
         {
-            if (Remotes.Count > 0) return Remotes[0].Type;
-            if (Packages.Count > 0) return Packages[0].Transport?.Type ?? "stdio";
+            if (Remotes is { Count: > 0 }) return Remotes[0].Type;
+            if (Packages is { Count: > 0 }) return Packages[0].Transport?.Type ?? "stdio";
             return "";
         }
     }
@@ -27,8 +31,8 @@ public class McpRegistryServer
     {
         get
         {
-            if (Packages.Count > 0) return Packages[0].RegistryType;
-            if (Remotes.Count > 0) return "remote";
+            if (Packages is { Count: > 0 }) return Packages[0].RegistryType;
+            if (Remotes is { Count: > 0 }) return "remote";
             return "";
         }
     }

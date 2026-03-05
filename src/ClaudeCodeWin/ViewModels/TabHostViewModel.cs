@@ -136,6 +136,8 @@ public class TabHostViewModel : ViewModelBase
 
     public string TeamButtonText => TotalPendingCount > 0 ? $"Team ({TotalPendingCount})" : "Team";
 
+    public bool HasTeamTasks => TotalPendingCount > 0;
+
     public RelayCommand ToggleTeamPanelCommand { get; }
     public RelayCommand CloseTabCommand { get; }
     public RelayCommand ToggleTabPanelCompactCommand { get; }
@@ -252,6 +254,7 @@ public class TabHostViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(TotalPendingCount));
         OnPropertyChanged(nameof(TeamButtonText));
+        OnPropertyChanged(nameof(HasTeamTasks));
     }
 
     public MainViewModel CreateTab()

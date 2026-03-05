@@ -32,24 +32,33 @@ public partial class HealthCheckWindow : Window
             var results = await _healthCheckService.RunAllChecksAsync(_workingDirectory);
             _lastResults = results.Select(r => new HealthCheckViewModel(r)).ToList();
 
+            // Guard UI access after await — window may have closed during RunAllChecksAsync
+            if (!IsLoaded) return;
             ResultList.ItemsSource = _lastResults;
             ResultList.Visibility = Visibility.Visible;
             LoadingLabel.Visibility = Visibility.Collapsed;
         }
         catch (Exception ex)
         {
-            LoadingLabel.Text = $"Error: {ex.Message}";
+            // FIX: guard against accessing disposed controls if window closed during async operation
+            if (IsLoaded)
+                LoadingLabel.Text = $"Error: {ex.Message}";
         }
         finally
         {
-            RecheckButton.IsEnabled = true;
-            CopyButton.IsEnabled = true;
+            if (IsLoaded)
+            {
+                RecheckButton.IsEnabled = true;
+                CopyButton.IsEnabled = true;
+            }
         }
     }
 
     private async void RecheckButton_Click(object sender, RoutedEventArgs e)
     {
-        await RunChecksAsync();
+        // FIX: try-catch for async void — protects against ObjectDisposedException if window is closing
+        try { await RunChecksAsync(); }
+        catch (Exception ex) { if (IsLoaded) LoadingLabel.Text = $"Error: {ex.Message}"; }
     }
 
     private void CopyButton_Click(object sender, RoutedEventArgs e)
@@ -71,8 +80,9 @@ public partial class HealthCheckWindow : Window
         // Brief visual feedback
         var original = CopyButton.Content;
         CopyButton.Content = "Copied!";
+        // FIX: use BeginInvoke instead of Invoke - avoids potential hang if window closes during delay
         _ = Task.Delay(1500).ContinueWith(_ =>
-            Dispatcher.Invoke(() => CopyButton.Content = original));
+            Dispatcher.BeginInvoke(() => { if (IsLoaded) CopyButton.Content = original; }));
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)

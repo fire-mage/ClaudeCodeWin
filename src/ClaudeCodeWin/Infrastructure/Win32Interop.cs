@@ -27,6 +27,8 @@ public static class Win32Interop
     public static void FlashWindow(Window window, uint count = 5)
     {
         var helper = new WindowInteropHelper(window);
+        // Fix: handle can be IntPtr.Zero if window is not yet initialized
+        if (helper.Handle == IntPtr.Zero) return;
         var info = new FLASHWINFO
         {
             cbSize = (uint)Marshal.SizeOf<FLASHWINFO>(),
@@ -41,6 +43,8 @@ public static class Win32Interop
     public static void StopFlash(Window window)
     {
         var helper = new WindowInteropHelper(window);
+        // Fix: handle can be IntPtr.Zero if window is not yet initialized
+        if (helper.Handle == IntPtr.Zero) return;
         var info = new FLASHWINFO
         {
             cbSize = (uint)Marshal.SizeOf<FLASHWINFO>(),

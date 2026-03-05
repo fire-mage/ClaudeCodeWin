@@ -732,7 +732,15 @@ public class ClaudeCliService
             // Fire OnError after stderr has been drained
             try
             {
-                var errorMsg = "Claude process exited unexpectedly";
+                int? exitCode = null;
+                try { exitCode = procToDispose?.ExitCode; } catch { }
+
+                var errorMsg = exitCode.HasValue
+                    ? $"Claude process exited unexpectedly (exit code {exitCode.Value})"
+                    : "Claude process exited unexpectedly";
+
+                DiagnosticLogger.Log("PROCESS_EXIT_CODE", $"exitCode={exitCode}");
+
                 var stderr = Volatile.Read(ref _lastStderr);
                 if (!string.IsNullOrWhiteSpace(stderr))
                 {

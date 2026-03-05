@@ -22,6 +22,10 @@ public abstract class ViewModelBase : INotifyPropertyChanged
         return true;
     }
 
+    // Fix: capture Application.Current into local to avoid TOCTOU race during shutdown
     protected static void RunOnUI(Action action)
-        => System.Windows.Application.Current.Dispatcher.InvokeAsync(action);
+    {
+        var app = System.Windows.Application.Current;
+        app?.Dispatcher?.InvokeAsync(action);
+    }
 }

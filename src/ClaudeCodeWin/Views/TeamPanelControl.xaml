@@ -254,150 +254,8 @@
     </UserControl.Resources>
 
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
-
-        <!-- Row 0: Pipeline progress bar -->
-        <Border Grid.Row="0" Padding="6,5"
-                Background="{StaticResource BackgroundBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="0,0,0,1">
-            <Grid HorizontalAlignment="Center">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <!-- 1: Planning -->
-                <Border Grid.Column="0" CornerRadius="10" Padding="7,2"
-                        Background="{StaticResource PlanningDimBg}" BorderBrush="{StaticResource PlanningAccent}" BorderThickness="1">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#x2460; Planning" FontSize="10" Foreground="{StaticResource PlanningAccent}"/>
-                        <TextBlock Text="{Binding PlanningCount}" FontSize="9"
-                                   Foreground="{StaticResource PlanningAccent}"
-                                   Margin="4,0,0,0" VerticalAlignment="Center">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding PlanningCount}" Value="0">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </StackPanel>
-                </Border>
-                <TextBlock Grid.Column="1" Text="&#x2192;" FontSize="9"
-                           Foreground="{StaticResource TextSecondaryBrush}"
-                           VerticalAlignment="Center" Margin="3,0"/>
-
-                <!-- 2: Approval -->
-                <Border Grid.Column="2" CornerRadius="10" Padding="7,2"
-                        Background="{StaticResource ApprovalDimBg}" BorderBrush="{StaticResource ApprovalAccent}" BorderThickness="1">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#x2461; Approval" FontSize="10" Foreground="{StaticResource ApprovalAccent}"/>
-                        <TextBlock Text="{Binding ApprovalCount}" FontSize="9"
-                                   Foreground="{StaticResource ApprovalAccent}"
-                                   Margin="4,0,0,0" VerticalAlignment="Center">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ApprovalCount}" Value="0">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </StackPanel>
-                </Border>
-                <TextBlock Grid.Column="3" Text="&#x2192;" FontSize="9"
-                           Foreground="{StaticResource TextSecondaryBrush}"
-                           VerticalAlignment="Center" Margin="3,0"/>
-
-                <!-- 3: Backlog -->
-                <Border Grid.Column="4" CornerRadius="10" Padding="7,2"
-                        Background="{StaticResource BacklogDimBg}" BorderBrush="{StaticResource BacklogAccent}" BorderThickness="1">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#x2462; Backlog" FontSize="10" Foreground="{StaticResource BacklogAccent}"/>
-                        <TextBlock Text="{Binding BacklogCount}" FontSize="9"
-                                   Foreground="{StaticResource BacklogAccent}"
-                                   Margin="4,0,0,0" VerticalAlignment="Center">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding BacklogCount}" Value="0">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </StackPanel>
-                </Border>
-                <TextBlock Grid.Column="5" Text="&#x2192;" FontSize="9"
-                           Foreground="{StaticResource TextSecondaryBrush}"
-                           VerticalAlignment="Center" Margin="3,0"/>
-
-                <!-- 4: Queue -->
-                <Border Grid.Column="6" CornerRadius="10" Padding="7,2"
-                        Background="{StaticResource QueueDimBg}" BorderBrush="{StaticResource QueueAccent}" BorderThickness="1">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#x2463; Queue" FontSize="10" Foreground="{StaticResource QueueAccent}"/>
-                        <TextBlock Text="{Binding QueuedCount}" FontSize="9"
-                                   Foreground="{StaticResource QueueAccent}"
-                                   Margin="4,0,0,0" VerticalAlignment="Center">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding QueuedCount}" Value="0">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </StackPanel>
-                </Border>
-                <TextBlock Grid.Column="7" Text="&#x2192;" FontSize="9"
-                           Foreground="{StaticResource TextSecondaryBrush}"
-                           VerticalAlignment="Center" Margin="3,0"/>
-
-                <!-- 5: Completed -->
-                <Border Grid.Column="8" CornerRadius="10" Padding="7,2"
-                        Background="{StaticResource CompletedDimBg}" BorderBrush="{StaticResource CompletedAccent}" BorderThickness="1">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#x2464; Done" FontSize="10" Foreground="{StaticResource CompletedAccent}"/>
-                        <TextBlock Text="{Binding CompletedCount}" FontSize="9"
-                                   Foreground="{StaticResource CompletedAccent}"
-                                   Margin="4,0,0,0" VerticalAlignment="Center">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding CompletedCount}" Value="0">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </StackPanel>
-                </Border>
-            </Grid>
-        </Border>
-
-        <!-- Row 2: Scrollable pipeline sections -->
-        <ScrollViewer Grid.Row="1"
+        <!-- Scrollable pipeline sections -->
+        <ScrollViewer
                       VerticalScrollBarVisibility="Auto"
                       Background="{StaticResource BackgroundBrush}">
             <StackPanel Margin="8,6">
@@ -1029,10 +887,10 @@
                                                     Padding="8,3" FontSize="11"
                                                     Style="{StaticResource SubTabToolButton}"
                                                     Click="AddToQueue_Click"/>
-                                            <Button Content="View History"
+                                            <Button Content="Chat"
                                                     Padding="8,3" Margin="6,0,0,0" FontSize="11"
                                                     Style="{StaticResource SubTabToolButton}"
-                                                    Click="ViewHistory_Click"
+                                                    Click="ViewChat_Feature_Click"
                                                     Visibility="{Binding HasSessionHistory, Converter={StaticResource BoolToVis}}"/>
                                             <Button Content="&#x2715;" ToolTip="Delete feature"
                                                     Padding="6,3" Margin="6,0,0,0" FontSize="10"
@@ -1289,10 +1147,10 @@
                                                         Padding="8,3" FontSize="11"
                                                         Style="{StaticResource SubTabToolButton}"
                                                         Click="ReturnToBacklog_Click"/>
-                                                <Button Content="View History"
+                                                <Button Content="Chat"
                                                         Padding="8,3" Margin="6,0,0,0" FontSize="11"
                                                         Style="{StaticResource SubTabToolButton}"
-                                                        Click="ViewHistory_Click"
+                                                        Click="ViewChat_Feature_Click"
                                                         Visibility="{Binding HasSessionHistory, Converter={StaticResource BoolToVis}}"/>
                                             </StackPanel>
 
@@ -1459,10 +1317,10 @@
                                                         Padding="8,3" Margin="6,0,0,0" FontSize="11"
                                                         Style="{StaticResource SubTabToolButton}"
                                                         Click="AskInChat_Click"/>
-                                                <Button Content="View History"
+                                                <Button Content="Chat"
                                                         Padding="8,3" Margin="6,0,0,0" FontSize="11"
                                                         Style="{StaticResource SubTabToolButton}"
-                                                        Click="ViewHistory_Click"
+                                                        Click="ViewChat_Feature_Click"
                                                         Visibility="{Binding HasSessionHistory, Converter={StaticResource BoolToVis}}"/>
                                                 <Button Content="Archive &#x2713;"
                                                         Padding="8,3" Margin="6,0,0,0" FontSize="11"

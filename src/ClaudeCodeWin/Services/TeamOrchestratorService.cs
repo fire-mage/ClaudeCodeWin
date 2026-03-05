@@ -681,6 +681,16 @@ public class TeamOrchestratorService : IDisposable
     private void HandleDevErrorLocked(DevReviewSession session, string error)
     {
         RaiseLog($"Dev error [{session.PhaseTitle}]: {error}");
+
+        // During fix rounds, retry instead of immediately failing the phase
+        if (session.CurrentPhase == SessionPhase.FixingIssues
+            && session.RetryCount < _maxSessionRetries)
+        {
+            RaiseLog($"Dev crashed during fix (review round {_reviewAttempt}, retry {session.RetryCount + 1}/{_maxSessionRetries}). Restarting...");
+            RestartDevSessionLocked(session, $"crash during fix: {error}");
+            return;
+        }
+
         RaiseError($"Developer session failed: {error}");
 
         _backlogService.MarkPhaseStatus(

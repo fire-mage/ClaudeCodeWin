@@ -17,6 +17,12 @@ public class CcwApiService
     })
     { Timeout = TimeSpan.FromSeconds(30) };
 
+    // Fix: static JsonSerializerOptions — creating new instance per call recompiles JSON metadata each time
+    private static readonly JsonSerializerOptions CaseInsensitiveOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     public async Task<(bool success, string? error)> SubmitFeatureRequestAsync(string email, string description, string appVersion)
     {
         try
@@ -54,10 +60,7 @@ public class CcwApiService
 
             if (response.IsSuccessStatusCode)
             {
-                var result = JsonSerializer.Deserialize<ActivationResult>(body, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var result = JsonSerializer.Deserialize<ActivationResult>(body, CaseInsensitiveOptions);
                 return (result, null);
             }
 

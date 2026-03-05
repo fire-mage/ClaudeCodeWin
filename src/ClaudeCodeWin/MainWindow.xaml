@@ -1109,8 +1109,10 @@
                             Command="{Binding DataContext.ToggleTeamPanelCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             Style="{StaticResource SecondaryButton}"
                             FontSize="11" Padding="8,3"
+                            BorderBrush="#5BA65B" BorderThickness="1"
                             ToolTip="Toggle Team pipeline panel"
-                            VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            VerticalAlignment="Center" Margin="0,0,8,0"
+                            Visibility="{Binding DataContext.HasTeamTasks, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
                     <!-- Vertical separator -->
                     <Rectangle Grid.Column="3" Width="1" Height="16"
                                Fill="{StaticResource BorderBrush}"
@@ -1447,9 +1449,16 @@
 
                 </Grid> <!-- End of content switching area -->
 
-                <!-- ═══ Team Pipeline overlay (global popup, all projects) ═══ -->
+                <!-- ═══ Team Pipeline popup (compact, bottom-right) ═══ -->
                 <Border Grid.RowSpan="2" Panel.ZIndex="20"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom"
+                        Width="520" MaxHeight="500"
+                        Margin="0,0,4,4"
+                        CornerRadius="8"
                         Background="{StaticResource BackgroundBrush}"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1"
                         Visibility="{Binding DataContext.IsTeamPanelVisible,
                             RelativeSource={RelativeSource AncestorType=Window},
                             Converter={StaticResource BoolToVis}}">
@@ -1489,7 +1498,8 @@
                                     <DataTemplate DataType="{x:Type vm:MainViewModel}">
                                         <Border Margin="0,0,0,2"
                                                 BorderBrush="{StaticResource BorderBrush}"
-                                                BorderThickness="0,0,0,1">
+                                                BorderThickness="0,0,0,1"
+                                                Visibility="{Binding Team.HasFeatures, Converter={StaticResource BoolToVis}}">
                                             <!-- Project header + TeamPanelControl -->
                                             <Expander IsExpanded="True">
                                                 <Expander.Header>

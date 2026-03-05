@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Media;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows;
 using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
@@ -21,6 +22,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
     private readonly SettingsService _settingsService;
     private readonly AppSettings _settings;
     private string _projectName = "";
+    private string? _overrideFeatureTitle;
     private string _orchestratorStatusText = "Stopped";
     private bool _isOrchestratorStopped = true;
     private string _orchestratorLog = "";
@@ -101,6 +103,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
     {
         get
         {
+            if (_overrideFeatureTitle is not null) return _overrideFeatureTitle;
             if (_activeDevelopingFeatureId is null) return "No active task";
             var feature = _backlogService.GetFeatures(_getProjectPath())
                 .FirstOrDefault(f => f.Id == _activeDevelopingFeatureId);
@@ -532,13 +535,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
             }
         });
 
-        ViewHistoryCommand = new RelayCommand(p =>
-        {
-            if (p is BacklogFeatureVM vm && vm.Feature.SessionHistoryPaths.Count > 0)
-            {
-                ShowSessionHistoryPopup(vm.Feature);
-            }
-        });
+        ViewHistoryCommand = new RelayCommand(_ => { }); // kept for API compat
 
         // Completed section commands
         CommitFeatureCommand = new RelayCommand(p =>
@@ -933,6 +930,8 @@ public class TeamViewModel : ViewModelBase, IDisposable
     public bool IsEmpty => PlanningCount + ApprovalCount
                          + BacklogCount + QueuedCount + CompletedCount == 0;
 
+    public bool HasFeatures => !IsEmpty;
+
     private void UpdateCounts()
     {
         OnPropertyChanged(nameof(PlanningCount));
@@ -941,6 +940,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(QueuedCount));
         OnPropertyChanged(nameof(CompletedCount));
         OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(HasFeatures));
         OnPropertyChanged(nameof(PendingTaskCount));
     }
 
@@ -1071,6 +1071,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
 
             TeamChatMessages.Clear();
             _teamChatAssembler.Reset();
+            _overrideFeatureTitle = null;
 
             if (featureId == null)
             {
@@ -1238,77 +1239,60 @@ public class TeamViewModel : ViewModelBase, IDisposable
     /// </summary>
     public string LiveChatText => _showingReviewChat ? _reviewChatText : _devChatText;
 
-    private static async void ShowSessionHistoryPopup(BacklogFeature feature)
+    /// <summary>Load session history for a feature into the TeamChatMessages for display in TeamChatWindow.</summary>
+    public async Task LoadSessionHistoryChatAsync(BacklogFeature feature)
     {
+        var title = feature.Title ?? feature.RawIdea ?? feature.Id;
+        _overrideFeatureTitle = title;
+        OnPropertyChanged(nameof(ActiveFeatureTitle));
+
+        TeamChatMessages.Clear();
+        _teamChatAssembler.Reset();
+
         var paths = feature.SessionHistoryPaths.ToList();
-        var title = feature.Title ?? feature.RawIdea;
+        if (paths.Count == 0) return;
 
         var text = await Task.Run(() =>
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"Session History: {title}");
-            sb.AppendLine(new string('=', 60));
-            sb.AppendLine();
-
+            var errorCount = 0;
+            const int maxTotalSize = 500_000;
             foreach (var path in paths)
             {
+                if (sb.Length >= maxTotalSize)
+                {
+                    sb.AppendLine("[truncated — too many session files]");
+                    break;
+                }
                 if (System.IO.File.Exists(path))
                 {
                     try
                     {
                         const int maxFilePreview = 100_000;
-                        var content = System.IO.File.ReadAllText(path);
-                        if (content.Length > maxFilePreview)
-                            content = content[..maxFilePreview] + "\n\n[truncated — open file for full output]";
-                        sb.AppendLine(content);
-                        sb.AppendLine();
+                        var c = System.IO.File.ReadAllText(path);
+                        if (c.Length > maxFilePreview)
+                            c = c[..maxFilePreview] + "\n\n[truncated]";
+                        sb.AppendLine(c);
                     }
-                    catch
-                    {
-                        sb.AppendLine($"[Could not read: {path}]");
-                        sb.AppendLine();
-                    }
-                }
-                else
-                {
-                    sb.AppendLine($"[File not found: {path}]");
-                    sb.AppendLine();
+                    catch { errorCount++; }
                 }
             }
-
+            if (errorCount > 0)
+                sb.AppendLine($"[{errorCount} file(s) could not be read]");
             return sb.ToString();
         });
 
-        var window = new Window
-        {
-            Title = $"Session History — {title}",
-            Width = 800,
-            Height = 600,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = Application.Current.MainWindow,
-            Background = new System.Windows.Media.SolidColorBrush(
-                System.Windows.Media.Color.FromRgb(0x1e, 0x1e, 0x2e)),
-            Content = new System.Windows.Controls.TextBox
-            {
-                Text = text,
-                IsReadOnly = true,
-                TextWrapping = TextWrapping.Wrap,
-                VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
-                Background = new System.Windows.Media.SolidColorBrush(
-                    System.Windows.Media.Color.FromRgb(0x1e, 0x1e, 0x2e)),
-                Foreground = new System.Windows.Media.SolidColorBrush(
-                    System.Windows.Media.Color.FromRgb(0xcd, 0xd6, 0xf4)),
-                CaretBrush = new System.Windows.Media.SolidColorBrush(
-                    System.Windows.Media.Color.FromRgb(0xcd, 0xd6, 0xf4)),
-                BorderThickness = new Thickness(0),
-                FontFamily = new System.Windows.Media.FontFamily("Cascadia Code,Consolas,Courier New"),
-                FontSize = 12,
-                Padding = new Thickness(12),
-                Margin = new Thickness(0)
-            }
-        };
-        window.ShowDialog();
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        // Show as a single assistant message in the chat
+        TeamChatMessages.Add(new MessageViewModel(MessageRole.Assistant, text.Trim()));
+    }
+
+    /// <summary>Clears override title so active feature title is used again.</summary>
+    public void ClearOverrideTitle()
+    {
+        _overrideFeatureTitle = null;
+        OnPropertyChanged(nameof(ActiveFeatureTitle));
     }
 
     // --- Completed section methods ---

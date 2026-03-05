@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Input;
 using ClaudeCodeWin.Models;
@@ -101,13 +102,38 @@ public partial class ServerRegistryWindow : Window
         TestButton.IsEnabled = false;
         TestButton.Content = "Testing...";
 
+        // FIX: validate Host/User to prevent SSH argument injection (e.g. "-oProxyCommand=...")
+        if (!IsValidSshIdentifier(server.Host) || !IsValidSshIdentifier(server.User))
+        {
+            MessageBox.Show("Invalid characters in host or user name.", "Validation Error",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            TestButton.Content = "Test";
+            TestButton.IsEnabled = true;
+            return;
+        }
+        // FIX: validate port range before passing to SSH command
+        if (server.Port is < 1 or > 65535)
+        {
+            MessageBox.Show("Port must be between 1 and 65535.", "Validation Error",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            TestButton.Content = "Test";
+            TestButton.IsEnabled = true;
+            return;
+        }
+
+        // FIX: declare process before try so it can be killed on timeout
+        Process? process = null;
         try
         {
             var args = new StringBuilder();
             if (!string.IsNullOrEmpty(sshKey))
+            {
+                // FIX: strip embedded quotes to prevent argument injection via user-editable TextBox
+                sshKey = sshKey.Trim().Trim('"');
                 args.Append($"-i \"{sshKey}\" ");
+            }
             args.Append($"-p {server.Port} ");
-            args.Append("-o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes ");
+            args.Append("-o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new -o BatchMode=yes ");
             args.Append($"{server.User}@{server.Host} \"echo ok\"");
 
             var psi = new ProcessStartInfo
@@ -122,7 +148,7 @@ public partial class ServerRegistryWindow : Window
                 StandardErrorEncoding = Encoding.UTF8
             };
 
-            var process = Process.Start(psi);
+            process = Process.Start(psi);
             if (process is null)
             {
                 MessageBox.Show("Failed to start ssh process.", "Test Failed",
@@ -130,10 +156,14 @@ public partial class ServerRegistryWindow : Window
                 return;
             }
 
-            var stdout = await process.StandardOutput.ReadToEndAsync();
-            var stderr = await process.StandardError.ReadToEndAsync();
-
+            // FIX: single CTS covers reads + wait — if SSH hangs with open stdout, timeout still fires
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(cts.Token);
+            var stderrTask = process.StandardError.ReadToEndAsync(cts.Token);
+            await Task.WhenAll(stdoutTask, stderrTask);
+            var stdout = stdoutTask.Result;
+            var stderr = stderrTask.Result;
+
             await process.WaitForExitAsync(cts.Token);
 
             if (process.ExitCode == 0 && stdout.Trim() == "ok")
@@ -153,6 +183,8 @@ public partial class ServerRegistryWindow : Window
         }
         catch (OperationCanceledException)
         {
+            // FIX: kill the ssh process on timeout to prevent process leak
+            try { process?.Kill(); } catch { }
             MessageBox.Show("Connection timed out (10 seconds).", "Test Failed",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
@@ -163,6 +195,7 @@ public partial class ServerRegistryWindow : Window
         }
         finally
         {
+            process?.Dispose();
             TestButton.Content = "Test";
             TestButton.IsEnabled = ServerList.SelectedItem is not null;
         }
@@ -199,6 +232,11 @@ public partial class ServerRegistryWindow : Window
         DialogResult = false;
         Close();
     }
+
+    // FIX: reject values starting with "-" and restrict to safe hostname/username chars
+    // Also allow colons for IPv6, brackets for [::1] notation, and single-char hostnames
+    private static bool IsValidSshIdentifier(string value)
+        => !string.IsNullOrWhiteSpace(value) && Regex.IsMatch(value, @"^[a-zA-Z0-9_][a-zA-Z0-9._:\-]*$|^\[[\da-fA-F:]+\]$");
 
     private record ServerListItem(ServerInfo Server)
     {

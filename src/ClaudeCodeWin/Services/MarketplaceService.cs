@@ -185,7 +185,8 @@ public class MarketplaceService
         var installed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in kbEntries)
         {
-            foreach (var tag in entry.Tags)
+            // Fix: null-safe — Tags can be null from deserialized JSON
+            foreach (var tag in entry.Tags ?? [])
             {
                 if (tag.StartsWith("marketplace:", StringComparison.OrdinalIgnoreCase))
                     installed.Add(tag["marketplace:".Length..]);

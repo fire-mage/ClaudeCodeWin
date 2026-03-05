@@ -156,10 +156,41 @@ public partial class TeamPanelControl : UserControl
             VM?.ReturnToBacklogCommand.Execute(vm);
     }
 
-    private void ViewHistory_Click(object sender, RoutedEventArgs e)
+    private void ViewChat_Feature_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.DataContext is BacklogFeatureVM vm)
-            VM?.ViewHistoryCommand.Execute(vm);
+            OpenChatForFeature(vm);
+    }
+
+    private async void OpenChatForFeature(BacklogFeatureVM vm)
+    {
+        if (VM == null) return;
+
+        // Open or reuse the TeamChatWindow first (user sees it immediately)
+        if (_teamChatWindow is not null && _teamChatWindow.IsLoaded)
+        {
+            _teamChatWindow.Activate();
+        }
+        else
+        {
+            _teamChatWindow = new TeamChatWindow
+            {
+                DataContext = VM,
+                Owner = System.Windows.Window.GetWindow(this)
+            };
+            _teamChatWindow.Closed += (_, _) => _teamChatWindow = null;
+            _teamChatWindow.Show();
+        }
+
+        // Load session history (async — chat populates after loading)
+        try
+        {
+            await VM.LoadSessionHistoryChatAsync(vm.Feature);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"LoadSessionHistoryChat failed: {ex.Message}");
+        }
     }
 
     // --- Completed section handlers ---

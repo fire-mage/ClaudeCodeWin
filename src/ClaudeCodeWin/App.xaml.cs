@@ -105,7 +105,8 @@ public partial class App : Application
 
             // Developer Knowledge Base (sync from S3)
             var devKbService = new DevKbService();
-            _ = Task.Run(() => devKbService.SyncAsync()); // fire-and-forget
+            // Fix: wrap fire-and-forget in try-catch to avoid misleading UnobservedTaskException
+            _ = Task.Run(async () => { try { await devKbService.SyncAsync(); } catch { /* non-critical background sync */ } });
 
             // Create TabHostViewModel (manages multiple tabs)
             var tabHost = new TabHostViewModel(
@@ -160,7 +161,8 @@ public partial class App : Application
 
             // CLI update service: set exe path and get current version
             cliUpdateService.ExePath = claudeExePath;
-            _ = cliUpdateService.GetCurrentVersionAsync();
+            // Fix: fire-and-forget without exception handling loses errors silently
+            _ = Task.Run(async () => { try { await cliUpdateService.GetCurrentVersionAsync(); } catch { /* non-critical version check */ } });
 
             // Authentication
             if (!EnsureAuthentication(depService, depStatus))
@@ -304,6 +306,10 @@ public partial class App : Application
         ChatHistoryService chatHistory, ProjectRegistryService projectRegistry,
         AppSettings settings)
     {
+        // Skip if welcome is already visible (shown earlier by the constructor)
+        if (vm.ShowWelcome)
+            return;
+
         var history = chatHistory.ListAll();
         if (history.Count == 0)
             return;

@@ -46,24 +46,41 @@ public partial class ActivationCodeWindow : Window
         ActivateButton.IsEnabled = false;
         ShowStatus("Validating...", isError: false);
 
-        var (result, error) = await _api.ActivateCodeAsync(code);
-
-        if (result != null)
+        // FIX: wrap network call in try-catch - unhandled exception in async void crashes app
+        try
         {
-            _settings.ActivationCode = code.ToUpperInvariant();
-            _settings.ActivatedFeatures = result.Features;
-            _settingsService.Save(_settings);
+            var (result, error) = await _api.ActivateCodeAsync(code);
 
-            ShowStatus($"Activated! Features: {string.Join(", ", result.Features)}", isError: false);
-            UpdateCurrentStatus();
-            CodeBox.Text = "";
+            // FIX: guard UI access after await - window may have closed during network call
+            if (!IsLoaded) return;
+
+            if (result != null)
+            {
+                _settings.ActivationCode = code.ToUpperInvariant();
+                _settings.ActivatedFeatures = result.Features;
+                _settingsService.Save(_settings);
+
+                ShowStatus($"Activated! Features: {string.Join(", ", result.Features)}", isError: false);
+                UpdateCurrentStatus();
+                CodeBox.Text = "";
+            }
+            else
+            {
+                ShowStatus(error ?? "Invalid code. Please try again.", isError: true);
+            }
         }
-        else
+        catch (Exception ex)
         {
-            ShowStatus(error ?? "Invalid code. Please try again.", isError: true);
+            // FIX: guard UI access - window may have closed during network call
+            if (IsLoaded)
+                ShowStatus($"Unexpected error: {ex.Message}", isError: true);
         }
-
-        ActivateButton.IsEnabled = true;
+        // FIX: moved to finally to ensure button re-enables even if catch throws
+        finally
+        {
+            if (IsLoaded)
+                ActivateButton.IsEnabled = true;
+        }
     }
 
     private void Deactivate_Click(object sender, RoutedEventArgs e)

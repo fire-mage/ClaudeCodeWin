@@ -38,36 +38,59 @@ public partial class DependencyInstallWindow : Window
 
     private async Task RunInstallAsync()
     {
-        var success = await _installFunc(OnProgress);
-        Success = success;
-
-        if (success)
+        // FIX: wrap in try-catch - unhandled exception in async void Loaded handler crashes app
+        try
         {
-            if (_postInstall is not null)
-                await _postInstall();
+            var success = await _installFunc(OnProgress);
+            Success = success;
 
-            StatusText.Text = "Installation complete!";
-            StatusDot.Foreground = (System.Windows.Media.Brush)FindResource("SuccessBrush");
-            StatusDot.Opacity = 1.0;
+            if (success)
+            {
+                if (_postInstall is not null)
+                    await _postInstall();
+
+                // FIX: guard UI access - window may close during _postInstall
+                if (IsLoaded)
+                {
+                    StatusText.Text = "Installation complete!";
+                    StatusDot.Foreground = (System.Windows.Media.Brush)FindResource("SuccessBrush");
+                    StatusDot.Opacity = 1.0;
+                }
+            }
+            else if (IsLoaded)
+            {
+                StatusText.Text = "Installation failed.";
+                StatusDot.Foreground = (System.Windows.Media.Brush)FindResource("ErrorBrush");
+                StatusDot.Opacity = 1.0;
+            }
         }
-        else
+        catch (Exception ex)
         {
-            StatusText.Text = "Installation failed.";
-            StatusDot.Foreground = (System.Windows.Media.Brush)FindResource("ErrorBrush");
-            StatusDot.Opacity = 1.0;
+            // FIX: reset Success if _postInstall throws after _installFunc succeeded
+            Success = false;
+            // FIX: guard UI access - window may close during install
+            if (IsLoaded)
+            {
+                StatusText.Text = $"Error: {ex.Message}";
+                StatusDot.Foreground = (System.Windows.Media.Brush)FindResource("ErrorBrush");
+                StatusDot.Opacity = 1.0;
+            }
         }
 
-        // Stop pulsing animation
-        StatusDot.BeginAnimation(OpacityProperty, null);
-        StatusDot.Opacity = 1.0;
-
-        CloseButton.Visibility = Visibility.Visible;
+        // Stop pulsing animation - guard against window closed during install
+        if (IsLoaded)
+        {
+            StatusDot.BeginAnimation(OpacityProperty, null);
+            StatusDot.Opacity = 1.0;
+            CloseButton.Visibility = Visibility.Visible;
+        }
     }
 
     private void OnProgress(string message)
     {
         Dispatcher.InvokeAsync(() =>
         {
+            if (!IsLoaded) return;
             StatusText.Text = message;
 
             if (LogText.Text.Length > 0)

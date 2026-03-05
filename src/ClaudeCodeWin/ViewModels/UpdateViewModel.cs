@@ -250,7 +250,12 @@ public class UpdateViewModel : ViewModelBase
         IsUpdating = true;
         UpdateDownloading = true;
         UpdateStatusText = "Starting download...";
-        _ = _updateService.DownloadAndApplyAsync(_pendingUpdate);
+        // Fix: fire-and-forget without exception handling loses errors silently
+        _ = Task.Run(async () =>
+        {
+            try { await _updateService.DownloadAndApplyAsync(_pendingUpdate); }
+            catch (Exception ex) { RunOnUI(() => { IsUpdating = false; UpdateFailed = true; UpdateDownloading = false; UpdateStatusText = ex.Message; }); }
+        });
     }
 
     public void DismissUpdate()
@@ -335,7 +340,12 @@ public class UpdateViewModel : ViewModelBase
         CliUpdateFailed = false;
         CliUpdateLog = "";
         CliUpdateStatusText = "Starting update...";
-        _ = _cliUpdateService.UpdateCliAsync(_pendingCliUpdate.LatestVersion);
+        // Fix: fire-and-forget without exception handling loses errors silently
+        _ = Task.Run(async () =>
+        {
+            try { await _cliUpdateService.UpdateCliAsync(_pendingCliUpdate.LatestVersion); }
+            catch (Exception ex) { RunOnUI(() => { CliUpdating = false; CliUpdateFailed = true; CliUpdateStatusText = ex.Message; }); }
+        });
     }
 
     public void DismissCliUpdate()

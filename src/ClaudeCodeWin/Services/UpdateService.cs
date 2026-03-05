@@ -47,6 +47,11 @@ public class UpdateService
         PooledConnectionLifetime = TimeSpan.FromMinutes(10)
     })
     { Timeout = TimeSpan.FromSeconds(30) };
+    // FIX: reuse static options — avoids recompiling JSON metadata on every call
+    private static readonly JsonSerializerOptions CaseInsensitiveOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
     private System.Threading.Timer? _timer;
 
     public event Action<VersionInfo>? OnUpdateAvailable;
@@ -94,10 +99,7 @@ public class UpdateService
         try
         {
             var json = await _http.GetStringAsync(VersionUrl).ConfigureAwait(false);
-            var manifest = JsonSerializer.Deserialize<VersionManifest>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var manifest = JsonSerializer.Deserialize<VersionManifest>(json, CaseInsensitiveOptions);
 
             if (manifest is null) return null;
 
@@ -134,7 +136,9 @@ public class UpdateService
                 "ClaudeCodeWin", "updates");
             Directory.CreateDirectory(updatesDir);
 
+            // Fix: handle edge case where URL path ends with "/" producing empty filename
             var fileName = Path.GetFileName(new Uri(info.DownloadUrl).LocalPath);
+            if (string.IsNullOrEmpty(fileName)) fileName = $"update-{info.Version}.exe";
             var downloadPath = Path.Combine(updatesDir, fileName);
 
             // Download with progress
@@ -269,7 +273,7 @@ public class UpdateService
             copy /Y "{backupExe}" "{currentExe}" >nul
             del "{backupExe}" >nul 2>nul
             REM Write rollback marker so the restored app can notify the user
-            echo {versionLabel}> "{rollbackPath}"
+            (echo {versionLabel})> "{rollbackPath}"
             start "" "{currentExe}"
             goto cleanup
 
