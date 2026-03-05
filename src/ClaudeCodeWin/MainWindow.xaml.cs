@@ -1120,7 +1120,11 @@ public partial class MainWindow : Window
             ? _knowledgeBaseService.LoadEntries(workDir)
             : [];
         var devArticles = _devKbService?.GetAllArticles() ?? [];
-        new KnowledgeBaseWindow(localEntries, devArticles) { Owner = this }.ShowDialog();
+        var window = new KnowledgeBaseWindow(localEntries, devArticles,
+            onMarketplace: () => MenuItem_Marketplace_Click(this, new RoutedEventArgs()),
+            onExploreSkill: () => MenuItem_ExploreSkill_Click(this, new RoutedEventArgs()))
+        { Owner = this };
+        window.ShowDialog();
     }
 
     private void MenuItem_FullProjectReview_Click(object sender, RoutedEventArgs e)
@@ -1155,6 +1159,107 @@ public partial class MainWindow : Window
             catch (Exception) { /* window already closed or dispatcher shut down */ }
         });
     }
+
+
+    private void NewChatMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.NewSessionCommand.Execute(null);
+    }
+
+    private (string workDir, string projectName)? ValidateProjectOpen()
+    {
+        var workDir = ViewModel.WorkingDirectory;
+        if (string.IsNullOrEmpty(workDir))
+        {
+            MessageBox.Show("No project folder is open. Open a project first.",
+                "No Project", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return null;
+        }
+        var projectName = System.IO.Path.GetFileName(workDir);
+        if (string.IsNullOrEmpty(projectName)) projectName = "this project";
+        return (workDir, projectName);
+    }
+
+    private void MenuItem_SetupGit_Click(object sender, RoutedEventArgs e)
+    {
+        var ctx = ValidateProjectOpen();
+        if (ctx is null) return;
+        var (_, projectName) = ctx.Value;
+
+        var prompt = $"The user wants you to guide them through initial git setup for <project-name>{projectName}</project-name>.\n\n" +
+            "Please check and help with:\n" +
+            "1. Is git initialized? If not, run `git init`\n" +
+            "2. Is a remote configured? If not, help set one up (GitHub/GitLab/etc.)\n" +
+            "3. Does .gitignore exist and is it appropriate for the project type?\n" +
+            "4. Is the default branch name set correctly?\n" +
+            "5. Are user.name and user.email configured for this repo?\n\n" +
+            "Guide the user step by step through anything that is missing or misconfigured.";
+
+        ViewModel.InputText = prompt;
+        if (ViewModel.SendCommand.CanExecute(null))
+            ViewModel.SendCommand.Execute(null);
+    }
+
+    private void MenuItem_CreateCommitScript_Click(object sender, RoutedEventArgs e)
+    {
+        var ctx = ValidateProjectOpen();
+        if (ctx is null) return;
+        var (_, projectName) = ctx.Value;
+
+        var prompt = $"The user wants you to help create a commit and push workflow for <project-name>{projectName}</project-name>.\n\n" +
+            "Please:\n" +
+            "1. Ask about their preferred commit message style (conventional commits, free-form, etc.)\n" +
+            "2. Ask about their branch strategy (main only, feature branches, etc.)\n" +
+            "3. Create one or more shell scripts (e.g. commit-and-push.sh / commit-and-push.ps1)\n" +
+            $"4. Add the scripts as entries in tasks.json (located at %AppData%/ClaudeCodeWin/tasks.json) with category \"deploy\" and project \"{projectName}\" so they appear in the Deploy Scripts menu\n\n" +
+            "The scripts should handle: staging changes, committing with a message, and pushing to remote.\n" +
+            "After adding, remind the user to reopen My Scripts or Deploy Scripts menu to see the changes (the menu refreshes automatically on next open).";
+
+        ViewModel.InputText = prompt;
+        if (ViewModel.SendCommand.CanExecute(null))
+            ViewModel.SendCommand.Execute(null);
+    }
+
+    private void MenuItem_SetupDeploy_Click(object sender, RoutedEventArgs e)
+    {
+        var ctx = ValidateProjectOpen();
+        if (ctx is null) return;
+        var (_, projectName) = ctx.Value;
+
+        var prompt = $"The user wants you to guide them through initial deployment setup for <project-name>{projectName}</project-name>.\n\n" +
+            "Please:\n" +
+            "1. Ask about the target environment (server, cloud provider, Docker, etc.)\n" +
+            "2. Ask about the deployment method (SSH, Docker, CI/CD pipeline, FTP, etc.)\n" +
+            "3. Check if there are existing deploy scripts or CI/CD configs in the project\n" +
+            "4. Help configure the deployment pipeline step by step\n" +
+            "5. If SSH is needed, check the configured SSH keys and known servers\n\n" +
+            "Guide the user through the entire setup process.";
+
+        ViewModel.InputText = prompt;
+        if (ViewModel.SendCommand.CanExecute(null))
+            ViewModel.SendCommand.Execute(null);
+    }
+
+    private void MenuItem_CreateDeployScripts_Click(object sender, RoutedEventArgs e)
+    {
+        var ctx = ValidateProjectOpen();
+        if (ctx is null) return;
+        var (_, projectName) = ctx.Value;
+
+        var prompt = $"The user wants you to create deploy scripts for <project-name>{projectName}</project-name> and add them to the Deploy Scripts menu.\n\n" +
+            "Please:\n" +
+            "1. Analyze the project to determine the appropriate deployment strategy\n" +
+            "2. Create deploy shell scripts (e.g. deploy.sh, deploy.ps1, rollback.sh)\n" +
+            $"3. Add entries to tasks.json (located at %AppData%/ClaudeCodeWin/tasks.json) with category \"deploy\" and project \"{projectName}\" so they appear in Deploy Scripts menu\n" +
+            "4. Include scripts for: full deploy, quick deploy (no build), rollback if possible\n" +
+            "5. Set confirmBeforeRun: true for safety\n\n" +
+            "After adding, remind the user to reopen My Scripts or Deploy Scripts menu to see the changes (the menu refreshes automatically on next open).";
+
+        ViewModel.InputText = prompt;
+        if (ViewModel.SendCommand.CanExecute(null))
+            ViewModel.SendCommand.Execute(null);
+    }
+
 
     // ===== Welcome Back Screen (inline) =====
 

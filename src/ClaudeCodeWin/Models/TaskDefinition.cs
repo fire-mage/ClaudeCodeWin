@@ -8,4 +8,5 @@ public class TaskDefinition
     public string? HotKey { get; set; }
     public bool ConfirmBeforeRun { get; set; } = true;
     public string? Project { get; set; }
+    public string? Category { get; set; }
 }

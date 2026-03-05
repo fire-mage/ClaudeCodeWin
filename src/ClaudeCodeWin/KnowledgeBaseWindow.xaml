@@ -106,11 +106,32 @@
             </ListView.ItemTemplate>
         </ListView>
 
-        <Button Grid.Row="3" Content="Close" Click="CloseButton_Click"
-                HorizontalAlignment="Right" Margin="0,12,0,0"
-                Padding="24,6"
-                Background="{StaticResource SurfaceBrush}"
-                Foreground="{StaticResource TextBrush}"
-                BorderBrush="{StaticResource BorderBrush}"/>
+        <Grid Grid.Row="3" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="0" Content="Marketplace..." Click="MarketplaceButton_Click"
+                    x:Name="MarketplaceBtn"
+                    Padding="16,6" Margin="0,0,8,0"
+                    ToolTip="Browse and install skills and plugins for Claude."
+                    Background="{StaticResource SurfaceBrush}"
+                    Foreground="{StaticResource TextBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"/>
+            <Button Grid.Column="1" Content="Explore Skill..." Click="ExploreSkillButton_Click"
+                    x:Name="ExploreSkillBtn"
+                    Padding="16,6"
+                    ToolTip="Provide a skill, article, or URL for Claude to study."
+                    Background="{StaticResource SurfaceBrush}"
+                    Foreground="{StaticResource TextBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"/>
+            <Button Grid.Column="3" Content="Close" Click="CloseButton_Click"
+                    Padding="24,6"
+                    Background="{StaticResource SurfaceBrush}"
+                    Foreground="{StaticResource TextBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"/>
+        </Grid>
     </Grid>
 </Window>

@@ -20,6 +20,37 @@ public class TaskRunnerService
     // Stored references for SetTaskRunner wiring
     private Func<MainViewModel>? _getActiveTab;
     private MainWindow? _mainWindow;
+    private System.Windows.RoutedEventHandler? _submenuRefreshHandler;
+    private bool _isPopulating;
+    private DateTime _lastTasksWriteTime;
+
+    private static string ScriptHelpText { get; } = string.Join("\n", new[]
+    {
+        "Scripts are stored in tasks.json as a JSON array.",
+        "",
+        "Each script has these fields:",
+        "  \u2022 name \u2014 display name in the menu",
+        "  \u2022 command \u2014 shell command to run",
+        "  \u2022 project \u2014 (optional) project name for grouping in submenu",
+        "  \u2022 hotKey \u2014 (optional) keyboard shortcut hint",
+        "  \u2022 confirmBeforeRun \u2014 (optional) ask before running",
+        "  \u2022 category \u2014 (optional) set to \"deploy\" for Deploy Scripts menu",
+        "",
+        "Example:",
+        "[",
+        "  {",
+        "    \"name\": \"Deploy API\",",
+        "    \"command\": \"powershell ./deploy-api.ps1\",",
+        "    \"project\": \"MyProject\",",
+        "    \"category\": \"deploy\"",
+        "  }",
+        "]",
+        "",
+        "Scripts with a 'project' field appear in a submenu.",
+        "Scripts with category \"deploy\" appear in Deploy Scripts menu.",
+        "",
+        "Use Edit Scripts... to modify, or ask Claude to add a script for you."
+    });
 
     public List<TaskDefinition> LoadTasks()
     {
@@ -78,12 +109,96 @@ public class TaskRunnerService
 
     public void PopulateMenu(MainWindow mainWindow, Func<MainViewModel> getActiveTab)
     {
-        _getActiveTab = getActiveTab;
-        _mainWindow = mainWindow;
+        if (_isPopulating) return;
 
-        var tasks = LoadTasks();
-        var tasksMenu = mainWindow.TasksMenu;
-        tasksMenu.Items.Clear();
+        // Skip repopulation if tasks.json hasn't changed since last load
+        var currentWriteTime = File.Exists(TasksPath)
+            ? File.GetLastWriteTimeUtc(TasksPath) : DateTime.MinValue;
+        if (_getActiveTab is not null && currentWriteTime == _lastTasksWriteTime)
+            return;
+
+        _isPopulating = true;
+        try
+        {
+            _lastTasksWriteTime = currentWriteTime;
+            _getActiveTab = getActiveTab;
+            _mainWindow = mainWindow;
+
+            var tasks = LoadTasks();
+
+            // Split tasks by category
+            var deployTasks = tasks.Where(t =>
+                string.Equals(t.Category, "deploy", StringComparison.OrdinalIgnoreCase)).ToList();
+            var regularTasks = tasks.Where(t =>
+                !string.Equals(t.Category, "deploy", StringComparison.OrdinalIgnoreCase)).ToList();
+
+            PopulateMenuInternal(mainWindow.TasksMenu, regularTasks, mainWindow, getActiveTab);
+
+            // Refresh menus when opened (picks up tasks.json changes made by Claude or manual edits)
+            mainWindow.TasksMenu.SubmenuOpened -= _submenuRefreshHandler;
+            mainWindow.DeployScriptsMenu.SubmenuOpened -= _submenuRefreshHandler;
+            _submenuRefreshHandler = (_, _) => PopulateMenu(mainWindow, getActiveTab);
+            mainWindow.TasksMenu.SubmenuOpened += _submenuRefreshHandler;
+            mainWindow.DeployScriptsMenu.SubmenuOpened += _submenuRefreshHandler;
+
+            if (deployTasks.Count > 0)
+            {
+                PopulateMenuInternal(mainWindow.DeployScriptsMenu, deployTasks, mainWindow, getActiveTab);
+            }
+            else
+            {
+                mainWindow.DeployScriptsMenu.Items.Clear();
+                var emptyHint = new MenuItem
+                {
+                    Header = "No deploy scripts yet",
+                    IsEnabled = false,
+                    IsHitTestVisible = false,
+                    Focusable = false,
+                    FontStyle = System.Windows.FontStyles.Italic
+                };
+                mainWindow.DeployScriptsMenu.Items.Add(emptyHint);
+
+                var createHint = new MenuItem
+                {
+                    Header = "Use Claude > Create Deploy Scripts...",
+                    ToolTip = "Go to Claude menu to let Claude create deploy scripts for your project.",
+                    FontStyle = System.Windows.FontStyles.Italic,
+                    IsEnabled = false,
+                    IsHitTestVisible = false,
+                    Focusable = false
+                };
+                mainWindow.DeployScriptsMenu.Items.Add(createHint);
+
+                mainWindow.DeployScriptsMenu.Items.Add(new Separator());
+
+                var editTasks = new MenuItem
+                {
+                    Header = "Edit Scripts...",
+                    ToolTip = "Open the built-in editor to modify tasks.json."
+                };
+                editTasks.Click += (_, _) => EditTasksJson(mainWindow, getActiveTab);
+                mainWindow.DeployScriptsMenu.Items.Add(editTasks);
+
+                var howTo = new MenuItem
+                {
+                    Header = "How to add a script",
+                    ToolTip = "Show instructions for adding custom scripts."
+                };
+                howTo.Click += (_, _) =>
+                {
+                    MessageBox.Show(ScriptHelpText, "How to Add a Script",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                };
+                mainWindow.DeployScriptsMenu.Items.Add(howTo);
+            }
+        }
+        finally { _isPopulating = false; }
+    }
+
+    private void PopulateMenuInternal(MenuItem targetMenu, List<TaskDefinition> tasks,
+        MainWindow mainWindow, Func<MainViewModel> getActiveTab)
+    {
+        targetMenu.Items.Clear();
 
         // Group tasks: those with Project go into submenus, others stay at top level
         var ungrouped = tasks.Where(t => string.IsNullOrEmpty(t.Project)).ToList();
@@ -103,7 +218,7 @@ public class TaskRunnerService
                 FontSize = 10,
                 Padding = new Thickness(0, 2, 0, 2)
             };
-            tasksMenu.Items.Add(projectsHeader);
+            targetMenu.Items.Add(projectsHeader);
         }
 
         foreach (var group in grouped)
@@ -127,11 +242,11 @@ public class TaskRunnerService
                 projectMenu.Items.Add(menuItem);
             }
 
-            tasksMenu.Items.Add(projectMenu);
+            targetMenu.Items.Add(projectMenu);
         }
 
         if (grouped.Any() && ungrouped.Count > 0)
-            tasksMenu.Items.Add(new Separator());
+            targetMenu.Items.Add(new Separator());
 
         foreach (var task in ungrouped)
         {
@@ -144,11 +259,11 @@ public class TaskRunnerService
             };
 
             menuItem.Click += (_, _) => RunTask(taskDef, getActiveTab(), mainWindow);
-            tasksMenu.Items.Add(menuItem);
+            targetMenu.Items.Add(menuItem);
         }
 
         if (tasks.Count > 0)
-            tasksMenu.Items.Add(new Separator());
+            targetMenu.Items.Add(new Separator());
 
         var editTasks = new MenuItem
         {
@@ -156,7 +271,7 @@ public class TaskRunnerService
             ToolTip = "Open the built-in editor to modify tasks.json."
         };
         editTasks.Click += (_, _) => EditTasksJson(mainWindow, getActiveTab);
-        tasksMenu.Items.Add(editTasks);
+        targetMenu.Items.Add(editTasks);
 
         var howTo = new MenuItem
         {
@@ -165,30 +280,10 @@ public class TaskRunnerService
         };
         howTo.Click += (_, _) =>
         {
-            MessageBox.Show(
-                "Scripts are stored in tasks.json as a JSON array.\n\n" +
-                "Each script has these fields:\n" +
-                "  \u2022 name \u2014 display name in the menu\n" +
-                "  \u2022 command \u2014 shell command to run\n" +
-                "  \u2022 project \u2014 (optional) project name for grouping in submenu\n" +
-                "  \u2022 hotKey \u2014 (optional) keyboard shortcut hint\n" +
-                "  \u2022 confirmBeforeRun \u2014 (optional) ask before running\n\n" +
-                "Example:\n" +
-                "[\n" +
-                "  {\n" +
-                "    \"name\": \"Deploy API\",\n" +
-                "    \"command\": \"powershell ./deploy-api.ps1\",\n" +
-                "    \"project\": \"MyProject\"\n" +
-                "  }\n" +
-                "]\n\n" +
-                "Scripts with a 'project' field appear in a submenu:\n" +
-                "  My Scripts > MyProject > Deploy API\n\n" +
-                "Use Edit Scripts... to modify, or ask Claude to add a script for you.",
-                "How to Add a Script",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            MessageBox.Show(ScriptHelpText, "How to Add a Script",
+                MessageBoxButton.OK, MessageBoxImage.Information);
         };
-        tasksMenu.Items.Add(howTo);
+        targetMenu.Items.Add(howTo);
     }
 
     private void EditTasksJson(MainWindow mainWindow, Func<MainViewModel> getActiveTab)

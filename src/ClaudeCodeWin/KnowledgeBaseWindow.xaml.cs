@@ -15,9 +15,20 @@ public class KbDisplayItem
 
 public partial class KnowledgeBaseWindow : Window
 {
-    public KnowledgeBaseWindow(List<KnowledgeBaseEntry> localEntries, List<DevKbArticle> devArticles)
+    private readonly Action? _onMarketplace;
+    private readonly Action? _onExploreSkill;
+
+    public KnowledgeBaseWindow(List<KnowledgeBaseEntry> localEntries, List<DevKbArticle> devArticles,
+        Action? onMarketplace = null, Action? onExploreSkill = null)
     {
+        _onMarketplace = onMarketplace;
+        _onExploreSkill = onExploreSkill;
+
         InitializeComponent();
+
+        // Hide action buttons if no callbacks provided
+        if (onMarketplace is null) MarketplaceBtn.Visibility = Visibility.Collapsed;
+        if (onExploreSkill is null) ExploreSkillBtn.Visibility = Visibility.Collapsed;
 
         var items = new List<KbDisplayItem>();
 
@@ -63,6 +74,18 @@ public partial class KnowledgeBaseWindow : Window
             SubtitleLabel.Text = $"{devArticles.Count} developer articles. No project articles yet.";
         else
             SubtitleLabel.Text = "Articles Claude has curated for this project. Claude manages this list automatically.";
+    }
+
+    private void MarketplaceButton_Click(object sender, RoutedEventArgs e)
+    {
+        Close();
+        _onMarketplace?.Invoke();
+    }
+
+    private void ExploreSkillButton_Click(object sender, RoutedEventArgs e)
+    {
+        Close();
+        _onExploreSkill?.Invoke();
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)
