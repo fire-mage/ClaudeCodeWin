@@ -148,6 +148,7 @@ public partial class MainViewModel : ViewModelBase
     public ObservableCollection<string> RecentFolders { get; } = [];
     public ObservableCollection<QueuedMessage> MessageQueue { get; } = [];
     public ObservableCollection<string> ChangedFiles { get; } = [];
+    private HashSet<string> _preTurnDirtyFiles = [];
     public ObservableCollection<ComposerBlock> ComposerBlocks { get; } = [new TextComposerBlock()];
 
     /// <summary>

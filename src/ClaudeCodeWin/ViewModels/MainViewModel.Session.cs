@@ -194,6 +194,25 @@ public partial class MainViewModel
         _gitRefreshTimer.Start();
     }
 
+    /// <summary>
+    /// Detect changed files via git status as a fallback for tools that don't report file changes
+    /// (e.g. Bash with sed/node). Only adds files that are NEW compared to the pre-turn snapshot,
+    /// so only files changed by Claude in this turn are tracked (not pre-existing dirty files).
+    /// Must be awaited so ChangedFiles is populated before SaveChatHistory / OnTurnCompleted.
+    /// </summary>
+    private async Task DetectChangedFilesFromGitAsync()
+    {
+        if (string.IsNullOrEmpty(WorkingDirectory)) return;
+
+        var baseline = _preTurnDirtyFiles;
+        var files = await Task.Run(() => _gitService.GetChangedFiles(WorkingDirectory));
+        foreach (var file in files)
+        {
+            if (!baseline.Contains(file) && !ChangedFiles.Any(f => string.Equals(f, file, StringComparison.OrdinalIgnoreCase)))
+                ChangedFiles.Add(file);
+        }
+    }
+
     private void RefreshGitStatus()
     {
         ApplyGitStatus(_gitService.GetStatus(WorkingDirectory));

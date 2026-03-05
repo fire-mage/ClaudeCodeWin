@@ -164,6 +164,22 @@ public partial class MainViewModel
             CheckApiKeyExpiry();
         }
 
+        // Snapshot current dirty files so DetectChangedFilesFromGitAsync only picks up NEW changes
+        var wd = WorkingDirectory;
+        if (!string.IsNullOrEmpty(wd))
+        {
+            try
+            {
+                var dirtyBefore = await Task.Run(() => _gitService.GetChangedFiles(wd));
+                _preTurnDirtyFiles = new HashSet<string>(dirtyBefore, StringComparer.OrdinalIgnoreCase);
+            }
+            catch { _preTurnDirtyFiles = []; }
+        }
+        else
+        {
+            _preTurnDirtyFiles = [];
+        }
+
         _messageAssembler.BeginAssistantMessage();
 
         // Send via persistent process (starts process if needed)
@@ -252,7 +268,7 @@ public partial class MainViewModel
 
     private void HandleCompleted(ResultData result)
     {
-        RunOnUI(() =>
+        RunOnUI(async () =>
         {
             // Skip stale callbacks from a cancelled CLI process
             if (_activeSendGeneration != _sendGeneration) return;
@@ -392,6 +408,7 @@ public partial class MainViewModel
             }
 
             RefreshGitStatus();
+            await DetectChangedFilesFromGitAsync();
             SaveChatHistory();
 
             _notificationService.NotifyIfInactive();
@@ -583,7 +600,7 @@ public partial class MainViewModel
     {
         RunOnUI(() =>
         {
-            if (!ChangedFiles.Contains(filePath))
+            if (!ChangedFiles.Any(f => string.Equals(f, filePath, StringComparison.OrdinalIgnoreCase)))
                 ChangedFiles.Add(filePath);
         });
     }

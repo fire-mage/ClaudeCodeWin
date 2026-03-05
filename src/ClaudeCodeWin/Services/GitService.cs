@@ -76,6 +76,32 @@ public class GitService
         return (true, hash);
     }
 
+    /// <summary>
+    /// Returns list of modified/untracked files as absolute paths.
+    /// </summary>
+    public List<string> GetChangedFiles(string? workingDir)
+    {
+        if (string.IsNullOrEmpty(workingDir))
+            return [];
+
+        var output = RunGit("status --porcelain", workingDir);
+        if (string.IsNullOrEmpty(output))
+            return [];
+
+        var files = new List<string>();
+        foreach (var line in output.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (line.Length < 4) continue;
+            var relativePath = line.Substring(3).Trim().Trim('"');
+            var arrowIdx = relativePath.IndexOf(" -> ", StringComparison.Ordinal);
+            if (arrowIdx >= 0)
+                relativePath = relativePath.Substring(arrowIdx + 4);
+            var absPath = Path.GetFullPath(Path.Combine(workingDir, relativePath));
+            files.Add(absPath);
+        }
+        return files;
+    }
+
     public string? RunGit(string arguments, string? workingDir)
     {
         if (string.IsNullOrEmpty(workingDir))

@@ -28,4 +28,14 @@ public abstract class ViewModelBase : INotifyPropertyChanged
         var app = System.Windows.Application.Current;
         app?.Dispatcher?.InvokeAsync(action);
     }
+
+    protected static void RunOnUI(Func<Task> asyncAction)
+    {
+        var app = System.Windows.Application.Current;
+        app?.Dispatcher?.InvokeAsync(async () =>
+        {
+            try { await asyncAction(); }
+            catch (Exception ex) { Services.DiagnosticLogger.Log("ASYNC_UI_ERROR", ex.Message); }
+        });
+    }
 }
