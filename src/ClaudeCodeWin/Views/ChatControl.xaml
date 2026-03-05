@@ -648,6 +648,13 @@
                                                                     </ControlTemplate>
                                                                 </Setter.Value>
                                                             </Setter>
+                                                            <!-- Fix WARNING #1: highlight selected options in multi-select mode -->
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                    <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                                                                    <Setter Property="Foreground" Value="{StaticResource BackgroundBrush}"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
                                                         </Style>
                                                     </Button.Style>
                                                     <TextBlock Text="{Binding Label}"/>
@@ -655,6 +662,49 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+
+                                    <!-- Fix WARNING #1: Confirm button for multi-select questions -->
+                                    <Button Content="Confirm selection"
+                                            Margin="0,4,0,0" Padding="12,6" Cursor="Hand"
+                                            Command="{Binding CommandSource.AnswerQuestionCommand, ElementName=ChatRoot, FallbackValue={x:Null}}"
+                                            CommandParameter="{Binding QuestionDisplay.QuestionIndex, StringFormat=__confirm_multiselect__:{0}}"
+                                            ToolTip="Confirm selected options">
+                                        <Button.Visibility>
+                                            <Binding Path="QuestionDisplay.MultiSelect"
+                                                     Converter="{StaticResource BoolToVis}"
+                                                     FallbackValue="Collapsed"/>
+                                        </Button.Visibility>
+                                        <Button.IsEnabled>
+                                            <Binding Path="QuestionDisplay.IsAnswered" Converter="{StaticResource InverseBool}"/>
+                                        </Button.IsEnabled>
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                                                <Setter Property="Foreground" Value="{StaticResource BackgroundBrush}"/>
+                                                <Setter Property="BorderThickness" Value="0"/>
+                                                <Setter Property="FontSize" Value="12"/>
+                                                <Setter Property="FontWeight" Value="Bold"/>
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border Background="{TemplateBinding Background}"
+                                                                    CornerRadius="6"
+                                                                    Padding="{TemplateBinding Padding}"
+                                                                    Opacity="{TemplateBinding Opacity}">
+                                                                <ContentPresenter HorizontalAlignment="Center"
+                                                                                  VerticalAlignment="Center"/>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsEnabled" Value="False">
+                                                                    <Setter Property="Opacity" Value="0.4"/>
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
 
                                     <!-- Streaming indicator with timer and nudge button -->
                                     <StackPanel Orientation="Horizontal"

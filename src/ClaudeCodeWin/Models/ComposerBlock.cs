@@ -39,9 +39,10 @@ public class ImageComposerBlock : ComposerBlock
     public string FileName => Attachment.FileName;
     public string FilePath => Attachment.FilePath;
 
+    // Fix: null guard — FileName/FilePath properties dereference Attachment without null check
     public ImageComposerBlock(FileAttachment attachment)
         : base(ComposerBlockType.InlineImage)
     {
-        Attachment = attachment;
+        Attachment = attachment ?? throw new ArgumentNullException(nameof(attachment));
     }
 }

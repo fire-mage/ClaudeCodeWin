@@ -19,11 +19,29 @@ public partial class TaskOutputWindow : Window
     public event Action<string, string>? OnTaskCompleted; // taskName, plainTextOutput
 
     private static readonly Regex AnsiRegex = new(@"\x1b\[([0-9;]*)m", RegexOptions.Compiled);
+    // Fix: was creating a new Regex on every AppendOutput call (hot path during stream processing)
+    private static readonly Regex NonColorAnsiRegex = new(@"\x1b\[[^m]*[A-Za-z]", RegexOptions.Compiled);
+
+    // Fix: SolidColorBrush was allocated per ANSI code change — pre-allocate and freeze for performance
+    private static readonly Brush AnsiBlack = Freeze(new SolidColorBrush(Color.FromRgb(69, 71, 90)));
+    private static readonly Brush AnsiRed = Freeze(new SolidColorBrush(Color.FromRgb(243, 139, 168)));
+    private static readonly Brush AnsiGreen = Freeze(new SolidColorBrush(Color.FromRgb(166, 227, 161)));
+    private static readonly Brush AnsiYellow = Freeze(new SolidColorBrush(Color.FromRgb(249, 226, 175)));
+    private static readonly Brush AnsiBlue = Freeze(new SolidColorBrush(Color.FromRgb(137, 180, 250)));
+    private static readonly Brush AnsiMagenta = Freeze(new SolidColorBrush(Color.FromRgb(203, 166, 247)));
+    private static readonly Brush AnsiCyan = Freeze(new SolidColorBrush(Color.FromRgb(148, 226, 213)));
+    private static readonly Brush AnsiBrightBlack = Freeze(new SolidColorBrush(Color.FromRgb(108, 112, 134)));
+    private static readonly Brush AnsiBrightWhite = Freeze(new SolidColorBrush(Color.FromRgb(205, 214, 244)));
+    private static Brush Freeze(SolidColorBrush b) { b.Freeze(); return b; }
+
+    // Fix: FindResource("TextBrush") was called on every ANSI reset/code 37/39 — cache it once
+    private Brush _textBrush = Brushes.White;
 
     public TaskOutputWindow()
     {
         InitializeComponent();
-        _currentForeground = (Brush)FindResource("TextBrush");
+        _textBrush = (Brush)FindResource("TextBrush");
+        _currentForeground = _textBrush;
     }
 
     public async Task RunTaskAsync(TaskDefinition task, string? projectDir)
@@ -98,10 +116,16 @@ public partial class TaskOutputWindow : Window
         }
         finally
         {
-            _process?.Dispose();
+            // Fix #3: capture local refs and dispose on background thread directly.
+            // Process.Dispose() and CTS.Dispose() are thread-safe.
+            // Previous approach (BeginInvoke) could be silently dropped if Dispatcher
+            // is shut down, leaking the process handle.
+            var proc = _process;
+            var cts = _cts;
             _process = null;
-            _cts?.Dispose();
             _cts = null;
+            proc?.Dispose();
+            cts?.Dispose();
         }
     }
 
@@ -143,7 +167,7 @@ public partial class TaskOutputWindow : Window
         {
             var remaining = text[lastIndex..];
             // Strip any other escape sequences (like \x1b[K, \x1b[2J, etc.)
-            remaining = Regex.Replace(remaining, @"\x1b\[[^m]*[A-Za-z]", "");
+            remaining = NonColorAnsiRegex.Replace(remaining, "");
             if (remaining.Length > 0)
                 AppendRun(remaining);
         }
@@ -180,32 +204,32 @@ public partial class TaskOutputWindow : Window
                 case 0: ResetAnsiState(); break;
                 case 1: _isBold = true; break;
                 case 22: _isBold = false; break;
-                // Standard foreground colors
-                case 30: _currentForeground = new SolidColorBrush(Color.FromRgb(69, 71, 90)); break;     // Black (dark gray)
-                case 31: _currentForeground = new SolidColorBrush(Color.FromRgb(243, 139, 168)); break;   // Red
-                case 32: _currentForeground = new SolidColorBrush(Color.FromRgb(166, 227, 161)); break;   // Green
-                case 33: _currentForeground = new SolidColorBrush(Color.FromRgb(249, 226, 175)); break;   // Yellow
-                case 34: _currentForeground = new SolidColorBrush(Color.FromRgb(137, 180, 250)); break;   // Blue
-                case 35: _currentForeground = new SolidColorBrush(Color.FromRgb(203, 166, 247)); break;   // Magenta
-                case 36: _currentForeground = new SolidColorBrush(Color.FromRgb(148, 226, 213)); break;   // Cyan
-                case 37: _currentForeground = (Brush)FindResource("TextBrush"); break;                     // White (default)
-                case 39: _currentForeground = (Brush)FindResource("TextBrush"); break;                     // Default
+                // Standard foreground colors (use pre-allocated frozen brushes)
+                case 30: _currentForeground = AnsiBlack; break;
+                case 31: _currentForeground = AnsiRed; break;
+                case 32: _currentForeground = AnsiGreen; break;
+                case 33: _currentForeground = AnsiYellow; break;
+                case 34: _currentForeground = AnsiBlue; break;
+                case 35: _currentForeground = AnsiMagenta; break;
+                case 36: _currentForeground = AnsiCyan; break;
+                case 37: _currentForeground = _textBrush; break;
+                case 39: _currentForeground = _textBrush; break;
                 // Bright foreground colors
-                case 90: _currentForeground = new SolidColorBrush(Color.FromRgb(108, 112, 134)); break;   // Bright black (gray)
-                case 91: _currentForeground = new SolidColorBrush(Color.FromRgb(243, 139, 168)); break;   // Bright red
-                case 92: _currentForeground = new SolidColorBrush(Color.FromRgb(166, 227, 161)); break;   // Bright green
-                case 93: _currentForeground = new SolidColorBrush(Color.FromRgb(249, 226, 175)); break;   // Bright yellow
-                case 94: _currentForeground = new SolidColorBrush(Color.FromRgb(137, 180, 250)); break;   // Bright blue
-                case 95: _currentForeground = new SolidColorBrush(Color.FromRgb(203, 166, 247)); break;   // Bright magenta
-                case 96: _currentForeground = new SolidColorBrush(Color.FromRgb(148, 226, 213)); break;   // Bright cyan
-                case 97: _currentForeground = new SolidColorBrush(Color.FromRgb(205, 214, 244)); break;   // Bright white
+                case 90: _currentForeground = AnsiBrightBlack; break;
+                case 91: _currentForeground = AnsiRed; break;
+                case 92: _currentForeground = AnsiGreen; break;
+                case 93: _currentForeground = AnsiYellow; break;
+                case 94: _currentForeground = AnsiBlue; break;
+                case 95: _currentForeground = AnsiMagenta; break;
+                case 96: _currentForeground = AnsiCyan; break;
+                case 97: _currentForeground = AnsiBrightWhite; break;
             }
         }
     }
 
     private void ResetAnsiState()
     {
-        _currentForeground = (Brush)FindResource("TextBrush");
+        _currentForeground = _textBrush;
         _isBold = false;
     }
 

@@ -176,6 +176,8 @@ public class CSharpCompletionProvider : ICompletionProvider
     private static List<CompletionItem> BuildKeywordItems()
     {
         var allKeywords = new HashSet<string>(CSharpTokenizer.Keywords);
+        // BUG FIX: ControlKeywords (break, continue, return, etc.) were missing from completions
+        allKeywords.UnionWith(CSharpTokenizer.ControlKeywords);
         allKeywords.UnionWith(CSharpTokenizer.TypeKeywords);
         allKeywords.UnionWith(CSharpTokenizer.LiteralKeywords);
 

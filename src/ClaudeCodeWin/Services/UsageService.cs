@@ -19,6 +19,7 @@ public class UsageService
     private readonly DispatcherTimer _pollTimer;
     private readonly DispatcherTimer _countdownTimer;
     private string? _accessToken;
+    private int _consecutiveFailures;
 
     // Current usage data
     public double SessionUtilization { get; private set; }
@@ -106,6 +107,7 @@ public class UsageService
             }
 
             IsLoaded = true;
+            _consecutiveFailures = 0;
 
             // Rate limit detection
             var wasRateLimited = IsRateLimited;
@@ -132,7 +134,8 @@ public class UsageService
         }
         catch (HttpRequestException)
         {
-            if (IsOnline)
+            _consecutiveFailures++;
+            if (_consecutiveFailures >= 3 && IsOnline)
             {
                 IsOnline = false;
                 OnUsageUpdated?.Invoke();
@@ -140,8 +143,8 @@ public class UsageService
         }
         catch (TaskCanceledException)
         {
-            // Timeout — also a network issue
-            if (IsOnline)
+            _consecutiveFailures++;
+            if (_consecutiveFailures >= 3 && IsOnline)
             {
                 IsOnline = false;
                 OnUsageUpdated?.Invoke();

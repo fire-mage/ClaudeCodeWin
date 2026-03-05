@@ -16,9 +16,16 @@ public class DevKbService
 
     private static readonly string CachePath = Path.Combine(CacheDir, "dev-kb-manifest.json");
 
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    // FIX (WARNING #2): PooledConnectionLifetime forces periodic DNS re-resolution
+    // in long-running desktop apps where DNS entries may change.
+    private static readonly HttpClient Http = new(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10)
+    })
+    { Timeout = TimeSpan.FromSeconds(15) };
 
-    private DevKbManifest? _manifest;
+    // Fix: volatile for thread-safe reads — SyncAsync writes on threadpool, GetAllArticles reads on UI thread
+    private volatile DevKbManifest? _manifest;
 
     /// <summary>
     /// Loads cached manifest immediately, then fetches latest from S3 in background.

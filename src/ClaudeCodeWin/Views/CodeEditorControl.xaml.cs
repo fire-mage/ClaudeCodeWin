@@ -43,6 +43,13 @@ public partial class CodeEditorControl : UserControl
             MeasureFontMetrics();
         };
         Editor.LostKeyboardFocus += (_, _) => DismissCompletion();
+        // FIX: stop timers on unload to prevent leaks and stale callbacks
+        Unloaded += (_, _) =>
+        {
+            _highlightTimer?.Stop();
+            _autoTriggerTimer?.Stop();
+            DismissCompletion();
+        };
     }
 
     // Dependency Property: Text (two-way binding to SubTab.Content)
@@ -727,7 +734,8 @@ public partial class CodeEditorControl : UserControl
             else
             {
                 var segment = text[_completionAnchor..caret];
-                if (segment.Length > 0 && !segment.All(c => _completionProvider!.IsIdentifierChar(c)))
+                // FIX: null-check _completionProvider instead of using null-forgiving operator
+                if (segment.Length > 0 && (_completionProvider == null || !segment.All(c => _completionProvider.IsIdentifierChar(c))))
                     DismissCompletion();
             }
         }

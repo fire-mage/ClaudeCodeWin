@@ -1,5 +1,6 @@
 using System.IO;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using ClaudeCodeWin.Infrastructure;
 using ClaudeCodeWin.Models;
@@ -12,10 +13,12 @@ public class MarketplaceService
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "ClaudeCodeWin", "marketplace");
 
-    private static readonly HttpClient Http = new()
+    // FIX (WARNING #2): PooledConnectionLifetime forces periodic DNS re-resolution.
+    private static readonly HttpClient Http = new(new SocketsHttpHandler
     {
-        Timeout = TimeSpan.FromSeconds(15)
-    };
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10)
+    })
+    { Timeout = TimeSpan.FromSeconds(15) };
 
     public List<MarketplacePlugin> GetAllPlugins()
     {
@@ -101,9 +104,36 @@ public class MarketplaceService
         return plugins;
     }
 
+    // Fix: cap imported plugin size to prevent OOM from malicious URLs
+    private const int MaxImportBytes = 10 * 1024 * 1024; // 10 MB
+
     public async Task<MarketplacePlugin?> ImportFromUrlAsync(string url, string? name = null)
     {
-        var content = await Http.GetStringAsync(url);
+        // Fix: validate URL scheme to prevent SSRF against internal/file resources
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != "https" && uri.Scheme != "http"))
+            return null;
+
+        // Fix: stream-based read with hard byte limit to prevent OOM from chunked responses
+        // (Content-Length is optional — chunked transfer encoding omits it entirely)
+        using var response = await Http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+        if (response.Content.Headers.ContentLength > MaxImportBytes)
+            return null;
+
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        using var limited = new MemoryStream();
+        var buffer = new byte[8192];
+        int totalRead = 0;
+        while (true)
+        {
+            var read = await stream.ReadAsync(buffer);
+            if (read == 0) break;
+            totalRead += read;
+            if (totalRead > MaxImportBytes) return null;
+            limited.Write(buffer, 0, read);
+        }
+        var content = Encoding.UTF8.GetString(limited.GetBuffer(), 0, (int)limited.Length);
         if (string.IsNullOrWhiteSpace(content))
             return null;
 

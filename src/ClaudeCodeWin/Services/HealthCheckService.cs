@@ -66,7 +66,7 @@ public class HealthCheckService
         }
     }
 
-    private Task<HealthCheckResult> CheckGitAsync()
+    private async Task<HealthCheckResult> CheckGitAsync()
     {
         try
         {
@@ -75,38 +75,38 @@ public class HealthCheckService
             {
                 var version = GetVersionSync(gitExe);
                 var detail = version is not null ? $"{version}  ({gitExe})" : gitExe;
-                return Task.FromResult(new HealthCheckResult("Git", HealthStatus.OK, detail));
+                return new HealthCheckResult("Git", HealthStatus.OK, detail);
             }
 
-            var inPath = _deps.IsGitInstalled();
-            return Task.FromResult(inPath
+            var inPath = await _deps.IsGitInstalledAsync();
+            return inPath
                 ? new HealthCheckResult("Git", HealthStatus.OK, "Found in PATH")
-                : new HealthCheckResult("Git", HealthStatus.Warning, "Not found — some features may not work"));
+                : new HealthCheckResult("Git", HealthStatus.Warning, "Not found — some features may not work");
         }
         catch (Exception ex)
         {
-            return Task.FromResult(new HealthCheckResult("Git", HealthStatus.Error, ex.Message));
+            return new HealthCheckResult("Git", HealthStatus.Error, ex.Message);
         }
     }
 
-    private Task<HealthCheckResult> CheckGhCliAsync()
+    private async Task<HealthCheckResult> CheckGhCliAsync()
     {
         try
         {
-            var ghPath = _deps.ResolveGhExePath();
+            var ghPath = await _deps.ResolveGhExePathAsync();
             if (ghPath is not null)
             {
                 var version = GetVersionSync(ghPath);
                 var detail = version is not null ? $"{version}  ({ghPath})" : ghPath;
-                return Task.FromResult(new HealthCheckResult("GitHub CLI (gh)", HealthStatus.OK, detail));
+                return new HealthCheckResult("GitHub CLI (gh)", HealthStatus.OK, detail);
             }
 
-            return Task.FromResult(new HealthCheckResult("GitHub CLI (gh)", HealthStatus.Warning,
-                "Not found — GitHub integration unavailable"));
+            return new HealthCheckResult("GitHub CLI (gh)", HealthStatus.Warning,
+                "Not found — GitHub integration unavailable");
         }
         catch (Exception ex)
         {
-            return Task.FromResult(new HealthCheckResult("GitHub CLI (gh)", HealthStatus.Error, ex.Message));
+            return new HealthCheckResult("GitHub CLI (gh)", HealthStatus.Error, ex.Message);
         }
     }
 
@@ -152,13 +152,20 @@ public class HealthCheckService
         }
     }
 
+    // Fix: static HttpClient to prevent socket exhaustion from per-call creation.
+    // FIX (WARNING #2): PooledConnectionLifetime forces periodic DNS re-resolution.
+    private static readonly HttpClient InternetCheckHttp = new(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10)
+    })
+    { Timeout = TimeSpan.FromSeconds(5) };
+
     private static async Task<HealthCheckResult> CheckInternetAsync()
     {
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
             using var request = new HttpRequestMessage(HttpMethod.Head, "https://api.anthropic.com");
-            using var response = await http.SendAsync(request);
+            using var response = await InternetCheckHttp.SendAsync(request);
             return new("Internet", HealthStatus.OK, $"Connected (api.anthropic.com → {(int)response.StatusCode})");
         }
         catch (TaskCanceledException)
@@ -194,7 +201,11 @@ public class HealthCheckService
             process.Start();
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            // FIX: Drain stderr async to prevent deadlock when stderr buffer fills.
+            // Await after stdout to observe any I/O exceptions (avoids UnobservedTaskException).
+            var stderrTask = process.StandardError.ReadToEndAsync();
             var output = await process.StandardOutput.ReadToEndAsync(cts.Token);
+            try { await stderrTask; } catch { }
 
             try { await process.WaitForExitAsync(cts.Token); }
             catch (OperationCanceledException) { try { process.Kill(true); } catch { } }
@@ -225,8 +236,15 @@ public class HealthCheckService
             using var process = Process.Start(psi);
             if (process is null) return null;
 
+            // FIX: Read stderr async to prevent deadlock — sequential ReadToEnd hangs
+            // if stderr buffer fills before stdout EOF
+            var stderrTask = process.StandardError.ReadToEndAsync();
             var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit(5000);
+            // FIX (WARNING #3): catch exceptions from Wait() to prevent UnobservedTaskException on GC
+            // if the task faults or times out
+            try { stderrTask.Wait(5000); } catch { }
+            if (!process.WaitForExit(5000))
+                return null;
 
             var clean = ClaudeCodeDependencyService.StripAnsi(output).Trim();
             return string.IsNullOrEmpty(clean) ? null : clean;

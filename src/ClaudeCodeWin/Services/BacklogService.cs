@@ -18,7 +18,8 @@ public class BacklogService
     private readonly object _lock = new();
     private List<BacklogFeature> _features = [];
     private FileSystemWatcher? _watcher;
-    private bool _isSaving;
+    // Fix: volatile needed — read on FSW thread before lock, written under lock in SaveLocked
+    private volatile bool _isSaving;
     private DateTime _lastExternalReload = DateTime.MinValue;
 
     /// <summary>
@@ -256,7 +257,7 @@ public class BacklogService
 
             if (status == PhaseStatus.InProgress && phase.StartedAt is null)
                 phase.StartedAt = DateTime.Now;
-            if (status is PhaseStatus.Done or PhaseStatus.Failed)
+            if (status is PhaseStatus.Done or PhaseStatus.Failed or PhaseStatus.MaxReviewReached)
                 phase.CompletedAt = DateTime.Now;
 
             // Auto-update feature status based on phases
@@ -384,8 +385,8 @@ public class BacklogService
     {
         if (feature.Phases.Count == 0) return;
 
-        if (feature.Phases.All(p => p.Status == PhaseStatus.Done))
-            feature.Status = FeatureStatus.Done;
+        if (feature.Phases.All(p => p.Status is PhaseStatus.Done or PhaseStatus.Failed or PhaseStatus.MaxReviewReached))
+            feature.Status = FeatureStatus.Done; // all phases terminated (some may have failed)
         else if (feature.Phases.Any(p => p.Status is PhaseStatus.InProgress or PhaseStatus.InReview))
             feature.Status = FeatureStatus.InProgress;
     }

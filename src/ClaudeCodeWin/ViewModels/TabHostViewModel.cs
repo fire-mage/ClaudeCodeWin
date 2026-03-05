@@ -266,11 +266,15 @@ public class TabHostViewModel : ViewModelBase
             _backlogService, _teamNotesService, _devKbService);
 
         // Wire project locking callbacks
+        // Fix: path comparison used non-normalized tab.WorkingDirectory vs raw path — both must be normalized
         tab.IsProjectLockedByOtherTab = path =>
         {
             var normalized = System.IO.Path.GetFullPath(path);
             return _openProjects.Contains(normalized) &&
-                   !string.Equals(tab.WorkingDirectory, path, StringComparison.OrdinalIgnoreCase);
+                   !string.Equals(
+                       string.IsNullOrEmpty(tab.WorkingDirectory) ? "" : System.IO.Path.GetFullPath(tab.WorkingDirectory),
+                       normalized,
+                       StringComparison.OrdinalIgnoreCase);
         };
         tab.LockProject = path =>
         {
@@ -304,11 +308,11 @@ public class TabHostViewModel : ViewModelBase
         if (!string.IsNullOrEmpty(tab.WorkingDirectory))
             _openProjects.Remove(System.IO.Path.GetFullPath(tab.WorkingDirectory));
 
-        // Clean up resources
         UnsubscribeTeamChanges(tab);
-        tab.Dispose();
 
         var index = Tabs.IndexOf(tab);
+        // Fix: switch ActiveTab away before disposing, so the setter doesn't interact with a disposed tab
+        var needsSwitch = ActiveTab == tab;
         Tabs.Remove(tab);
 
         if (Tabs.Count == 0)
@@ -317,11 +321,14 @@ public class TabHostViewModel : ViewModelBase
             var fresh = CreateTab();
             fresh.ShowWelcome = true;
         }
-        else if (ActiveTab == tab || ActiveTab is null)
+        else if (needsSwitch || ActiveTab is null)
         {
             // Switch to adjacent tab
             ActiveTab = Tabs[Math.Min(index, Tabs.Count - 1)];
         }
+
+        // Dispose after switching away to avoid accessing disposed state
+        tab.Dispose();
     }
 
     public void SwitchToNextTab()

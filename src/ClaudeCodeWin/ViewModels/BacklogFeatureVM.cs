@@ -112,7 +112,7 @@ public class BacklogFeatureVM : ViewModelBase
         get
         {
             if (Feature.Phases.Count == 0) return "";
-            var done = Feature.Phases.Count(p => p.Status == PhaseStatus.Done);
+            var done = Feature.Phases.Count(p => p.Status is PhaseStatus.Done or PhaseStatus.MaxReviewReached);
             return $"[{done}/{Feature.Phases.Count} phases]";
         }
     }
@@ -181,7 +181,7 @@ public class BacklogFeatureVM : ViewModelBase
         get
         {
             if (Feature.Phases.Count == 0) return "No phases";
-            var done = Feature.Phases.Count(p => p.Status == PhaseStatus.Done);
+            var done = Feature.Phases.Count(p => p.Status is PhaseStatus.Done or PhaseStatus.MaxReviewReached);
             return $"{done}/{Feature.Phases.Count} phases completed";
         }
     }
@@ -248,6 +248,7 @@ public class PhaseDisplayItem
         PhaseStatus.InReview => "[R]",
         PhaseStatus.Pending => "[-]",
         PhaseStatus.Failed => "[!]",
+        PhaseStatus.MaxReviewReached => "[~]",
         _ => "[-]"
     };
 
@@ -276,6 +277,7 @@ public class PhaseDisplayItem
         PhaseStatus.InReview => "in review",
         PhaseStatus.Pending => "pending",
         PhaseStatus.Failed => "failed",
+        PhaseStatus.MaxReviewReached => "max re-review reached",
         _ => ""
     };
 }

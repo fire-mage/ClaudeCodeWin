@@ -6,6 +6,10 @@ public class HtmlTokenizer : ILanguageTokenizer
 
     public List<SyntaxToken> Tokenize(string text)
     {
+        // Bug fix: missing null/empty check caused NullReferenceException
+        if (string.IsNullOrEmpty(text))
+            return [];
+
         var tokens = new List<SyntaxToken>(text.Length / 8);
         int i = 0;
         int len = text.Length;

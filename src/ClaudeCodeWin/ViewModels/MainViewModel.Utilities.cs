@@ -110,7 +110,10 @@ public partial class MainViewModel
         // Remove the assistant "thinking" bubble
         if (_messageAssembler.CurrentMessage is not null)
         {
-            Messages.Remove(_messageAssembler.CurrentMessage);
+            var thinkingMsg = _messageAssembler.CurrentMessage;
+            Messages.Remove(thinkingMsg);
+            // FIX (WARNING #2): Dispose individually removed messages to stop leaked timers
+            thinkingMsg.Dispose();
             _messageAssembler.Reset();
         }
 
@@ -119,6 +122,8 @@ public partial class MainViewModel
         {
             if (Messages[i].Role == MessageRole.User)
             {
+                // FIX (WARNING #2): Dispose individually removed messages to stop leaked timers
+                Messages[i].Dispose();
                 Messages.RemoveAt(i);
                 break;
             }
@@ -279,16 +284,17 @@ public partial class MainViewModel
 
         var diff = DiffService.ComputeDiff(oldContent, newContent);
 
-        var viewer = new DiffViewerWindow(filePath, diff)
-        {
-            Owner = Application.Current.MainWindow
-        };
+        var viewer = new DiffViewerWindow(filePath, diff);
+        // BUG FIX: Application.Current.MainWindow can be null during shutdown
+        if (Application.Current?.MainWindow is { } mainWin)
+            viewer.Owner = mainWin;
         viewer.Show();
     }
 
     private static void ShowImagePreview(FileAttachment att)
     {
-        var mainWindow = Application.Current.MainWindow;
+        // BUG FIX: Application.Current can be null during shutdown
+        var mainWindow = Application.Current?.MainWindow;
         if (mainWindow is not null)
             Infrastructure.ImagePreviewHelper.ShowPreviewWindow(mainWindow, att.FilePath, att.FileName);
     }

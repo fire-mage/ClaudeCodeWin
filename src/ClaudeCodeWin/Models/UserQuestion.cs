@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace ClaudeCodeWin.Models;
 
 public class UserQuestion
@@ -8,8 +10,23 @@ public class UserQuestion
     public bool MultiSelect { get; set; }
 }
 
-public class QuestionOption
+// Fix WARNING #1: Added INotifyPropertyChanged so XAML toggle highlight works for multi-select
+public class QuestionOption : INotifyPropertyChanged
 {
+    public event PropertyChangedEventHandler? PropertyChanged;
+
     public string Label { get; set; } = "";
     public string Description { get; set; } = "";
+
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value) return;
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
 }

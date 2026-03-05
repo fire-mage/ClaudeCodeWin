@@ -64,6 +64,9 @@ public class ChatHistoryService
 
     public ChatHistoryEntry? Load(string id)
     {
+        // FIX: Validate id to prevent path traversal (e.g. "..\..\sensitive")
+        if (!IsValidId(id)) return null;
+
         // Try .dat first
         var datPath = Path.Combine(HistoryDir, $"{id}.dat");
         if (File.Exists(datPath))
@@ -83,12 +86,18 @@ public class ChatHistoryService
 
     public void Save(ChatHistoryEntry entry)
     {
+        // FIX: Validate id to prevent path traversal
+        if (!IsValidId(entry.Id)) return;
+
         entry.UpdatedAt = DateTime.Now;
         SaveToDat(entry);
     }
 
     public void Delete(string id)
     {
+        // FIX: Validate id to prevent path traversal
+        if (!IsValidId(id)) return;
+
         var datPath = Path.Combine(HistoryDir, $"{id}.dat");
         if (File.Exists(datPath))
             File.Delete(datPath);
@@ -98,8 +107,19 @@ public class ChatHistoryService
             File.Delete(jsonPath);
     }
 
+    // FIX: Allowlist validation — session IDs are UUIDs/hex strings, so only permit
+    // safe characters. Blocks path traversal, colons, Windows reserved names, etc.
+    private static bool IsValidId(string id) =>
+        !string.IsNullOrEmpty(id)
+        && id.Length < 256
+        && id.All(c => char.IsLetterOrDigit(c) || c is '-' or '_');
+
     private static void SaveToDat(ChatHistoryEntry entry)
     {
+        // Fix: validate ID inside SaveToDat too — it's called from ListAll() during legacy
+        // migration where the ID comes from deserialized JSON and was not validated by IsValidId
+        if (!IsValidId(entry.Id)) return;
+
         var json = JsonSerializer.Serialize(entry, JsonDefaults.Options);
         var jsonBytes = Encoding.UTF8.GetBytes(json);
         var protectedBytes = SettingsService.DpapiProtect(jsonBytes);

@@ -101,9 +101,20 @@ public class GitService
             if (process is null)
                 return null;
 
-            var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit(3000);
+            // FIX (WARNING #1): Read BOTH streams concurrently to prevent deadlock.
+            // Previously stdout was read synchronously while stderr was async — if stdout
+            // buffer filled, the process would block waiting for a consumer, and ReadToEnd()
+            // would block waiting for EOF, causing a classic deadlock.
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            // Sync-over-async: acceptable for short-lived git commands but can block threadpool.
+            // TODO: consider making RunGit async if callers can be updated.
+            try { Task.WhenAll(stdoutTask, stderrTask).Wait(15_000); } catch { }
 
+            if (!process.WaitForExit(15_000))
+                return null;
+
+            var output = stdoutTask.IsCompletedSuccessfully ? stdoutTask.Result : null;
             return process.ExitCode == 0 ? output : null;
         }
         catch

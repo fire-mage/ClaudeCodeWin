@@ -6,10 +6,27 @@ namespace ClaudeCodeWin.Services;
 
 public class StreamJsonParser
 {
+    // BUG FIX: was leaking undisposed JsonDocument — use static ctor to dispose after cloning
+    private static readonly JsonElement s_emptyObject;
+    static StreamJsonParser()
+    {
+        using var doc = JsonDocument.Parse("{}");
+        s_emptyObject = doc.RootElement.Clone();
+    }
+
     private string? _sessionId;
+    // Fix Issue #3: lock guards concurrent access between ReadStdoutLoop (ProcessLine)
+    // and ResetSessionSync (Reset) which run on different threads
+    private readonly object _parseLock = new();
     private string? _currentToolName;
     private string? _currentToolUseId;
     private readonly StringBuilder _toolInputBuffer = new();
+    // Fix #6: prevent unbounded buffer growth if CLI sends extremely large tool inputs
+    private const int MaxToolInputBufferSize = 10 * 1024 * 1024; // 10 MB
+
+    // FIX: deferred event queue — events are collected inside _parseLock and fired after
+    // releasing the lock, preventing potential deadlocks when event handlers acquire other locks
+    private readonly List<Action> _deferredEvents = new();
 
     // Per-call usage from the last message_start/message_delta in the current turn.
     // These represent the actual context size for the final API call (not aggregated).
@@ -34,69 +51,128 @@ public class StreamJsonParser
     public event Action<string, string>? OnUnknownEvent; // type, rawJson
     public event Action<string, int, int, int>? OnMessageStarted; // model, inputTokens, cacheReadTokens, cacheCreationTokens
 
-    public static string EscapeJson(string s) =>
-        s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
-
-    public void ProcessLine(string jsonLine)
+    // FIX: escape all JSON control characters (U+0000..U+001F) to produce valid JSON
+    public static string EscapeJson(string s)
     {
-        try
+        // Performance fix: fast-path — return original string if no escaping needed (zero-alloc)
+        bool needsEscape = false;
+        foreach (var ch in s)
         {
-            using var doc = JsonDocument.Parse(jsonLine);
-            var root = doc.RootElement;
-
-            if (!root.TryGetProperty("type", out var typeProp))
-                return;
-
-            var type = typeProp.GetString();
-
-            switch (type)
+            if (ch == '\\' || ch == '"' || ch < ' ')
             {
-                case "system":
-                    HandleSystemMessage(root);
-                    break;
-                case "stream_event":
-                    HandleStreamEvent(root);
-                    break;
-                case "assistant":
-                    HandleAssistantMessage(root);
-                    break;
-                case "user":
-                    HandleUserMessage(root);
-                    break;
-                case "result":
-                    HandleResult(root);
-                    break;
-                case "control_request":
-                    HandleControlRequest(root);
-                    break;
-                // Legacy top-level events (fallback in case CLI sends them)
-                case "content_block_start":
-                    HandleContentBlockStart(root);
-                    break;
-                case "content_block_delta":
-                    HandleContentBlockDelta(root);
-                    break;
-                case "content_block_stop":
-                    HandleContentBlockStop();
-                    break;
+                needsEscape = true;
+                break;
+            }
+        }
+        if (!needsEscape)
+            return s;
+
+        var sb = new StringBuilder(s.Length);
+        foreach (var ch in s)
+        {
+            switch (ch)
+            {
+                case '\\': sb.Append("\\\\"); break;
+                case '"': sb.Append("\\\""); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                case '\b': sb.Append("\\b"); break;
+                case '\f': sb.Append("\\f"); break;
                 default:
-                    OnUnknownEvent?.Invoke(type ?? "", jsonLine);
+                    if (ch < ' ')
+                    {
+                        sb.Append("\\u");
+                        sb.Append(((int)ch).ToString("X4"));
+                    }
+                    else
+                        sb.Append(ch);
                     break;
             }
         }
-        catch (JsonException)
+        return sb.ToString();
+    }
+
+    public void ProcessLine(string jsonLine)
+    {
+        // FIX: collect events inside lock, fire them after releasing to prevent deadlocks
+        // FIX CRITICAL #1: snapshot deferred events into a local list before releasing lock
+        // to prevent race condition where another thread calls Clear() during iteration
+        List<Action> toFire;
+        lock (_parseLock)
         {
-            // Not valid JSON — ignore
+            _deferredEvents.Clear();
+            try
+            {
+                using var doc = JsonDocument.Parse(jsonLine);
+                var root = doc.RootElement;
+
+                if (!root.TryGetProperty("type", out var typeProp))
+                    return;
+
+                var type = typeProp.GetString();
+
+                switch (type)
+                {
+                    case "system":
+                        HandleSystemMessage(root);
+                        break;
+                    case "stream_event":
+                        HandleStreamEvent(root);
+                        break;
+                    case "assistant":
+                        HandleAssistantMessage(root);
+                        break;
+                    case "user":
+                        HandleUserMessage(root);
+                        break;
+                    case "result":
+                        HandleResult(root);
+                        break;
+                    case "control_request":
+                        HandleControlRequest(root);
+                        break;
+                    // Legacy top-level events (fallback in case CLI sends them)
+                    case "content_block_start":
+                        HandleContentBlockStart(root);
+                        break;
+                    case "content_block_delta":
+                        HandleContentBlockDelta(root);
+                        break;
+                    case "content_block_stop":
+                        HandleContentBlockStop();
+                        break;
+                    default:
+                        var unknownType = type ?? "";
+                        var rawLine = jsonLine;
+                        _deferredEvents.Add(() => OnUnknownEvent?.Invoke(unknownType, rawLine));
+                        break;
+                }
+            }
+            catch (JsonException)
+            {
+                // Not valid JSON — ignore
+            }
+            toFire = _deferredEvents.Count > 0
+                ? new List<Action>(_deferredEvents)
+                : [];
         }
+
+        // Fire all deferred events outside the lock (using snapshot)
+        foreach (var evt in toFire)
+            evt();
     }
 
     public void Reset()
     {
-        _currentToolName = null;
-        _currentToolUseId = null;
-        _toolInputBuffer.Clear();
-        _sessionId = null;
-        ResetPerCallUsage();
+        lock (_parseLock)
+        {
+            _currentToolName = null;
+            _currentToolUseId = null;
+            _toolInputBuffer.Clear();
+            _sessionId = null;
+            ResetPerCallUsage();
+        }
     }
 
     private void ResetPerCallUsage()
@@ -152,14 +228,17 @@ public class StreamJsonParser
         {
             var message = msgProp.GetString() ?? "";
             if (!string.IsNullOrWhiteSpace(message))
-                OnSystemNotification?.Invoke(message);
+                _deferredEvents.Add(() => OnSystemNotification?.Invoke(message));
         }
 
         if (root.TryGetProperty("subtype", out var subProp) && subProp.ValueKind == JsonValueKind.String)
         {
             var subtype = subProp.GetString() ?? "";
             if (subtype.Contains("compact", StringComparison.OrdinalIgnoreCase))
-                OnSystemNotification?.Invoke($"[subtype: {subtype}]");
+            {
+                var subtypeMsg = $"[subtype: {subtype}]";
+                _deferredEvents.Add(() => OnSystemNotification?.Invoke(subtypeMsg));
+            }
         }
 
         string? model = null;
@@ -180,7 +259,11 @@ public class StreamJsonParser
         }
 
         if (_sessionId is not null)
-            OnSessionStarted?.Invoke(_sessionId, model ?? "", tools);
+        {
+            var sessionId = _sessionId;
+            var modelStr = model ?? "";
+            _deferredEvents.Add(() => OnSessionStarted?.Invoke(sessionId, modelStr, tools));
+        }
     }
 
     private void HandleAssistantMessage(JsonElement root)
@@ -250,7 +333,8 @@ public class StreamJsonParser
             }
 
             var toolName = _currentToolName ?? "Unknown";
-            OnToolResult?.Invoke(toolName, toolUseId, resultContent);
+            var rc = resultContent;
+            _deferredEvents.Add(() => OnToolResult?.Invoke(toolName, toolUseId, rc));
         }
     }
 
@@ -286,7 +370,14 @@ public class StreamJsonParser
         }
 
         if (!string.IsNullOrEmpty(model) || _lastMsgInputTokens > 0)
-            OnMessageStarted?.Invoke(model, _lastMsgInputTokens, _lastMsgCacheReadTokens, _lastMsgCacheCreationTokens);
+        {
+            // Capture values for deferred invocation
+            var m = model;
+            var inp = _lastMsgInputTokens;
+            var cr2 = _lastMsgCacheReadTokens;
+            var cc2 = _lastMsgCacheCreationTokens;
+            _deferredEvents.Add(() => OnMessageStarted?.Invoke(m, inp, cr2, cc2));
+        }
     }
 
     /// <summary>
@@ -314,7 +405,7 @@ public class StreamJsonParser
 
         if (blockType == "text")
         {
-            OnTextBlockStart?.Invoke();
+            _deferredEvents.Add(() => OnTextBlockStart?.Invoke());
             return;
         }
 
@@ -330,15 +421,18 @@ public class StreamJsonParser
             _currentToolUseId = toolUseId;
             _toolInputBuffer.Clear();
 
-            if (block.TryGetProperty("input", out var inp)
-                && inp.ValueKind == JsonValueKind.Object
-                && inp.EnumerateObject().Any())
+            // FIX: use GetRawText() consistently — ToString() strips quotes for strings,
+            // giving inconsistent JSON to event consumers
+            var inputStr = "";
+            if (block.TryGetProperty("input", out var inp))
             {
-                _toolInputBuffer.Append(inp.GetRawText());
+                inputStr = inp.GetRawText();
+                if (inp.ValueKind == JsonValueKind.Object && inp.EnumerateObject().Any())
+                    _toolInputBuffer.Append(inputStr);
             }
 
-            var inputStr = block.TryGetProperty("input", out var inp2) ? inp2.ToString() : "";
-            OnToolUseStarted?.Invoke(toolName, toolUseId, inputStr);
+            var capturedInput = inputStr;
+            _deferredEvents.Add(() => OnToolUseStarted?.Invoke(toolName, toolUseId, capturedInput));
         }
     }
 
@@ -354,15 +448,23 @@ public class StreamJsonParser
 
         if (deltaType == "text_delta" && delta.TryGetProperty("text", out var text))
         {
-            OnTextDelta?.Invoke(text.GetString() ?? string.Empty);
+            var textStr = text.GetString() ?? string.Empty;
+            _deferredEvents.Add(() => OnTextDelta?.Invoke(textStr));
         }
         else if (deltaType == "thinking_delta" && delta.TryGetProperty("thinking", out var thinking))
         {
-            OnThinkingDelta?.Invoke(thinking.GetString() ?? string.Empty);
+            var thinkingStr = thinking.GetString() ?? string.Empty;
+            _deferredEvents.Add(() => OnThinkingDelta?.Invoke(thinkingStr));
         }
         else if (deltaType == "input_json_delta" && delta.TryGetProperty("partial_json", out var pj))
         {
-            _toolInputBuffer.Append(pj.GetString() ?? "");
+            // Fix #6: skip appending if buffer exceeds safety limit
+            if (_toolInputBuffer.Length < MaxToolInputBufferSize)
+                _toolInputBuffer.Append(pj.GetString() ?? "");
+            else
+                // FIX: log truncation so silent data loss is observable in diagnostics
+                DiagnosticLogger.Log("TOOL_INPUT_TRUNCATED",
+                    $"tool={_currentToolName} buffer={_toolInputBuffer.Length} limit={MaxToolInputBufferSize}");
         }
         // signature_delta is intentionally ignored — internal verification, no user content
     }
@@ -381,7 +483,10 @@ public class StreamJsonParser
 
         if (_currentToolName is not null && _toolInputBuffer.Length > 0)
         {
-            OnToolUseStarted?.Invoke(_currentToolName, _currentToolUseId ?? "", _toolInputBuffer.ToString());
+            var toolName = _currentToolName;
+            var toolUseId = _currentToolUseId ?? "";
+            var input = _toolInputBuffer.ToString();
+            _deferredEvents.Add(() => OnToolUseStarted?.Invoke(toolName, toolUseId, input));
         }
 
         _currentToolName = null;
@@ -411,7 +516,10 @@ public class StreamJsonParser
             filePath = np.GetString();
 
         if (!string.IsNullOrEmpty(filePath))
-            OnFileChanged?.Invoke(filePath);
+        {
+            var path = filePath;
+            _deferredEvents.Add(() => OnFileChanged?.Invoke(path));
+        }
     }
 
     private void HandleControlRequest(JsonElement root)
@@ -427,10 +535,12 @@ public class StreamJsonParser
             ? tn.GetString() ?? "" : "";
         var toolUseId = request.TryGetProperty("tool_use_id", out var tid)
             ? tid.GetString() ?? "" : "";
+        // FIX: use empty JSON object instead of default(JsonElement) to avoid Undefined ValueKind
         var input = request.TryGetProperty("input", out var inp)
-            ? inp.Clone() : default;
+            ? inp.Clone()
+            : s_emptyObject;
 
-        OnControlRequest?.Invoke(requestId, toolName, toolUseId, input);
+        _deferredEvents.Add(() => OnControlRequest?.Invoke(requestId, toolName, toolUseId, input));
     }
 
     private void HandleResult(JsonElement root)
@@ -499,9 +609,11 @@ public class StreamJsonParser
             $"lastCall: input={_lastMsgInputTokens} cache_read={_lastMsgCacheReadTokens} " +
             $"cache_create={_lastMsgCacheCreationTokens} output={_lastMsgOutputTokens}");
 
-        OnCompleted?.Invoke(new ResultData(
+        var resultData = new ResultData(
             sessionId, model, inputTokens, outputTokens, cacheRead, cacheCreation, contextWindow,
-            _lastMsgInputTokens, _lastMsgCacheReadTokens, _lastMsgCacheCreationTokens, _lastMsgOutputTokens));
+            _lastMsgInputTokens, _lastMsgCacheReadTokens, _lastMsgCacheCreationTokens, _lastMsgOutputTokens);
+
+        _deferredEvents.Add(() => OnCompleted?.Invoke(resultData));
 
         // Reset per-call counters for the next turn
         ResetPerCallUsage();

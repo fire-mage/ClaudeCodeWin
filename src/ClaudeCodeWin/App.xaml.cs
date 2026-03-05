@@ -144,11 +144,12 @@ public partial class App : Application
             }
 
             // Dependency checks and installation
-            if (!await EnsureDependencies(initialTab, mainWindow))
+            // Fix: reuse single ClaudeCodeDependencyService instead of creating a duplicate instance
+            var depService = new ClaudeCodeDependencyService();
+            if (!await EnsureDependencies(initialTab, mainWindow, depService))
                 return;
 
             // Apply CLI path (shared for all tabs)
-            var depService = new ClaudeCodeDependencyService();
             var depStatus = await depService.CheckAsync();
             string claudeExePath = "claude";
             if (!string.IsNullOrEmpty(settings.ClaudeExePath))
@@ -242,12 +243,11 @@ public partial class App : Application
         }
     }
 
-    private async Task<bool> EnsureDependencies(MainViewModel vm, MainWindow window)
+    private async Task<bool> EnsureDependencies(MainViewModel vm, MainWindow window, ClaudeCodeDependencyService depService)
     {
-        var depService = new ClaudeCodeDependencyService();
-        var needsGit = !depService.IsGitInstalled();
+        var needsGit = !(await depService.IsGitInstalledAsync());
         var needsCli = !(await depService.CheckAsync()).IsInstalled;
-        var needsGh = !depService.IsGhInstalled();
+        var needsGh = !(await depService.IsGhInstalledAsync());
 
         // Git requires admin
         if (needsGit && !ClaudeCodeDependencyService.IsAdministrator())
@@ -319,12 +319,12 @@ public partial class App : Application
 
             if (!usageService.IsOnline)
             {
-                if (activeTab is not null)
-                    activeTab.StatusText = "NO INTERNET";
+                if (activeTab is not null && !activeTab.IsProcessing)
+                    activeTab.StatusText = "Usage API unavailable";
                 return;
             }
 
-            if (activeTab is not null && activeTab.StatusText == "NO INTERNET")
+            if (activeTab is not null && activeTab.StatusText == "Usage API unavailable")
                 activeTab.StatusText = activeTab.IsProcessing ? "Processing..." : "Ready";
 
             if (!usageService.IsLoaded) return;

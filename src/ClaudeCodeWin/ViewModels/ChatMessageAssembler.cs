@@ -53,8 +53,14 @@ public class ChatMessageAssembler
 
         if (_hadToolsSinceLastText)
         {
+            // Fix: carry over ReviewerLabel to new bubble so reviewer badge isn't lost after tool use
+            var reviewerLabel = _currentAssistantMessage.ReviewerLabel;
             _currentAssistantMessage.IsStreaming = false;
-            _currentAssistantMessage = new MessageViewModel(MessageRole.Assistant) { IsStreaming = true };
+            _currentAssistantMessage = new MessageViewModel(MessageRole.Assistant)
+            {
+                IsStreaming = true,
+                ReviewerLabel = reviewerLabel
+            };
             Messages.Add(_currentAssistantMessage);
             _hadToolsSinceLastText = false;
             _isFirstDelta = true;
@@ -189,8 +195,17 @@ public class ChatMessageAssembler
     /// <summary>Clear all messages and reset state.</summary>
     public void ClearMessages()
     {
+        // Fix: dispose MessageViewModels to stop leaked DispatcherTimers
+        DisposeAllMessages();
         Messages.Clear();
         Reset();
+    }
+
+    /// <summary>Dispose all MessageViewModels (stops timers, releases resources).</summary>
+    public void DisposeAllMessages()
+    {
+        foreach (var msg in Messages)
+            msg.Dispose();
     }
 
     /// <summary>Clear all active thinking/streaming indicators on all messages.</summary>

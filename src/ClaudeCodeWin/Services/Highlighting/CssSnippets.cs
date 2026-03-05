@@ -20,8 +20,9 @@ public static class CssSnippets
 
     private static CompletionItem Snippet(string label, string detail, string template)
     {
-        int caretOffset = template.IndexOf("$0");
-        string insertText = template.Replace("$0", "");
+        // BUG FIX: use Ordinal comparison to avoid culture-sensitive string matching
+        int caretOffset = template.IndexOf("$0", StringComparison.Ordinal);
+        string insertText = caretOffset >= 0 ? template.Remove(caretOffset, 2) : template;
         return new CompletionItem
         {
             Label = label,

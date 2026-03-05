@@ -301,7 +301,7 @@ public static class TeamPrompts
                         : "";
                     sb.AppendLine($"  -> Phase {activePhase.Order}: \"{activePhase.Title}\" — {activePhase.Status}{elapsed}");
 
-                    if (activePhase.Status == PhaseStatus.Failed && !string.IsNullOrEmpty(activePhase.ErrorMessage))
+                    if ((activePhase.Status is PhaseStatus.Failed or PhaseStatus.MaxReviewReached) && !string.IsNullOrEmpty(activePhase.ErrorMessage))
                         sb.AppendLine($"  Error: {activePhase.ErrorMessage}");
                 }
             }

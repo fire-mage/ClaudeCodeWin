@@ -27,11 +27,15 @@ public class SettingsService
 
             var needsSave = false;
 
-            // Auto-migrate plaintext password to DPAPI-protected
-            if (!string.IsNullOrEmpty(settings.SshMasterPassword))
+            // Auto-migrate plaintext password to DPAPI-protected.
+            // SshMasterPassword has JsonIgnore(Always) so we read the legacy field from raw JSON.
+            using var doc = JsonDocument.Parse(json);
+            if ((doc.RootElement.TryGetProperty("sshMasterPassword", out var legacyPwd)
+                || doc.RootElement.TryGetProperty("SshMasterPassword", out legacyPwd))
+                && legacyPwd.ValueKind == JsonValueKind.String
+                && !string.IsNullOrEmpty(legacyPwd.GetString()))
             {
-                settings.SshMasterPasswordProtected = Protect(settings.SshMasterPassword);
-                settings.SshMasterPassword = null;
+                settings.SshMasterPasswordProtected = Protect(legacyPwd.GetString()!);
                 needsSave = true;
             }
 

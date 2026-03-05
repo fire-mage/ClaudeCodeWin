@@ -70,6 +70,8 @@ public class BackgroundTaskViewModel : ViewModelBase
 
     public void UpdateElapsed()
     {
+        // Fix: don't overwrite "Done in..." / "Failed after..." text once task is finished
+        if (IsCompleted) return;
         var elapsed = DateTime.UtcNow - _info.StartTime;
         ElapsedText = FormatElapsed(elapsed);
     }

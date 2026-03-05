@@ -199,6 +199,8 @@ public class PhpCompletionProvider : ICompletionProvider
     private static List<CompletionItem> BuildKeywordItems()
     {
         var allKeywords = new HashSet<string>(PhpTokenizer.Keywords);
+        // BUG FIX: ControlKeywords (break, continue, return, etc.) were missing from completions
+        allKeywords.UnionWith(PhpTokenizer.ControlKeywords);
         allKeywords.UnionWith(PhpTokenizer.TypeKeywords);
         allKeywords.UnionWith(PhpTokenizer.LiteralKeywords);
 

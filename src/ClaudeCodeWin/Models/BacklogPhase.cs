@@ -1,6 +1,6 @@
 namespace ClaudeCodeWin.Models;
 
-public enum PhaseStatus { Pending, InProgress, InReview, Done, Failed }
+public enum PhaseStatus { Pending, InProgress, InReview, Done, Failed, MaxReviewReached }
 
 public class BacklogPhase
 {

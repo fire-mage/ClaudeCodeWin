@@ -28,8 +28,10 @@ public class AppSettings
     // SSH key path for Claude's own SSH access
     public string? SshKeyPath { get; set; }
 
-    // Master password for SSH servers that don't accept SSH key auth
-    // Legacy plaintext field — auto-migrated to SshMasterPasswordProtected on load
+    // Legacy plaintext field — auto-migrated to SshMasterPasswordProtected on load.
+    // FIX: Always ignore on serialization to guarantee plaintext password is never written to disk,
+    // even if migration fails. Deserialization uses a separate property via custom handling.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.Always)]
     public string? SshMasterPassword { get; set; }
 
     // DPAPI-encrypted SSH master password (base64 blob)

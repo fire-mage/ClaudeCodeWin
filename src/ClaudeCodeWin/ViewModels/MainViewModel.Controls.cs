@@ -128,23 +128,33 @@ public partial class MainViewModel
 
     private void HandleAskUserQuestionControl(string requestId, string toolUseId, JsonElement input)
     {
-        _pendingControlRequestId = requestId;
-        _pendingControlToolUseId = toolUseId;
         _pendingQuestionInput = input.ValueKind != JsonValueKind.Undefined ? input : null;
         _pendingQuestionAnswers.Clear();
         _pendingQuestionMessages.Clear();
 
+        // Fix #4: separate JSON parsing from UI operations so the catch only covers
+        // JSON access — prevents swallowing unrelated InvalidOperationExceptions
+        List<(string question, List<QuestionOption> options, bool multiSelect)> parsed;
+        int questionCount;
         try
         {
             if (!input.TryGetProperty("questions", out var questionsArr)
-                || questionsArr.ValueKind != JsonValueKind.Array)
+                || questionsArr.ValueKind != JsonValueKind.Array
+                || questionsArr.GetArrayLength() == 0)
+            {
+                _cliService.SendControlResponse(requestId, "deny", toolUseId: toolUseId,
+                    errorMessage: "AskUserQuestion had no questions to display");
                 return;
+            }
 
-            _pendingQuestionCount = questionsArr.GetArrayLength();
+            questionCount = questionsArr.GetArrayLength();
+            parsed = new(questionCount);
 
             foreach (var q in questionsArr.EnumerateArray())
             {
                 var question = q.TryGetProperty("question", out var qText) ? qText.GetString() ?? "" : "";
+                // Fix WARNING #1: parse multiSelect flag from CLI
+                var multiSelect = q.TryGetProperty("multiSelect", out var ms) && ms.GetBoolean();
                 var options = new List<QuestionOption>();
 
                 if (q.TryGetProperty("options", out var opts) && opts.ValueKind == JsonValueKind.Array)
@@ -159,34 +169,62 @@ public partial class MainViewModel
                     }
                 }
 
-                if (options.Count > 0)
-                {
-                    var questionMsg = new MessageViewModel(MessageRole.System, question)
-                    {
-                        QuestionDisplay = new QuestionDisplayModel
-                        {
-                            QuestionText = question,
-                            Options = options
-                        }
-                    };
-                    Messages.Add(questionMsg);
-                    _pendingQuestionMessages.Add(questionMsg);
-                }
-                else
-                {
-                    Messages.Add(new MessageViewModel(MessageRole.System, $"Claude asked: {question}"));
-                    _pendingQuestionMessages.Add(null!); // placeholder to keep indices aligned
-                }
+                parsed.Add((question, options, multiSelect));
             }
-
-            UpdateCta(CtaState.AnswerQuestion);
         }
-        catch (JsonException) { }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            DiagnosticLogger.Log("ASK_QUESTION_ERROR", ex.Message);
+            // Bug fix: don't clear _pendingControlRequestId/_pendingControlToolUseId here —
+            // they still hold values from a prior pending question (new values aren't set
+            // until after this try/catch). Clearing them would break the user's ability
+            // to answer the previous question.
+            _pendingQuestionInput = null;
+            _cliService.SendControlResponse(requestId, "deny", toolUseId: toolUseId,
+                errorMessage: $"Failed to parse AskUserQuestion input: {ex.Message}");
+            return;
+        }
+
+        // UI operations outside the JSON catch — these should not silently swallow errors
+        _pendingControlRequestId = requestId;
+        _pendingControlToolUseId = toolUseId;
+        _pendingQuestionCount = questionCount;
+
+        var questionIdx = 0;
+        foreach (var (question, options, multiSelect) in parsed)
+        {
+            if (options.Count > 0)
+            {
+                var questionMsg = new MessageViewModel(MessageRole.System, question)
+                {
+                    QuestionDisplay = new QuestionDisplayModel
+                    {
+                        QuestionText = question,
+                        Options = options,
+                        MultiSelect = multiSelect,
+                        QuestionIndex = questionIdx
+                    }
+                };
+                Messages.Add(questionMsg);
+                _pendingQuestionMessages.Add(questionMsg);
+            }
+            else
+            {
+                var placeholderMsg = new MessageViewModel(MessageRole.System, $"Claude asked: {question}");
+                Messages.Add(placeholderMsg);
+                _pendingQuestionMessages.Add(placeholderMsg);
+            }
+            questionIdx++;
+        }
+
+        UpdateCta(CtaState.AnswerQuestion);
     }
 
     private void HandleControlAnswer(string answer)
     {
-        var requestId = _pendingControlRequestId!;
+        // Fix Issue #4: guard against null — caller checks but this method should be safe standalone
+        if (_pendingControlRequestId is null) return;
+        var requestId = _pendingControlRequestId;
         var toolUseId = _pendingControlToolUseId;
 
         // ExitPlanMode — simple allow/deny/reset
@@ -231,11 +269,17 @@ public partial class MainViewModel
                 // Check if this answer matches a known option (button click)
                 // vs free-text input that should answer all remaining questions
                 var idx = _pendingQuestionAnswers.Count;
-                var isButtonClick = idx < questions.Count
+                // FIX WARNING #1: also treat multi-select confirmed answers as button clicks —
+                // joined labels like "Label1, Label2" won't match any single option label,
+                // but should still answer only one question, not fill all remaining ones
+                var isMultiSelectConfirm = idx < _pendingQuestionMessages.Count
+                    && _pendingQuestionMessages[idx]?.QuestionDisplay is { MultiSelect: true };
+                var isButtonClick = isMultiSelectConfirm
+                    || (idx < questions.Count
                     && questions[idx].TryGetProperty("options", out var opts)
                     && opts.ValueKind == JsonValueKind.Array
                     && opts.EnumerateArray().Any(o =>
-                        o.TryGetProperty("label", out var l) && l.GetString() == answer);
+                        o.TryGetProperty("label", out var l) && l.GetString() == answer));
 
                 if (isButtonClick)
                 {
@@ -263,16 +307,32 @@ public partial class MainViewModel
                 }
             }
         }
-        catch (JsonException) { }
+        catch (JsonException ex)
+        {
+            // Fix Issue #2: log error and reset pending state so UI doesn't hang forever
+            DiagnosticLogger.Log("CONTROL_ANSWER_JSON_ERROR", ex.Message);
+            // Fill remaining answers with the raw text so the count threshold is met
+            // and the response gets sent rather than leaving the UI stuck
+            var remaining = _pendingQuestionCount - _pendingQuestionAnswers.Count;
+            for (var i = 0; i < remaining; i++)
+                _pendingQuestionAnswers.Add(("unknown", answer));
+        }
 
         if (_pendingQuestionAnswers.Count >= _pendingQuestionCount)
         {
             // All answers collected — disable any remaining buttons and send control_response
             ClearQuestionDisplays();
 
+            // FIX CRITICAL #2: use question text as key (CLI protocol requires it for AI correlation),
+            // but append disambiguator on collision to avoid data loss with duplicate questions
             var answersDict = new Dictionary<string, string>();
-            foreach (var (q, a) in _pendingQuestionAnswers)
-                answersDict[q] = a;
+            for (var i = 0; i < _pendingQuestionAnswers.Count; i++)
+            {
+                var key = _pendingQuestionAnswers[i].question;
+                if (answersDict.ContainsKey(key))
+                    key = $"{key} ({i + 1})";
+                answersDict[key] = _pendingQuestionAnswers[i].answer;
+            }
 
             // Build updatedInput JSON: { "questions": [...original...], "answers": {...} }
             var questionsJson = "[]";

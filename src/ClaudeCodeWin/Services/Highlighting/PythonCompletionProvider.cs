@@ -166,6 +166,8 @@ public class PythonCompletionProvider : ICompletionProvider
     private static List<CompletionItem> BuildKeywordItems()
     {
         var allKeywords = new HashSet<string>(PythonTokenizer.Keywords);
+        // BUG FIX: ControlKeywords (break, continue, return, etc.) were missing from completions
+        allKeywords.UnionWith(PythonTokenizer.ControlKeywords);
         allKeywords.UnionWith(PythonTokenizer.TypeKeywords);
         allKeywords.UnionWith(PythonTokenizer.LiteralKeywords);
 

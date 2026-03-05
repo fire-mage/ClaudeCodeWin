@@ -94,6 +94,18 @@ public partial class MainViewModel
         _orchestratorService = new TeamOrchestratorService(_backlogService, _gitService);
         _orchestratorService.TeamNotesService = _teamNotesService;
         _orchestratorService.Configure(_cliService.ClaudeExePath, WorkingDirectory, _settings);
+        _orchestratorService.OnPhaseCompleted += async (_, _, _) =>
+        {
+            try
+            {
+                var dir = WorkingDirectory;
+                if (string.IsNullOrEmpty(dir)) return;
+                var result = await Task.Run(() => _gitService.GetStatus(dir));
+                if (WorkingDirectory == dir)
+                    System.Windows.Application.Current?.Dispatcher.BeginInvoke(() => ApplyGitStatus(result));
+            }
+            catch { /* async void — swallow to prevent app crash */ }
+        };
         _orchestratorService.StartReady();
 
         _planReviewerService = new PlanReviewerService();

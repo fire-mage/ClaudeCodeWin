@@ -114,6 +114,7 @@ public partial class MainViewModel : ViewModelBase
     private string? _pendingConflictRequestId;
     private string? _pendingConflictToolUseId;
     private System.Windows.Threading.DispatcherTimer? _conflictBannerClearTimer;
+    private System.Windows.Threading.DispatcherTimer? _gitRefreshTimer;
 
     // Track project roots already registered this session (avoid re-registering)
     private readonly HashSet<string> _registeredProjectRoots =
@@ -535,7 +536,51 @@ public partial class MainViewModel : ViewModelBase
             if (p is not string answer) return;
 
             if (_pendingControlRequestId is not null)
+            {
+                // Fix WARNING #1: For multi-select, toggle option selection instead of sending answer.
+                // The answer is only sent when user clicks "Confirm selection".
+                // Find the correct question by scanning for an unanswered multi-select with matching option.
+                if (!answer.StartsWith("__confirm_multiselect__"))
+                {
+                    var msMsg = _pendingQuestionMessages.FirstOrDefault(m =>
+                        m.QuestionDisplay is { MultiSelect: true, IsAnswered: false }
+                        && m.QuestionDisplay.Options.Any(o => o.Label == answer));
+                    if (msMsg?.QuestionDisplay is { } display)
+                    {
+                        var option = display.Options.FirstOrDefault(o => o.Label == answer);
+                        if (option is not null)
+                            option.IsSelected = !option.IsSelected;
+                        return;
+                    }
+                }
+
+                // For multi-select confirm, parse target question index from command parameter
+                // (format: "__confirm_multiselect__:N") to confirm the correct question.
+                if (answer.StartsWith("__confirm_multiselect__"))
+                {
+                    // Fix Issue #1: require explicit ":N" suffix — without it we'd default to index 0
+                    // and silently confirm the wrong question
+                    var colonPos = answer.IndexOf(':');
+                    if (colonPos < 0) return;
+                    if (!int.TryParse(answer.AsSpan(colonPos + 1), out var confirmIdx) || confirmIdx < 0)
+                        return;
+
+                    if (confirmIdx < _pendingQuestionMessages.Count
+                        && _pendingQuestionMessages[confirmIdx]?.QuestionDisplay is { MultiSelect: true } msDisplay)
+                    {
+                        var selected = msDisplay.Options.Where(o => o.IsSelected).Select(o => o.Label).ToList();
+                        if (selected.Count == 0) return;
+                        answer = string.Join(", ", selected);
+                    }
+                    else
+                    {
+                        // confirmIdx doesn't match a valid multi-select question — ignore
+                        return;
+                    }
+                }
+
                 HandleControlAnswer(answer);
+            }
         });
         SwitchToOpusCommand = new RelayCommand(SwitchToOpus);
         DismissRateLimitCommand = new RelayCommand(() => ShowRateLimitBanner = false);
@@ -657,6 +702,7 @@ public partial class MainViewModel : ViewModelBase
         {
             _registeredProjectRoots.Add(Path.GetFullPath(settings.WorkingDirectory));
             RefreshGitStatus();
+            StartGitRefreshTimer();
             UpdateExplorerRoot();
             _ = Task.Run(() => RefreshAutocompleteIndex());
             _ = Task.Run(() => _projectRegistry.RegisterProject(settings.WorkingDirectory, _gitService));
@@ -686,6 +732,8 @@ public partial class MainViewModel : ViewModelBase
         CancelReview();
         _conflictBannerClearTimer?.Stop();
         _conflictBannerClearTimer = null;
+        _gitRefreshTimer?.Stop();
+        _gitRefreshTimer = null;
         _conflictPauseCts?.Cancel();
         _conflictPauseCts?.Dispose();
         _conflictPauseCts = null;
@@ -694,8 +742,12 @@ public partial class MainViewModel : ViewModelBase
         _bgTaskTimer?.Stop();
         FinalizeActions.StopTaskSuggestionTimer();
         Notepad?.Shutdown();
-        Team.Dispose();
-        Explorer.Dispose();
+        // BUG FIX: Team/Explorer are null! fields set in InitializeSubTabs — guard against
+        // partial construction if the constructor threw before InitializeSubTabs completed
+        // Fix: dispose MessageViewModels to stop leaked DispatcherTimers
+        _messageAssembler.DisposeAllMessages();
+        Team?.Dispose();
+        Explorer?.Dispose();
     }
 }
 

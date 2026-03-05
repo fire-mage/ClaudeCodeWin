@@ -687,10 +687,9 @@ public class TeamOrchestratorService : IDisposable
             session.FeatureId, session.PhaseId, PhaseStatus.Failed,
             errorMessage: error);
 
-        // Return feature to backlog (PlanApproved) with error info
+        // Record error but keep feature InProgress so remaining phases can run
         _backlogService.ModifyFeature(session.FeatureId, f =>
         {
-            f.Status = FeatureStatus.PlanApproved;
             f.ErrorSummary = $"Dev failed: {error}";
             f.ErrorDetails = TruncateErrorDetails(session.DevResponse.ToString());
         });
@@ -851,22 +850,21 @@ public class TeamOrchestratorService : IDisposable
 
         if (_reviewAttempt >= _maxReviewRetries)
         {
-            RaiseLog($"Phase [{session.PhaseTitle}] failed review after {_reviewAttempt} retries.");
+            RaiseLog($"Phase [{session.PhaseTitle}] reached maximum re-review limit ({_reviewAttempt}).");
 
             _backlogService.MarkPhaseStatus(
-                session.FeatureId, session.PhaseId, PhaseStatus.Failed,
-                errorMessage: $"Review failed after {_reviewAttempt} retries");
+                session.FeatureId, session.PhaseId, PhaseStatus.MaxReviewReached,
+                errorMessage: $"Maximum re-review reached after {_reviewAttempt} rounds");
 
-            // Return feature to backlog with error info
+            // Record info but keep feature InProgress so remaining phases can run
             _backlogService.ModifyFeature(session.FeatureId, f =>
             {
-                f.Status = FeatureStatus.PlanApproved;
-                f.ErrorSummary = $"Review failed after {_reviewAttempt} retries";
+                f.ErrorSummary = $"Maximum re-review reached after {_reviewAttempt} rounds";
                 f.ErrorDetails = TruncateErrorDetails(reviewText);
             });
 
             SaveSessionHistory(session);
-            RaisePhaseCompleted(session.FeatureId, session.PhaseId, PhaseStatus.Failed);
+            RaisePhaseCompleted(session.FeatureId, session.PhaseId, PhaseStatus.MaxReviewReached);
 
             CleanupSessionLocked();
             AfterPhaseEndedLocked();
@@ -1168,10 +1166,9 @@ public class TeamOrchestratorService : IDisposable
             _backlogService.MarkPhaseStatus(session.FeatureId, session.PhaseId,
                 PhaseStatus.Failed, errorMessage: $"Dev failed: {reason}");
 
-            // Return feature to backlog with error info
+            // Record error but keep feature InProgress so remaining phases can run
             _backlogService.ModifyFeature(session.FeatureId, f =>
             {
-                f.Status = FeatureStatus.PlanApproved;
                 f.ErrorSummary = $"Dev failed: {reason} after {_maxSessionRetries} retries";
                 f.ErrorDetails = TruncateErrorDetails(session.DevResponse.ToString());
             });

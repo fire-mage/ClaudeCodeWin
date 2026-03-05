@@ -22,7 +22,9 @@ public class ProjectReviewService
     public event Action<string>? OnCompleted;    // featureId when done
     public event Action<string>? OnError;        // error message
 
-    public bool IsRunning { get; private set; }
+    // Fix: volatile — read from UI thread, written from CLI callback threads
+    private volatile bool _isRunning;
+    public bool IsRunning => _isRunning;
 
     public ProjectReviewService(BacklogService backlogService)
     {
@@ -49,8 +51,8 @@ public class ProjectReviewService
     {
         lock (_lock)
         {
-            if (IsRunning) return;
-            IsRunning = true;
+            if (_isRunning) return;
+            _isRunning = true;
         }
 
         var cli = new ClaudeCliService
@@ -95,7 +97,7 @@ public class ProjectReviewService
             }
             finally
             {
-                lock (_lock) { IsRunning = false; }
+                lock (_lock) { _isRunning = false; }
             }
         };
 
@@ -106,7 +108,7 @@ public class ProjectReviewService
             lock (_lock)
             {
                 _discoveryCli = null;
-                IsRunning = false;
+                _isRunning = false;
             }
             OnError?.Invoke($"Discovery CLI error: {error}");
         };
@@ -130,7 +132,7 @@ public class ProjectReviewService
             if (cli == null) return;
             _cancelled = true; // prevent callbacks from double-firing
             _discoveryCli = null;
-            IsRunning = false;
+            _isRunning = false;
         }
         cli.StopSession();
         OnError?.Invoke("Full Project Review was cancelled.");

@@ -150,19 +150,32 @@ public partial class MainWindow : Window
         });
     }
 
+    // Fix: unsubscribe old tab's event handlers to prevent accumulation (memory leak)
+    private System.ComponentModel.PropertyChangedEventHandler? _finalizePropertyHandler;
+
     private void SubscribeToActiveTab()
     {
         var tab = TabHost.ActiveTab;
         if (tab is null || tab == _subscribedTab) return;
 
+        // Unsubscribe from previous tab
+        if (_subscribedTab is not null && _finalizePropertyHandler is not null)
+        {
+            _subscribedTab.FinalizeActions.PropertyChanged -= _finalizePropertyHandler;
+            // Fix #5: intentionally clear — old tab shouldn't animate while not visible;
+            // switching back re-subscribes via this method
+            _subscribedTab.FinalizeActions.OnFinalizeCollapse = null;
+        }
+
         _subscribedTab = tab;
 
         // Finalize Actions: blink animation + collapse animation
-        tab.FinalizeActions.PropertyChanged += (_, e) =>
+        _finalizePropertyHandler = (_, e) =>
         {
             if (e.PropertyName == nameof(FinalizeActionsViewModel.FinalizeLabelBlinking) && tab.FinalizeActions.FinalizeLabelBlinking)
                 Dispatcher.BeginInvoke(StartFinalizeLabelBlink);
         };
+        tab.FinalizeActions.PropertyChanged += _finalizePropertyHandler;
         tab.FinalizeActions.OnFinalizeCollapse = () => Dispatcher.BeginInvoke(AnimateFinalizeCollapse);
         // Auto-scroll is handled by ChatControl internally via Messages DependencyProperty
     }
@@ -317,6 +330,16 @@ public partial class MainWindow : Window
             _settings.ProjectTabPanelWidth = ProjectTabColumn.ActualWidth;
 
         _settingsService.Save(_settings);
+
+        // BUG FIX: clear OnFinalizeCollapse delegate on last subscribed tab to prevent
+        // stale Dispatcher.BeginInvoke reference after window is destroyed
+        if (_subscribedTab is not null)
+        {
+            if (_finalizePropertyHandler is not null)
+                _subscribedTab.FinalizeActions.PropertyChanged -= _finalizePropertyHandler;
+            _subscribedTab.FinalizeActions.OnFinalizeCollapse = null;
+            _subscribedTab = null;
+        }
 
         // Dispose all tabs (kill CLI processes)
         TabHost.DisposeAll();
@@ -566,9 +589,10 @@ public partial class MainWindow : Window
         _dragEnterCount = 0;
         DragDropOverlay.Visibility = Visibility.Collapsed;
 
-        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        // Fix: GetData can return null even when GetDataPresent is true (e.g. clipboard cleared mid-drop)
+        if (e.Data.GetDataPresent(DataFormats.FileDrop)
+            && e.Data.GetData(DataFormats.FileDrop) is string[] files)
         {
-            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
             foreach (var file in files)
             {
                 ViewModel.AddAttachment(new FileAttachment
@@ -759,11 +783,12 @@ public partial class MainWindow : Window
         InsertAutocomplete();
     }
 
+    // Fix: was checking Window.DataContext (TabHostViewModel) instead of element.DataContext (MainViewModel)
     private void ModelIndicator_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (sender is FrameworkElement element
             && element.ContextMenu is not null
-            && DataContext is ClaudeCodeWin.ViewModels.MainViewModel vm
+            && element.DataContext is ClaudeCodeWin.ViewModels.MainViewModel vm
             && vm.CanSwitchToOpus)
         {
             element.ContextMenu.PlacementTarget = element;

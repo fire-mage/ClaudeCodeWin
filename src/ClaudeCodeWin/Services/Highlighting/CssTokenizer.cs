@@ -39,6 +39,10 @@ public class CssTokenizer : ILanguageTokenizer
     /// <summary>Tokenize CSS text with a base offset (for embedding in HTML).</summary>
     public List<SyntaxToken> TokenizeBlock(string text, int offset)
     {
+        // Bug fix: missing null/empty check caused NullReferenceException
+        if (string.IsNullOrEmpty(text))
+            return [];
+
         var tokens = new List<SyntaxToken>(text.Length / 6);
         int i = 0;
         int len = text.Length;

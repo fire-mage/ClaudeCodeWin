@@ -213,6 +213,30 @@ public class ProjectRegistryService
         return null;
     }
 
+    // FIX: Search only 1 level deep instead of full recursive scan to avoid perf issues
+    private static readonly HashSet<string> SkipDirs = new(StringComparer.OrdinalIgnoreCase)
+        { "node_modules", ".git", "bin", "obj", ".vs", "vendor", "__pycache__", "target" };
+
+    private static bool SafeShallowSearch(string root, string pattern)
+    {
+        try
+        {
+            foreach (var dir in Directory.EnumerateDirectories(root))
+            {
+                var dirName = Path.GetFileName(dir);
+                if (SkipDirs.Contains(dirName)) continue;
+                try
+                {
+                    if (Directory.EnumerateFiles(dir, pattern, SearchOption.TopDirectoryOnly).Any())
+                        return true;
+                }
+                catch { }
+            }
+        }
+        catch { }
+        return false;
+    }
+
     private static string? DetectGitRemote(string folderPath, GitService gitService)
     {
         var remote = gitService.RunGit("config --get remote.origin.url", folderPath);
@@ -224,8 +248,10 @@ public class ProjectRegistryService
         var markers = new List<string>();
 
         bool Has(string file) => File.Exists(Path.Combine(folderPath, file));
+        // FIX: Was SearchOption.AllDirectories — hangs on large repos with node_modules/.git etc.
         bool HasPattern(string pattern) =>
-            Directory.EnumerateFiles(folderPath, pattern, SearchOption.AllDirectories).Any();
+            Directory.EnumerateFiles(folderPath, pattern, SearchOption.TopDirectoryOnly).Any()
+            || SafeShallowSearch(folderPath, pattern);
 
         // .NET
         if (HasPattern("*.csproj") || HasPattern("*.sln"))

@@ -161,6 +161,8 @@ public class SqlCompletionProvider : ICompletionProvider
     private static List<CompletionItem> BuildKeywordItems()
     {
         var allKeywords = new HashSet<string>(SqlTokenizer.Keywords, StringComparer.OrdinalIgnoreCase);
+        // BUG FIX: ControlKeywords (BEGIN, END, IF, etc.) were missing from completions
+        allKeywords.UnionWith(SqlTokenizer.ControlKeywords);
         allKeywords.UnionWith(SqlTokenizer.TypeKeywords);
         allKeywords.UnionWith(SqlTokenizer.LiteralKeywords);
 

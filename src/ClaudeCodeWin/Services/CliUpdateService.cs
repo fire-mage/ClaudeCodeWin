@@ -22,11 +22,17 @@ public class CliUpdateService
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "ClaudeCodeWin", "updates", "cli-rollback.txt");
 
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    // FIX (WARNING #2): PooledConnectionLifetime forces periodic DNS re-resolution.
+    private static readonly HttpClient Http = new(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10)
+    })
+    { Timeout = TimeSpan.FromSeconds(15) };
     private static readonly Regex VersionRegex = new(@"(\d+\.\d+\.\d+)", RegexOptions.Compiled);
 
     private Timer? _timer;
-    private bool _isChecking;
+    // Fix: use int with Interlocked for thread-safe check (timer callbacks run on threadpool)
+    private int _isChecking;
 
     public string? CurrentCliVersion { get; private set; }
     public string? ExePath { get; set; }
@@ -59,7 +65,12 @@ public class CliUpdateService
             using var process = new Process { StartInfo = psi };
             process.Start();
 
+            // Fix: drain stderr async to prevent deadlock when stderr buffer fills
+            // (same pattern as HealthCheckService.GetVersionAsync)
+            var stderrTask = process.StandardError.ReadToEndAsync();
             var output = await process.StandardOutput.ReadToEndAsync();
+            try { await stderrTask; } catch { }
+
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             await process.WaitForExitAsync(cts.Token);
 
@@ -81,8 +92,7 @@ public class CliUpdateService
     /// </summary>
     public async Task<CliVersionInfo?> CheckForUpdateAsync()
     {
-        if (_isChecking) return null;
-        _isChecking = true;
+        if (Interlocked.CompareExchange(ref _isChecking, 1, 0) != 0) return null;
         try
         {
             // Ensure we know the current version
@@ -116,7 +126,7 @@ public class CliUpdateService
         }
         finally
         {
-            _isChecking = false;
+            Interlocked.Exchange(ref _isChecking, 0);
         }
     }
 
@@ -155,6 +165,9 @@ public class CliUpdateService
                 return;
             }
 
+            // Fix: save old version before update, since GetCurrentVersionAsync overwrites CurrentCliVersion
+            var previousVersion = CurrentCliVersion; // nullable — null means version was unknown
+
             // 2. Backup
             OnCliUpdateProgress?.Invoke("Backing up current CLI...");
             if (!BackupCurrentCli())
@@ -190,8 +203,10 @@ public class CliUpdateService
                 return;
             }
 
-            // Accept any newer version (installer may install a different version than expected)
-            if (!UpdateService.IsNewerVersion(newVersion, CurrentCliVersion ?? "0.0.0")
+            // Fix: compare against previousVersion instead of CurrentCliVersion (which was already overwritten).
+            // When previousVersion is null (was unknown), skip the "is newer" check — rely on expected version match.
+            if (previousVersion is not null
+                && !UpdateService.IsNewerVersion(newVersion, previousVersion)
                 && newVersion != expectedVersion)
             {
                 OnCliUpdateProgress?.Invoke($"Version mismatch: expected {expectedVersion}, got {newVersion}. Rolling back...");

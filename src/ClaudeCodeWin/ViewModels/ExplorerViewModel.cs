@@ -12,6 +12,9 @@ public class ExplorerViewModel : ViewModelBase, IDisposable
     private FileSystemWatcher? _watcher;
     private string _rootPath = "";
     private FileNode? _selectedNode;
+    // FIX: debounce timer must be a field with lock to avoid race condition from concurrent FSW events
+    private System.Timers.Timer? _debounceTimer;
+    private readonly object _debounceLock = new();
 
     public ObservableCollection<FileNode> RootNodes { get; } = [];
 
@@ -110,24 +113,27 @@ public class ExplorerViewModel : ViewModelBase, IDisposable
                 EnableRaisingEvents = true
             };
 
-            // Debounce: collect changes and refresh after a short delay
-            System.Timers.Timer? debounce = null;
-
+            // FIX: synchronized debounce to prevent race condition from concurrent threadpool callbacks
             void OnChanged(object s, FileSystemEventArgs e)
             {
-                debounce?.Stop();
-                debounce?.Dispose();
-                debounce = new System.Timers.Timer(500) { AutoReset = false };
-                debounce.Elapsed += (_, _) =>
+                lock (_debounceLock)
                 {
-                    debounce.Dispose();
-                    debounce = null;
-                    // Only refresh the affected parent node instead of the whole tree
+                    _debounceTimer?.Stop();
+                    _debounceTimer?.Dispose();
                     var dir = Path.GetDirectoryName(e.FullPath);
-                    if (dir != null)
-                        RunOnUI(() => RefreshNode(dir));
-                };
-                debounce.Start();
+                    _debounceTimer = new System.Timers.Timer(500) { AutoReset = false };
+                    _debounceTimer.Elapsed += (_, _) =>
+                    {
+                        lock (_debounceLock)
+                        {
+                            _debounceTimer?.Dispose();
+                            _debounceTimer = null;
+                        }
+                        if (dir != null)
+                            RunOnUI(() => RefreshNode(dir));
+                    };
+                    _debounceTimer.Start();
+                }
             }
 
             _watcher.Created += OnChanged;
@@ -183,6 +189,16 @@ public class ExplorerViewModel : ViewModelBase, IDisposable
         node.IsExpanded = false;
     }
 
+    // FIX: validate that user-provided name doesn't escape the parent directory (path traversal)
+    private static bool IsValidFileName(string name, string parentPath)
+    {
+        if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            return false;
+        var combined = Path.GetFullPath(Path.Combine(parentPath, name));
+        return combined.StartsWith(Path.GetFullPath(parentPath) + Path.DirectorySeparatorChar,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     private void CreateNewFile()
     {
         var parentPath = GetSelectedDirectory();
@@ -190,6 +206,13 @@ public class ExplorerViewModel : ViewModelBase, IDisposable
 
         var name = PromptForName("New File", "Enter file name:");
         if (string.IsNullOrWhiteSpace(name)) return;
+
+        // FIX: prevent path traversal via names like "..\secret.txt"
+        if (!IsValidFileName(name, parentPath))
+        {
+            MessageBox.Show("Invalid file name.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
 
         var filePath = Path.Combine(parentPath, name);
         if (File.Exists(filePath))
@@ -217,6 +240,13 @@ public class ExplorerViewModel : ViewModelBase, IDisposable
 
         var name = PromptForName("New Folder", "Enter folder name:");
         if (string.IsNullOrWhiteSpace(name)) return;
+
+        // FIX: prevent path traversal
+        if (!IsValidFileName(name, parentPath))
+        {
+            MessageBox.Show("Invalid folder name.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
 
         var folderPath = Path.Combine(parentPath, name);
         if (Directory.Exists(folderPath))
@@ -273,6 +303,13 @@ public class ExplorerViewModel : ViewModelBase, IDisposable
 
         var parentDir = Path.GetDirectoryName(SelectedNode.FullPath);
         if (parentDir == null) return;
+
+        // FIX: prevent path traversal via rename
+        if (!IsValidFileName(newName, parentDir))
+        {
+            MessageBox.Show("Invalid name.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
 
         var newPath = Path.Combine(parentDir, newName);
 
@@ -390,5 +427,10 @@ public class ExplorerViewModel : ViewModelBase, IDisposable
     {
         _watcher?.Dispose();
         _watcher = null;
+        lock (_debounceLock)
+        {
+            _debounceTimer?.Dispose();
+            _debounceTimer = null;
+        }
     }
 }

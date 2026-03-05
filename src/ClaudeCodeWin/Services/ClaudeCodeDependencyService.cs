@@ -386,10 +386,10 @@ public class ClaudeCodeDependencyService
     /// <summary>
     /// Check if Git for Windows is installed (system PATH).
     /// </summary>
-    public bool IsGitInstalled()
+    public async Task<bool> IsGitInstalledAsync()
     {
         // Try PATH first, then known install locations (PATH may not be refreshed after install)
-        return TryRunExe("git", "--version") || FindGitExe() is not null;
+        return await TryRunExeAsync("git", "--version") || FindGitExe() is not null;
     }
 
     /// <summary>
@@ -549,21 +549,21 @@ public class ClaudeCodeDependencyService
     /// <summary>
     /// Check if GitHub CLI is installed (local portable or system-wide).
     /// </summary>
-    public bool IsGhInstalled()
+    public async Task<bool> IsGhInstalledAsync()
     {
-        if (File.Exists(GhCliExe) && TryRunExe(GhCliExe, "--version"))
+        if (File.Exists(GhCliExe) && await TryRunExeAsync(GhCliExe, "--version"))
             return true;
-        return TryRunExe("gh", "--version");
+        return await TryRunExeAsync("gh", "--version");
     }
 
     /// <summary>
     /// Get the path to gh executable (local portable or system).
     /// </summary>
-    public string? ResolveGhExePath()
+    public async Task<string?> ResolveGhExePathAsync()
     {
         if (File.Exists(GhCliExe))
             return GhCliExe;
-        if (TryRunExe("gh", "--version"))
+        if (await TryRunExeAsync("gh", "--version"))
             return "gh";
         return null;
     }
@@ -655,7 +655,7 @@ public class ClaudeCodeDependencyService
             try { File.Delete(tempZip); } catch { }
             try { if (Directory.Exists(tempExtract)) Directory.Delete(tempExtract, true); } catch { }
 
-            if (File.Exists(GhCliExe) && TryRunExe(GhCliExe, "--version"))
+            if (File.Exists(GhCliExe) && await TryRunExeAsync(GhCliExe, "--version"))
             {
                 onProgress?.Invoke("GitHub CLI installed successfully!");
                 return true;
@@ -680,7 +680,9 @@ public class ClaudeCodeDependencyService
 
     // ── Helpers ──────────────────────────────────────────────────────
 
-    private static bool TryRunExe(string exePath, string arguments)
+    // FIX (WARNING #3): Made async to avoid .Wait() blocking the UI thread.
+    // Previously used sync .Wait(5000) which could deadlock when called from UI context.
+    private static async Task<bool> TryRunExeAsync(string exePath, string arguments)
     {
         try
         {
@@ -695,7 +697,16 @@ public class ClaudeCodeDependencyService
             };
             using var process = Process.Start(psi);
             if (process is null) return false;
-            process.WaitForExit(5000);
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            await process.StandardOutput.ReadToEndAsync();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try { await stderrTask.WaitAsync(cts.Token); } catch { }
+            try { await process.WaitForExitAsync(cts.Token); }
+            catch (OperationCanceledException)
+            {
+                try { process.Kill(true); } catch { }
+                return false;
+            }
             return process.ExitCode == 0;
         }
         catch
@@ -720,6 +731,13 @@ public class ClaudeCodeDependencyService
 
             using var process = new Process { StartInfo = psi };
             process.Start();
+
+            // FIX: Drain both streams to prevent deadlock and 10s timeout stalls.
+            // FIX (WARNING #1): Capture stdout — discarding it loses version data if ever needed.
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            // stdout captured for future use (version parsing); currently only ExitCode is checked
+            var stdout = await process.StandardOutput.ReadToEndAsync();
+            try { await stderrTask; } catch { }
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             try

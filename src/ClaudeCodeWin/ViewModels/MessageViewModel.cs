@@ -8,7 +8,8 @@ using ClaudeCodeWin.Models;
 
 namespace ClaudeCodeWin.ViewModels;
 
-public class MessageViewModel : ViewModelBase
+// Fix: DispatcherTimer was never cleaned up, causing memory leaks — added IDisposable
+public class MessageViewModel : ViewModelBase, IDisposable
 {
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" };
@@ -27,6 +28,19 @@ public class MessageViewModel : ViewModelBase
     ];
 
     private string _text = string.Empty;
+    // Fix: track last scanned text length to avoid O(n²) regex re-scanning during streaming
+    private int _lastImageScanLength;
+    // Fix WARNING #3: track previous text reference to detect full text replacement
+    private string? _lastScannedText;
+    // FIX (Issue 3): Instead of creating a new CTS per streaming delta (hundreds of allocations),
+    // use a single CTS for cancellation on dispose and a volatile flag + batched candidates
+    // with a debounce timer to coalesce rapid calls into a single File.Exists sweep.
+    // FIX (WARNING #4): nullable field — Dispose() sets it to null via Interlocked.Exchange
+    private System.Threading.CancellationTokenSource? _imageDetectionCts = new();
+    private readonly List<string> _pendingImageCandidates = [];
+    private System.Threading.Timer? _imageDetectionDebounce;
+    // FIX: volatile ensures cross-thread visibility for dispose check in FlushImageCandidates
+    private volatile bool _disposed;
     private bool _isStreaming;
     private bool _isThinking;
     private string _thinkingDurationText = ActivelyWorkingLabel;
@@ -77,15 +91,98 @@ public class MessageViewModel : ViewModelBase
 
     private void DetectImagePaths(string text)
     {
-        if (string.IsNullOrEmpty(text) || Role != MessageRole.Assistant) return;
+        if (_disposed || string.IsNullOrEmpty(text) || Role != MessageRole.Assistant) return;
 
-        foreach (Match match in FilePathRegex.Matches(text))
+        // Fix WARNING #3: Reset scan offset when text is replaced with different content
+        // (not just appended to). Detects shrinking and full replacement of equal/greater length
+        // by comparing a small window at the previous scan boundary (O(1) cost vs O(n) StartsWith).
+        if (text.Length < _lastImageScanLength)
         {
-            var path = match.Value;
-            if (File.Exists(path) && !InlineImages.Contains(path))
+            _lastImageScanLength = 0;
+        }
+        else if (_lastImageScanLength > 0 && !ReferenceEquals(text, _lastScannedText))
+        {
+            // Check 16 chars before the scan boundary — if they differ, text was replaced
+            var checkFrom = Math.Max(0, _lastImageScanLength - 16);
+            var checkLen = Math.Min(16, _lastImageScanLength - checkFrom);
+            if (_lastScannedText is not null
+                && checkFrom < _lastScannedText.Length
+                && string.CompareOrdinal(text, checkFrom, _lastScannedText, checkFrom, checkLen) != 0)
             {
-                InlineImages.Add(path);
-                OnPropertyChanged(nameof(HasInlineImages));
+                _lastImageScanLength = 0;
+            }
+        }
+        _lastScannedText = text;
+
+        // Only scan new text region to avoid O(n²) regex on every streaming delta.
+        var scanFrom = Math.Max(0, _lastImageScanLength - 260);
+        _lastImageScanLength = text.Length;
+
+        // Collect candidate paths (fast, no I/O) on UI thread
+        var hasNew = false;
+        lock (_pendingImageCandidates)
+        {
+            foreach (Match match in FilePathRegex.Matches(text, scanFrom))
+            {
+                var path = match.Value;
+                if (!InlineImages.Contains(path) && !_pendingImageCandidates.Contains(path))
+                {
+                    _pendingImageCandidates.Add(path);
+                    hasNew = true;
+                }
+            }
+        }
+
+        if (!hasNew) return;
+
+        // FIX: Debounce — reset timer on each call. After 150ms of no new deltas,
+        // fire a single background task to check all accumulated candidates.
+        // FIX: protect timer dispose/recreate with same lock as _pendingImageCandidates
+        // to prevent race between UI thread (here) and thread pool (FlushImageCandidates callback)
+        lock (_pendingImageCandidates)
+        {
+            _imageDetectionDebounce?.Dispose();
+            _imageDetectionDebounce = new System.Threading.Timer(_ => FlushImageCandidates(), null, 150, System.Threading.Timeout.Infinite);
+        }
+    }
+
+    private void FlushImageCandidates()
+    {
+        // FIX (WARNING #2): After Interlocked.Exchange in Dispose(), _imageDetectionCts may be null.
+        // Capture reference first; if null or disposed, bail out.
+        var cts = _imageDetectionCts;
+        if (cts is null) return;
+        CancellationToken token;
+        try { token = cts.Token; }
+        catch (ObjectDisposedException) { return; }
+
+        if (_disposed) return;
+
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null) return;
+
+        // Snapshot and clear candidates (timer fires on thread pool)
+        List<string> batch;
+        lock (_pendingImageCandidates)
+        {
+            if (_pendingImageCandidates.Count == 0) return;
+            batch = new List<string>(_pendingImageCandidates);
+            _pendingImageCandidates.Clear();
+        }
+        foreach (var path in batch)
+        {
+            if (token.IsCancellationRequested) return;
+            if (File.Exists(path))
+            {
+                dispatcher.BeginInvoke(() =>
+                {
+                    if (token.IsCancellationRequested) return;
+                    if (!InlineImages.Contains(path))
+                    {
+                        InlineImages.Add(path);
+                        OnPropertyChanged(nameof(HasInlineImages));
+                    }
+                });
             }
         }
     }
@@ -386,6 +483,30 @@ public class MessageViewModel : ViewModelBase
             OnPropertyChanged(nameof(HasToolUses));
             UpdateToolActivitySummary();
         };
+    }
+
+    public void Dispose()
+    {
+        // FIX: Guard against double-dispose (ClearMessages + MainViewModel.Dispose both call this)
+        if (_disposed) return;
+        _disposed = true;
+
+        GC.SuppressFinalize(this);
+
+        StopThinkingTimer();
+        _thinkingTimer = null;
+        // Fix SUGGESTION #1: Dispose debounce timer under the same lock used in DetectImagePaths,
+        // maintaining lock discipline in case either method is ever called off-thread.
+        lock (_pendingImageCandidates)
+        {
+            _imageDetectionDebounce?.Dispose();
+            _imageDetectionDebounce = null;
+        }
+        // FIX (WARNING #2): Use Interlocked.Exchange to atomically swap CTS to prevent race
+        // where FlushImageCandidates captures .Token between Cancel() and Dispose() calls.
+        var cts = Interlocked.Exchange(ref _imageDetectionCts, null);
+        try { cts?.Cancel(); } catch (ObjectDisposedException) { }
+        cts?.Dispose();
     }
 
     private void UpdateToolActivitySummary()

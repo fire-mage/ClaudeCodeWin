@@ -36,6 +36,9 @@ public class TeamViewModel : ViewModelBase, IDisposable
     private System.Windows.Threading.DispatcherTimer? _chatFlushTimer;
     private bool _chatBufferDirty;
 
+    // Fix: stored delegate for proper unsubscribe in Dispose (was anonymous lambda → memory leak)
+    private readonly Action _externalChangeHandler;
+
     // Rich team chat (structured messages for popup window)
     private readonly ChatMessageAssembler _teamChatAssembler;
     public ObservableCollection<MessageViewModel> TeamChatMessages { get; } = [];
@@ -209,11 +212,12 @@ public class TeamViewModel : ViewModelBase, IDisposable
         _settingsService = settingsService;
         _settings = settings;
 
-        _backlogService.OnExternalChange += () => RunOnUI(() =>
+        _externalChangeHandler = () => RunOnUI(() =>
         {
             Refresh();
             _orchestratorService.NotifyNewWork();
         });
+        _backlogService.OnExternalChange += _externalChangeHandler;
 
         _isOrchestratorStopped = orchestratorService.State == OrchestratorState.Stopped;
         _orchestratorStatusText = orchestratorService.State switch
@@ -477,7 +481,7 @@ public class TeamViewModel : ViewModelBase, IDisposable
                     f.ErrorDetails = null;
                     f.ReviewDismissed = false;
                     // Reset failed phases so they can be retried
-                    foreach (var phase in f.Phases.Where(ph => ph.Status == PhaseStatus.Failed))
+                    foreach (var phase in f.Phases.Where(ph => ph.Status is PhaseStatus.Failed or PhaseStatus.MaxReviewReached))
                     {
                         phase.Status = PhaseStatus.Pending;
                         phase.ErrorMessage = null;
@@ -913,9 +917,11 @@ public class TeamViewModel : ViewModelBase, IDisposable
             }
         }
 
-        // Mark the actively developing backlog item
+        // Fix: mark active developing on QueuedFeatures too — active feature has InProgress status
         var activeId = _orchestratorService.GetActiveFeatureId();
         foreach (var vm in BacklogFeatures)
+            vm.IsActiveDeveloping = vm.Id == activeId;
+        foreach (var vm in QueuedFeatures)
             vm.IsActiveDeveloping = vm.Id == activeId;
 
         UpdateCounts();
@@ -1000,13 +1006,13 @@ public class TeamViewModel : ViewModelBase, IDisposable
                 // Check if entire feature is done
                 var features = _backlogService.GetFeatures(_getProjectPath());
                 var feature = features.FirstOrDefault(f => f.Id == featureId);
-                if (feature?.Phases.All(p => p.Status == PhaseStatus.Done) == true)
+                if (feature?.Phases.All(p => p.Status is PhaseStatus.Done or PhaseStatus.Failed or PhaseStatus.MaxReviewReached) == true)
                 {
                     SystemSounds.Asterisk.Play();
                     _notificationService.NotifyIfInactive();
                 }
             }
-            else if (status == PhaseStatus.Failed)
+            else if (status is PhaseStatus.Failed or PhaseStatus.MaxReviewReached)
             {
                 _notificationService.NotifyIfInactive();
             }
@@ -1072,8 +1078,10 @@ public class TeamViewModel : ViewModelBase, IDisposable
                 OnPropertyChanged(nameof(HasActiveSession));
             }
 
-            // Update IsActiveDeveloping on backlog items
+            // Fix: update IsActiveDeveloping on both BacklogFeatures and QueuedFeatures
             foreach (var vm in BacklogFeatures)
+                vm.IsActiveDeveloping = vm.Id == featureId;
+            foreach (var vm in QueuedFeatures)
                 vm.IsActiveDeveloping = vm.Id == featureId;
         });
     }
@@ -1441,6 +1449,8 @@ public class TeamViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        _backlogService.OnExternalChange -= _externalChangeHandler;
+
         _plannerService.OnQuestionAsked -= HandlePlannerQuestion;
         _plannerService.OnPlanReady -= HandlePlanReady;
         _plannerService.OnPlannerError -= HandlePlannerError;

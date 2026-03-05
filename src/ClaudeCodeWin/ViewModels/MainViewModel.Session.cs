@@ -19,6 +19,7 @@ public partial class MainViewModel
         _registeredProjectRoots.Add(Path.GetFullPath(folder));
         LockProject?.Invoke(folder);
         RefreshGitStatus();
+        StartGitRefreshTimer();
         UpdateExplorerRoot();
         _ = Task.Run(() => RefreshAutocompleteIndex());
         _ = Task.Run(() => _projectRegistry.RegisterProject(folder, _gitService));
@@ -62,12 +63,12 @@ public partial class MainViewModel
         _settings.RecentFolders.Remove(folder);
         _settings.RecentFolders.Insert(0, folder);
 
-        // Keep max 10 recent folders
+        // Keep max 10 recent folders — trim each list independently to avoid
+        // IndexOutOfRange if they get out of sync
         while (RecentFolders.Count > 10)
-        {
             RecentFolders.RemoveAt(RecentFolders.Count - 1);
+        while (_settings.RecentFolders.Count > 10)
             _settings.RecentFolders.RemoveAt(_settings.RecentFolders.Count - 1);
-        }
 
         _settingsService.Save(_settings);
         ShowWelcome = false;
@@ -77,6 +78,7 @@ public partial class MainViewModel
         // Lock this project in the tab system
         LockProject?.Invoke(folder);
         RefreshGitStatus();
+        StartGitRefreshTimer();
         UpdateExplorerRoot();
 
         // Register project in registry
@@ -110,12 +112,16 @@ public partial class MainViewModel
         SaveChatHistory();
         _currentChatId = null;
 
-        Messages.Clear();
+        _messageAssembler.ClearMessages();
         MessageQueue.Clear();
         ChangedFiles.Clear();
         ClearBackgroundTasks();
         _cliService.ClearFileSnapshots();
-        _cliService.ResetSession();
+        // FIX (WARNING #3): ResetSessionAsync stops the process and nulls _sessionId.
+        // Null _sessionId synchronously to prevent BuildArguments from using a stale
+        // session ID if SendMessage is called before the async stop completes.
+        // The async stop itself is safe to fire-and-forget (has internal error handling).
+        _cliService.ResetSessionSync();
         ModelName = "";
         StatusText = "";
         ReviewStatusText = "";
@@ -166,9 +172,36 @@ public partial class MainViewModel
     }
 
 
+    private void StartGitRefreshTimer()
+    {
+        _gitRefreshTimer?.Stop();
+        _gitRefreshTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMinutes(5)
+        };
+        _gitRefreshTimer.Tick += async (_, _) =>
+        {
+            try
+            {
+                var dir = WorkingDirectory;
+                if (string.IsNullOrEmpty(dir)) return;
+                var result = await Task.Run(() => _gitService.GetStatus(dir));
+                if (WorkingDirectory == dir)
+                    ApplyGitStatus(result);
+            }
+            catch { /* async void — swallow to prevent app crash */ }
+        };
+        _gitRefreshTimer.Start();
+    }
+
     private void RefreshGitStatus()
     {
-        var (branch, dirtyCount, unpushedCount) = _gitService.GetStatus(WorkingDirectory);
+        ApplyGitStatus(_gitService.GetStatus(WorkingDirectory));
+    }
+
+    private void ApplyGitStatus((string? branch, int dirtyCount, int unpushedCount) result)
+    {
+        var (branch, dirtyCount, unpushedCount) = result;
         if (branch is null)
         {
             HasGitRepo = false;
@@ -258,7 +291,7 @@ public partial class MainViewModel
         if (IsProcessing)
             CancelProcessing();
 
-        Messages.Clear();
+        _messageAssembler.ClearMessages();
         MessageQueue.Clear();
 
         _currentChatId = entry.Id;
@@ -267,7 +300,9 @@ public partial class MainViewModel
         if (!string.IsNullOrEmpty(entry.SessionId))
             _cliService.RestoreSession(entry.SessionId);
         else
-            _cliService.ResetSession();
+            _cliService.ResetSessionAsync().ContinueWith(t =>
+                Services.DiagnosticLogger.Log("RESET_SESSION_ERROR", t.Exception?.InnerException?.Message ?? "unknown"),
+                TaskContinuationOptions.OnlyOnFaulted);
         _needsPreambleInjection = true;
         ResetTaskOutputSentFlags();
 
@@ -307,6 +342,9 @@ public partial class MainViewModel
         _cliService.WorkingDirectory = null;
         _settings.WorkingDirectory = null;
         _settingsService.Save(_settings);
+
+        _gitRefreshTimer?.Stop();
+        _gitRefreshTimer = null;
 
         ShowWelcome = false;
         ProjectPath = "";

@@ -40,7 +40,13 @@ public class UpdateService
     public static string SuccessMarkerPath => Path.Combine(UpdatesDir, "update-success.marker");
     public static string RollbackMarkerPath => Path.Combine(UpdatesDir, "update-rollback.txt");
 
-    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
+    // Fix: static HttpClient to prevent socket exhaustion, consistent with CcwApiService.
+    // FIX (WARNING #2): PooledConnectionLifetime forces periodic DNS re-resolution.
+    private static readonly HttpClient _http = new(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10)
+    })
+    { Timeout = TimeSpan.FromSeconds(30) };
     private System.Threading.Timer? _timer;
 
     public event Action<VersionInfo>? OnUpdateAvailable;
@@ -193,10 +199,16 @@ public class UpdateService
         var pid = Environment.ProcessId;
         var updatesDir = Path.GetDirectoryName(downloadedExePath)!;
         var cmdPath = Path.Combine(updatesDir, "update.cmd");
-        var backupExe = currentExe + ".bak";
-        var markerPath = SuccessMarkerPath;
-        var rollbackPath = RollbackMarkerPath;
-        var versionLabel = newVersion ?? "unknown";
+        // Fix: strip double-quotes from paths to prevent batch script breakout
+        // (Windows usernames with special chars like & are safe when paths are quoted,
+        // but embedded " would escape the quoting)
+        var backupExe = SanitizeBatchPath(currentExe + ".bak");
+        var markerPath = SanitizeBatchPath(SuccessMarkerPath);
+        var rollbackPath = SanitizeBatchPath(RollbackMarkerPath);
+        currentExe = SanitizeBatchPath(currentExe);
+        downloadedExePath = SanitizeBatchPath(downloadedExePath);
+        // Fix: sanitize versionLabel to prevent batch command injection from malicious version strings
+        var versionLabel = SanitizeVersionLabel(newVersion ?? "unknown");
 
         // Write update script with backup and rollback support
         var script = $"""
@@ -283,6 +295,21 @@ public class UpdateService
 
         Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown());
     }
+
+    /// <summary>
+    /// Strips batch metacharacters to prevent command injection in the update script.
+    /// </summary>
+    private static string SanitizeVersionLabel(string label)
+    {
+        // Only allow version-safe chars: digits, dots, hyphens, alphanumeric
+        return new string(label.Where(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_').ToArray());
+    }
+
+    /// <summary>
+    /// Removes double-quote characters from paths interpolated into batch scripts.
+    /// Paths are wrapped in "..." in the script; an embedded " would break out of quoting.
+    /// </summary>
+    private static string SanitizeBatchPath(string path) => path.Replace("\"", "");
 
     private static async Task<string> ComputeSha256Async(string filePath)
     {

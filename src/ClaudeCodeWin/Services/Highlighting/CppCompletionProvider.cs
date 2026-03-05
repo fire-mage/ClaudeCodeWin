@@ -161,6 +161,8 @@ public class CppCompletionProvider : ICompletionProvider
     private static List<CompletionItem> BuildKeywordItems()
     {
         var allKeywords = new HashSet<string>(CppTokenizer.Keywords);
+        // BUG FIX: ControlKeywords (break, continue, return, etc.) were missing from completions
+        allKeywords.UnionWith(CppTokenizer.ControlKeywords);
         allKeywords.UnionWith(CppTokenizer.TypeKeywords);
         allKeywords.UnionWith(CppTokenizer.LiteralKeywords);
 

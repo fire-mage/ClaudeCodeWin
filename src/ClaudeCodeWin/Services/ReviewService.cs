@@ -11,7 +11,10 @@ public class ReviewService
 {
     private ClaudeCliService? _reviewerCli;
     private readonly StringBuilder _responseBuilder = new();
-    private bool _isActive;
+    // BUG FIX: lock needed — Append/ToString called from CLI thread pool callbacks
+    private readonly object _builderLock = new();
+    // Fix: volatile — read/written from CLI callback threads and UI thread without lock
+    private volatile bool _isActive;
     private string? _claudeExePath;
     private string? _workingDirectory;
     private string? _modelOverride;
@@ -98,14 +101,15 @@ public class ReviewService
 
         textHandler = text =>
         {
-            _responseBuilder.Append(text);
+            lock (_builderLock) _responseBuilder.Append(text);
             OnTextDelta?.Invoke(text);
         };
 
         completedHandler = result =>
         {
             UnsubscribeAll();
-            var fullText = _responseBuilder.ToString();
+            string fullText;
+            lock (_builderLock) { fullText = _responseBuilder.ToString(); }
             var verdict = DetectVerdict(fullText);
             _isActive = false;
             OnReviewCompleted?.Invoke(fullText, verdict);

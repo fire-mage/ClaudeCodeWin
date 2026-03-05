@@ -19,10 +19,12 @@ public class McpRegistryService
 
     private static readonly string CachePath = Path.Combine(CacheDir, "registry-cache.json");
 
-    private static readonly HttpClient Http = new()
+    // FIX (WARNING #2): PooledConnectionLifetime forces periodic DNS re-resolution.
+    private static readonly HttpClient Http = new(new SocketsHttpHandler
     {
-        Timeout = TimeSpan.FromSeconds(15)
-    };
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10)
+    })
+    { Timeout = TimeSpan.FromSeconds(15) };
 
     // Allowed characters for shell slugs: alphanumeric, hyphen, underscore, dot
     private static readonly Regex SafeSlugRegex = new(@"^[\w.\-]+$", RegexOptions.Compiled);

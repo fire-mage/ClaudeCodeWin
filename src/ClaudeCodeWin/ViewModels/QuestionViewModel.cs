@@ -40,17 +40,46 @@ public class QuestionViewModel : ViewModelBase
         Options.Add(otherVm);
     }
 
+    // Fix: MultiSelect mode was broken — first click set IsAnswered=true, blocking further selections
+    private RelayCommand? _confirmMultiSelectCommand;
+    public RelayCommand ConfirmMultiSelectCommand => _confirmMultiSelectCommand ??= new RelayCommand(ConfirmMultiSelect);
+
     private void SelectOption(QuestionOptionViewModel option)
     {
         if (IsAnswered) return;
 
+        if (MultiSelect)
+        {
+            // Toggle selection; user must confirm with ConfirmMultiSelectCommand
+            option.IsSelected = !option.IsSelected;
+            return;
+        }
+
         IsAnswered = true;
         option.IsSelected = true;
 
+        // NOTE: "Other" sends a placeholder — the CLI interprets this as a free-text signal.
+        // Custom text collection would require a TextBox in the UI (not yet implemented).
         var answerText = option.Label == "Other"
             ? $"Other: (custom answer for \"{Header}\")"
             : option.Label;
 
+        OnAnswered?.Invoke(this, answerText);
+    }
+
+    private void ConfirmMultiSelect()
+    {
+        if (IsAnswered) return;
+
+        var selected = Options.Where(o => o.IsSelected).ToList();
+        if (selected.Count == 0) return;
+
+        IsAnswered = true;
+        // Fix: "Other" option needs same special-case handling as in single-select mode
+        var labels = selected.Select(o => o.Label == "Other"
+            ? $"Other: (custom answer for \"{Header}\")"
+            : o.Label);
+        var answerText = string.Join(", ", labels);
         OnAnswered?.Invoke(this, answerText);
     }
 }

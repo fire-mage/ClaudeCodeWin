@@ -204,13 +204,14 @@ public class PhpTokenizer : ILanguageTokenizer
             }
 
             // Single-quoted string
+            // FIX: cap unterminated strings at newline to prevent highlighting rest of file during live editing
             if (c == '\'')
             {
                 int start = i;
                 i++;
                 while (i < len && text[i] != '\'' && text[i] != '\n')
                 {
-                    if (text[i] == '\\' && i + 1 < len) i++;
+                    if (text[i] == '\\' && i + 1 < len && text[i + 1] != '\n') i++;
                     i++;
                 }
                 if (i < len && text[i] == '\'') i++;
@@ -219,13 +220,14 @@ public class PhpTokenizer : ILanguageTokenizer
             }
 
             // Double-quoted string (with variable interpolation — whole string as String token)
+            // FIX: cap unterminated strings at newline to prevent highlighting rest of file during live editing
             if (c == '"')
             {
                 int start = i;
                 i++;
                 while (i < len && text[i] != '"' && text[i] != '\n')
                 {
-                    if (text[i] == '\\' && i + 1 < len) i++;
+                    if (text[i] == '\\' && i + 1 < len && text[i + 1] != '\n') i++;
                     i++;
                 }
                 if (i < len && text[i] == '"') i++;

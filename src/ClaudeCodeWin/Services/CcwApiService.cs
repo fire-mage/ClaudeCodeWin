@@ -8,7 +8,14 @@ namespace ClaudeCodeWin.Services;
 public class CcwApiService
 {
     private const string BaseUrl = "https://admin.main.fish/api/ccw";
-    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
+    // Fix: static HttpClient to prevent socket exhaustion from per-instance creation.
+    // FIX (WARNING #2): PooledConnectionLifetime forces periodic DNS re-resolution,
+    // preventing stale DNS entries in long-running desktop apps.
+    private static readonly HttpClient _http = new(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10)
+    })
+    { Timeout = TimeSpan.FromSeconds(30) };
 
     public async Task<(bool success, string? error)> SubmitFeatureRequestAsync(string email, string description, string appVersion)
     {
