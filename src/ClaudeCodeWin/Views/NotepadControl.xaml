@@ -32,14 +32,6 @@
                     <Button Content="+ New" ToolTip="New Note"
                             Command="{Binding CreateNoteCommand}"
                             Style="{StaticResource ExplorerToolButton}"
-                            Padding="6,2" Margin="0,0,2,0"/>
-                    <Button Content="Rename" ToolTip="Rename Note (F2)"
-                            Command="{Binding RenameNoteCommand}"
-                            Style="{StaticResource ExplorerToolButton}"
-                            Padding="6,2" Margin="0,0,2,0"/>
-                    <Button Content="Delete" ToolTip="Delete Note"
-                            Command="{Binding DeleteNoteCommand}"
-                            Style="{StaticResource ExplorerToolButton}"
                             Padding="6,2"/>
                 </StackPanel>
             </Border>
@@ -80,6 +72,7 @@
                         <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
                         <Setter Property="Padding" Value="8,4"/>
                         <Setter Property="Cursor" Value="Hand"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                         <Setter Property="Template">
                             <Setter.Value>
                                 <ControlTemplate TargetType="ListBoxItem">
@@ -110,8 +103,58 @@
                 </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <TextBlock Text="{Binding}" FontSize="13"
-                                   FontFamily="Cascadia Code,Consolas,Courier New"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding}" FontSize="13"
+                                       FontFamily="Cascadia Code,Consolas,Courier New"
+                                       VerticalAlignment="Center"/>
+                            <Button x:Name="NoteMenuBtn" Grid.Column="1" Content="&#x22EE;" ToolTip="Actions"
+                                    FontSize="14" FontWeight="Bold"
+                                    Foreground="{StaticResource TextSecondaryBrush}"
+                                    Padding="6,0" Margin="4,0,0,0"
+                                    VerticalAlignment="Center" Cursor="Hand"
+                                    Click="NoteMenuButton_Click">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="MenuBd" Background="Transparent"
+                                                            Padding="{TemplateBinding Padding}"
+                                                            CornerRadius="3">
+                                                        <ContentPresenter HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="MenuBd" Property="Background"
+                                                                    Value="{StaticResource SurfaceLightBrush}"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                                <Button.ContextMenu>
+                                    <ContextMenu Background="{StaticResource SurfaceBrush}"
+                                                 BorderBrush="{StaticResource BorderBrush}"
+                                                 Foreground="{StaticResource TextBrush}">
+                                        <MenuItem Header="Rename (F2)" Click="NoteContextMenu_Rename"/>
+                                        <MenuItem Header="Delete" Click="NoteContextMenu_Delete"/>
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
+                        </Grid>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                <Setter TargetName="NoteMenuBtn" Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>

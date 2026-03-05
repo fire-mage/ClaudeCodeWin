@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Windows.Media;
 using ClaudeCodeWin.Infrastructure;
 
 namespace ClaudeCodeWin.Models;
@@ -48,6 +49,41 @@ public class FileNode : ViewModelBase
     public string Icon => IsDirectory
         ? (IsExpanded ? "\U0001F4C2" : "\U0001F4C1")
         : GetFileIcon();
+
+    public Brush NameColor => IsDirectory ? FolderBrush : GetFileBrush();
+
+    // File Explorer color scheme (VS Code inspired, frozen for perf)
+    private static readonly SolidColorBrush FolderBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xDC, 0xBD, 0x6F)));  // golden
+    private static readonly SolidColorBrush DefaultFileBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC)));
+    private static readonly SolidColorBrush CSharpBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x6A, 0x99, 0x55)));      // green
+    private static readonly SolidColorBrush XamlBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x56, 0x9C, 0xD6)));        // blue
+    private static readonly SolidColorBrush JsonBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xCE, 0x91, 0x78)));        // orange-brown
+    private static readonly SolidColorBrush MarkdownBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x56, 0x9C, 0xD6)));    // blue
+    private static readonly SolidColorBrush WebBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE4, 0x4D, 0x26)));         // red-orange
+    private static readonly SolidColorBrush ScriptBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x4E, 0xC9, 0xB0)));      // teal
+    private static readonly SolidColorBrush ConfigBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x8B, 0x94, 0x9E)));      // muted gray
+    private static readonly SolidColorBrush ImageFileBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xC5, 0x86, 0xC0)));      // purple
+    private static readonly SolidColorBrush PythonBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x4B, 0x8B, 0xBE)));      // python blue
+    private static readonly SolidColorBrush JsBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xCB, 0xB1, 0x48)));          // JS yellow
+
+    private static SolidColorBrush Freeze(SolidColorBrush b) { b.Freeze(); return b; }
+
+    private Brush GetFileBrush() => Extension switch
+    {
+        ".cs" => CSharpBrush,
+        ".xaml" => XamlBrush,
+        ".json" => JsonBrush,
+        ".xml" or ".csproj" or ".sln" or ".props" => ConfigBrush,
+        ".md" => MarkdownBrush,
+        ".png" or ".jpg" or ".jpeg" or ".gif" or ".ico" or ".svg" or ".bmp" => ImageFileBrush,
+        ".html" or ".htm" or ".css" => WebBrush,
+        ".js" or ".ts" or ".jsx" or ".tsx" => JsBrush,
+        ".py" => PythonBrush,
+        ".bat" or ".cmd" or ".ps1" or ".sh" => ScriptBrush,
+        ".yaml" or ".yml" => ConfigBrush,
+        ".gitignore" or ".editorconfig" => ConfigBrush,
+        _ => DefaultFileBrush
+    };
 
     private string GetFileIcon() => Extension switch
     {

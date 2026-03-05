@@ -1,4 +1,4 @@
-﻿<Window x:Class="ClaudeCodeWin.MainWindow"
+<Window x:Class="ClaudeCodeWin.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:converters="clr-namespace:ClaudeCodeWin.Converters"
@@ -1088,7 +1088,7 @@
                                Opacity="0.85"/>
                 </Border>
 
-                <!-- New Chat / History buttons + separator + Use Reviewer + Auto Plan toggles -->
+                <!-- New Chat / History buttons + separator + Use Reviewer + Auto-approve plans toggles -->
                 <Grid Grid.Row="4" Margin="16,4,16,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -1182,7 +1182,7 @@
                               IsChecked="{Binding AutoConfirmEnabled, Mode=TwoWay}"
                               Margin="8,0,0,0"
                               ToolTip="Automatically approve Claude's plan and start implementation. Auto-disables if a loop is detected.">
-                        <TextBlock Text="Auto Plan" FontSize="11"
+                        <TextBlock Text="Auto-approve plans" FontSize="11"
                                    Foreground="{StaticResource TextSecondaryBrush}"/>
                     </CheckBox>
                 </Grid>
