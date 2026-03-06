@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using ClaudeCodeWin.Infrastructure;
+using ClaudeCodeWin.Models;
 using ClaudeCodeWin.Services;
 
 namespace ClaudeCodeWin.ViewModels;
@@ -12,7 +14,7 @@ public class NotepadViewModel : ViewModelBase
     private readonly NotepadStorageService _storage;
     private readonly DispatcherTimer _autoSaveTimer;
     private string? _selectedNote;
-    private string _noteContent = "";
+    private List<NoteBlock> _noteBlocks = [NoteBlock.CreateText("")];
     private bool _isLoaded;
     private bool _isRenaming;
     private string _renameText = "";
@@ -33,15 +35,37 @@ public class NotepadViewModel : ViewModelBase
         }
     }
 
-    public string NoteContent
+    public List<NoteBlock> NoteBlocks
     {
-        get => _noteContent;
+        get => _noteBlocks;
         set
         {
-            if (SetProperty(ref _noteContent, value) && !_suppressAutoSave)
+            if (SetProperty(ref _noteBlocks, value))
+            {
+                OnPropertyChanged(nameof(NoteContent));
+                OnPropertyChanged(nameof(HasImages));
+                if (!_suppressAutoSave)
+                    StartAutoSaveTimer();
+            }
+        }
+    }
+
+    public string NoteContent
+    {
+        get => string.Join("\n", _noteBlocks.Where(b => b.Type == NoteBlockType.Text && b.Text != null).Select(b => b.Text));
+        set
+        {
+            // Guard: never overwrite rich blocks (text+images) from text-only setter
+            if (HasImages) return;
+            _noteBlocks = [NoteBlock.CreateText(value)];
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(NoteBlocks));
+            if (!_suppressAutoSave)
                 StartAutoSaveTimer();
         }
     }
+
+    public bool HasImages => _noteBlocks.Any(b => b.Type == NoteBlockType.Image);
 
     public bool IsRenaming
     {
@@ -62,16 +86,17 @@ public class NotepadViewModel : ViewModelBase
     public ICommand CommitRenameCommand { get; }
     public ICommand CancelRenameCommand { get; }
 
-    /// <summary>Flushes pending auto-save. Call on app shutdown or when navigating away.</summary>
+    public event Action? OnNoteSavedFromMessage;
+    public event Action<List<NoteBlock>>? OnSendNoteAsMessage;
+
     public void Shutdown()
     {
         if (_shutdownCalled) return;
         _shutdownCalled = true;
         FlushAutoSave();
-        _isLoaded = false; // Force re-scan on next activation (picks up external changes)
+        _isLoaded = false;
     }
 
-    /// <summary>Resets shutdown guard so Shutdown() works again on next deactivation.</summary>
     public void Activate() => _shutdownCalled = false;
 
     public NotepadViewModel(NotepadStorageService storage)
@@ -82,11 +107,18 @@ public class NotepadViewModel : ViewModelBase
         _autoSaveTimer.Tick += AutoSaveTimer_Tick;
 
         CreateNoteCommand = new RelayCommand(_ => CreateNote());
-        SaveNoteCommand = new RelayCommand(_ => SaveNote(), _ => !string.IsNullOrWhiteSpace(NoteContent));
+        SaveNoteCommand = new RelayCommand(_ => SaveNote(), _ => _selectedNote != null || HasContentToSave());
         DeleteNoteCommand = new RelayCommand(_ => DeleteNote(), _ => SelectedNote != null);
         RenameNoteCommand = new RelayCommand(_ => StartRename(), _ => SelectedNote != null);
         CommitRenameCommand = new RelayCommand(_ => CommitRename());
         CancelRenameCommand = new RelayCommand(_ => CancelRename());
+    }
+
+    private bool HasContentToSave()
+    {
+        return _noteBlocks.Any(b =>
+            (b.Type == NoteBlockType.Text && !string.IsNullOrWhiteSpace(b.Text)) ||
+            b.Type == NoteBlockType.Image);
     }
 
     public void LoadNotes()
@@ -101,7 +133,6 @@ public class NotepadViewModel : ViewModelBase
             foreach (var name in names)
                 Notes.Add(name);
 
-            // Restore previous selection if it still exists, otherwise pick first
             if (previousSelection != null && Notes.Contains(previousSelection))
                 SelectedNote = previousSelection;
             else if (Notes.Count > 0)
@@ -112,34 +143,130 @@ public class NotepadViewModel : ViewModelBase
         catch (Exception ex)
         {
             DiagnosticLogger.Log("NOTEPAD_LOAD_ERROR", ex.Message);
-            // _isLoaded stays false — allows retry on next tab activation
         }
     }
+
+    public void AddNoteFromMessage(string? text, List<string>? imagePaths)
+    {
+        try
+        {
+            var blocks = new List<NoteBlock>();
+
+            if (!string.IsNullOrEmpty(text))
+                blocks.Add(NoteBlock.CreateText(text));
+
+            if (imagePaths != null)
+            {
+                foreach (var imgPath in imagePaths)
+                {
+                    if (File.Exists(imgPath))
+                    {
+                        var cached = _storage.CacheImage(imgPath);
+                        blocks.Add(NoteBlock.CreateImage(cached));
+                    }
+                }
+            }
+
+            if (blocks.Count == 0) return;
+
+            SaveBlocksAsNewNote(blocks);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogger.Log("NOTEPAD_SAVE_FROM_MESSAGE_ERROR", ex.Message);
+            MessageBox.Show($"Failed to save to Notepad: {ex.Message}", "Error",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    public void AddNoteFromComposerBlocks(List<ComposerBlock> composerBlocks)
+    {
+        try
+        {
+            var blocks = new List<NoteBlock>();
+            foreach (var cb in composerBlocks)
+            {
+                if (cb is TextComposerBlock textBlock && !string.IsNullOrEmpty(textBlock.Text))
+                    blocks.Add(NoteBlock.CreateText(textBlock.Text));
+                else if (cb is ImageComposerBlock imageBlock && File.Exists(imageBlock.FilePath))
+                {
+                    var cached = _storage.CacheImage(imageBlock.FilePath);
+                    blocks.Add(NoteBlock.CreateImage(cached));
+                }
+            }
+
+            if (blocks.Count == 0) return;
+
+            SaveBlocksAsNewNote(blocks);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogger.Log("NOTEPAD_SAVE_FROM_COMPOSER_ERROR", ex.Message);
+            MessageBox.Show($"Failed to save to Notepad: {ex.Message}", "Error",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void SaveBlocksAsNewNote(List<NoteBlock> blocks)
+    {
+        var noteName = _storage.CreateAndSaveNote($"Saved {DateTime.Now:yyyy-MM-dd HH.mm}", blocks);
+
+        if (!_isLoaded) LoadNotes();
+        else
+        {
+            Notes.Add(noteName);
+            _suppressAutoSave = true;
+            try { SelectedNote = noteName; }
+            finally { _suppressAutoSave = false; }
+        }
+
+        OnNoteSavedFromMessage?.Invoke();
+    }
+
+    public void RequestSendNoteAsMessage()
+    {
+        if (!HasContentToSave()) return;
+
+        var result = MessageBox.Show(
+            "Send this note content (including any images) as a chat message to the assistant?",
+            "Send Note",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        OnSendNoteAsMessage?.Invoke(_noteBlocks.ToList());
+    }
+
+    public string GetImagePath(string cachedFileName) => _storage.GetImagePath(cachedFileName);
 
     private void LoadSelectedNoteContent()
     {
         if (_selectedNote == null)
         {
-            SetContentSilently("");
+            SetBlocksSilently([NoteBlock.CreateText("")]);
             return;
         }
 
         try
         {
-            var content = _storage.LoadNote(_selectedNote);
-            SetContentSilently(content);
+            var blocks = _storage.LoadNoteBlocks(_selectedNote);
+            SetBlocksSilently(blocks);
         }
         catch (Exception ex)
         {
             DiagnosticLogger.Log("NOTEPAD_LOAD_NOTE_ERROR", ex.Message);
-            SetContentSilently("");
+            SetBlocksSilently([NoteBlock.CreateText("")]);
         }
     }
 
-    private void SetContentSilently(string content)
+    private void SetBlocksSilently(List<NoteBlock> blocks)
     {
         _suppressAutoSave = true;
-        NoteContent = content;
+        _noteBlocks = blocks;
+        OnPropertyChanged(nameof(NoteBlocks));
+        OnPropertyChanged(nameof(NoteContent));
+        OnPropertyChanged(nameof(HasImages));
         _suppressAutoSave = false;
     }
 
@@ -148,12 +275,11 @@ public class NotepadViewModel : ViewModelBase
         _autoSaveTimer.Stop();
         if (_selectedNote != null)
         {
-            try { _storage.SaveNote(_selectedNote, _noteContent); }
+            try { _storage.SaveNoteBlocks(_selectedNote, _noteBlocks); }
             catch (Exception ex) { DiagnosticLogger.Log("NOTEPAD_AUTOSAVE_TICK_ERROR", ex.Message); }
         }
-        else if (!string.IsNullOrWhiteSpace(_noteContent))
+        else if (HasContentToSave())
         {
-            // Auto-create file for unsaved text (silent — no UI from timer)
             try { CreateAndSaveNewNote(); }
             catch (Exception ex) { DiagnosticLogger.Log("NOTEPAD_AUTOCREATE_ERROR", ex.Message); }
         }
@@ -172,10 +298,10 @@ public class NotepadViewModel : ViewModelBase
             _autoSaveTimer.Stop();
             if (_selectedNote != null)
             {
-                try { _storage.SaveNote(_selectedNote, _noteContent); }
+                try { _storage.SaveNoteBlocks(_selectedNote, _noteBlocks); }
                 catch (Exception ex) { DiagnosticLogger.Log("NOTEPAD_FLUSH_ERROR", ex.Message); }
             }
-            else if (!string.IsNullOrWhiteSpace(_noteContent))
+            else if (HasContentToSave())
             {
                 try { CreateAndSaveNewNote(); }
                 catch (Exception ex) { DiagnosticLogger.Log("NOTEPAD_FLUSH_CREATE_ERROR", ex.Message); }
@@ -203,7 +329,7 @@ public class NotepadViewModel : ViewModelBase
         if (_selectedNote != null)
         {
             _autoSaveTimer.Stop();
-            try { _storage.SaveNote(_selectedNote, _noteContent); }
+            try { _storage.SaveNoteBlocks(_selectedNote, _noteBlocks); }
             catch (Exception ex)
             {
                 MessageBox.Show($"Failed to save note: {ex.Message}", "Error",
@@ -212,9 +338,9 @@ public class NotepadViewModel : ViewModelBase
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(_noteContent)) return;
+        if (!HasContentToSave()) return;
 
-        _autoSaveTimer.Stop(); // Prevent FlushAutoSave from re-entering CreateAndSaveNewNote
+        _autoSaveTimer.Stop();
         try { CreateAndSaveNewNote(); }
         catch (Exception ex)
         {
@@ -223,15 +349,10 @@ public class NotepadViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// Creates a new note file with date-based name and saves current content.
-    /// Throws on error — caller decides whether to show UI or log silently.
-    /// </summary>
     private void CreateAndSaveNewNote()
     {
         var name = _storage.CreateNote($"Note {DateTime.Now:yyyy-MM-dd HH.mm}");
-        var content = _noteContent;
-        _storage.SaveNote(name, content);   // Save FIRST — so LoadSelectedNoteContent reads real content
+        _storage.SaveNoteBlocks(name, _noteBlocks);
         Notes.Add(name);
         _suppressAutoSave = true;
         try { SelectedNote = name; }
@@ -296,9 +417,6 @@ public class NotepadViewModel : ViewModelBase
         {
             var actualName = _storage.RenameNote(oldName, newName);
 
-            // Suppress auto-save during collection update — WPF may briefly
-            // set SelectedNote=null when the old item is replaced, which would
-            // trigger LoadSelectedNoteContent("") and risk saving empty content.
             _suppressAutoSave = true;
             try
             {

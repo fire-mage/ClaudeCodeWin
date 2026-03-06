@@ -79,6 +79,54 @@ public partial class MainViewModel
         var notepadStorage = new NotepadStorageService();
         Notepad = new NotepadViewModel(notepadStorage);
 
+        // Switch to Notepad tab when a message is saved
+        Notepad.OnNoteSavedFromMessage += () =>
+        {
+            Notepad.LoadNotes();
+            ActiveSubTab = notepadTab;
+        };
+
+        // Send note content as a chat message
+        Notepad.OnSendNoteAsMessage += blocks =>
+        {
+            var sb = new System.Text.StringBuilder();
+            List<FileAttachment>? atts = null;
+            List<MessageContentPart>? parts = null;
+            bool hasImages = blocks.Any(b => b.Type == NoteBlockType.Image);
+
+            foreach (var block in blocks)
+            {
+                if (block.Type == NoteBlockType.Text && !string.IsNullOrEmpty(block.Text))
+                {
+                    sb.AppendLine(block.Text);
+                    if (hasImages)
+                        (parts ??= []).Add(MessageContentPart.CreateText(block.Text));
+                }
+                else if (block.Type == NoteBlockType.Image && block.ImageFile != null)
+                {
+                    var imgPath = Notepad.GetImagePath(block.ImageFile);
+                    if (File.Exists(imgPath))
+                    {
+                        var att = new FileAttachment
+                        {
+                            FilePath = imgPath,
+                            FileName = block.ImageFile,
+                            IsScreenshot = true
+                        };
+                        (atts ??= []).Add(att);
+                        (parts ??= []).Add(MessageContentPart.CreateImage(att));
+                        sb.AppendLine($"[Screenshot: {imgPath}]");
+                    }
+                }
+            }
+
+            var text = sb.ToString().Trim();
+            if (string.IsNullOrEmpty(text)) return;
+
+            ActiveSubTab = chatTab;
+            _ = SendDirectAsync(text, atts, contentParts: parts);
+        };
+
         SubTabs.Add(chatTab);       // 1. Task Discussion
         SubTabs.Add(notepadTab);    // 2. Notepad
         SubTabs.Add(explorerTab);   // 3. File Explorer

@@ -48,6 +48,7 @@ public partial class ChatControl : UserControl
     /// Raised when a bookmark is toggled so the host can update UI (e.g. BookmarksButton visibility).
     /// </summary>
     public event Action? BookmarkToggled;
+    public event Action<MessageViewModel>? SaveToNotepadRequested;
 
     public ChatControl()
     {
@@ -264,6 +265,24 @@ public partial class ChatControl : UserControl
             menuItem.Header = msg.IsBookmarked ? "Remove Bookmark" : "Bookmark";
             BookmarkToggled?.Invoke();
         }
+    }
+
+    private void SaveToNotepad_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem menuItem) return;
+        var contextMenu = menuItem.Parent as ContextMenu;
+        var target = contextMenu?.PlacementTarget as FrameworkElement;
+
+        MessageViewModel? msg = null;
+        var fe = target;
+        while (fe is not null)
+        {
+            if (fe.DataContext is MessageViewModel m) { msg = m; break; }
+            fe = VisualTreeHelper.GetParent(fe) as FrameworkElement;
+        }
+
+        if (msg is not null)
+            SaveToNotepadRequested?.Invoke(msg);
     }
 
     private void ThinkingToggle_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)

@@ -92,9 +92,6 @@ public class AppSettings
     // External service API keys with expiry tracking
     public List<ApiKeyEntry> ApiKeys { get; set; } = [];
 
-
-    // Favorite/saved messages for quick reuse
-    public List<SavedMessage> SavedMessages { get; set; } = [];
 }
 
 public class ApiKeyEntry

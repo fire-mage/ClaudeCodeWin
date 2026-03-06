@@ -865,13 +865,6 @@
                             ToolTip="Browse and reopen previous conversations"
                             VerticalAlignment="Center" Margin="0,0,4,0"/>
                     <Button Grid.Column="2"
-                            Content="Saved"
-                            Click="SavedMessages_Click"
-                            Style="{StaticResource SecondaryButton}"
-                            FontSize="11" Padding="8,3"
-                            ToolTip="Browse and reuse saved messages"
-                            VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <Button Grid.Column="3"
                             Content="{Binding DataContext.TeamButtonText, RelativeSource={RelativeSource AncestorType=Window}}"
                             Command="{Binding DataContext.ToggleTeamPanelCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             Style="{StaticResource SecondaryButton}"
@@ -1059,10 +1052,10 @@
                             </TextBlock>
                         </Border>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button Content="&#x2606;" FontSize="14" Padding="6,4"
-                                    ToolTip="Save current message to favorites"
+                            <Button Content="&#x1F4BE;" FontSize="12" Padding="6,4"
+                                    ToolTip="Save to Notepad"
                                     Style="{StaticResource SecondaryButton}"
-                                    Click="SaveCurrentMessage_Click"
+                                    Click="SaveToNotepad_Click"
                                     Margin="0,0,4,4"/>
                             <Button Content="Send"
                                 Style="{StaticResource PrimaryButton}"

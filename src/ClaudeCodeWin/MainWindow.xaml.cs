@@ -120,6 +120,7 @@ public partial class MainWindow : Window
 
         // Wire bookmark toggle event from ChatControl
         ChatDisplay.BookmarkToggled += UpdateBookmarksButton;
+        ChatDisplay.SaveToNotepadRequested += ChatDisplay_SaveToNotepad;
 
         // Apply compact mode before first render to prevent visual jump
         ApplyTabPanelMode();
@@ -819,37 +820,29 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SavedMessages_Click(object sender, RoutedEventArgs e)
+    private void SaveToNotepad_Click(object sender, RoutedEventArgs e)
     {
-        var window = new SavedMessagesWindow(_settings.SavedMessages, () => _settingsService.Save(_settings))
-        {
-            Owner = this
-        };
+        var blocks = ViewModel.ComposerBlocks?.ToList();
+        if (blocks == null || blocks.Count == 0) return;
 
-        if (window.ShowDialog() == true && window.SelectedMessage is not null)
-        {
-            ViewModel.InputText = window.SelectedMessage.Text;
-        }
-    }
+        bool hasContent = blocks.Any(b =>
+            (b is Models.TextComposerBlock tb && !string.IsNullOrWhiteSpace(tb.Text)) ||
+            b is Models.ImageComposerBlock);
 
-    private void SaveCurrentMessage_Click(object sender, RoutedEventArgs e)
-    {
-        var text = ViewModel.InputText?.Trim();
-        if (string.IsNullOrEmpty(text))
+        if (!hasContent)
         {
             ViewModel.Messages.Add(new MessageViewModel(MessageRole.System, "Nothing to save - composer is empty."));
             return;
         }
 
-        if (_settings.SavedMessages.Any(m => m.Text == text))
-        {
-            ViewModel.Messages.Add(new MessageViewModel(MessageRole.System, "Message already saved."));
-            return;
-        }
+        ViewModel.Notepad?.AddNoteFromComposerBlocks(blocks);
+    }
 
-        _settings.SavedMessages.Add(new SavedMessage { Text = text });
-        _settingsService.Save(_settings);
-        ViewModel.Messages.Add(new MessageViewModel(MessageRole.System, "Message saved to favorites."));
+    private void ChatDisplay_SaveToNotepad(MessageViewModel msg)
+    {
+        var imagePaths = msg.Attachments?.Where(a => a.IsImage).Select(a => a.FilePath).ToList();
+        ViewModel.Notepad?.AddNoteFromMessage(msg.Text, imagePaths);
+        msg.IsSavedToNotepad = true;
     }
 
     private void FinalizeActions_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)

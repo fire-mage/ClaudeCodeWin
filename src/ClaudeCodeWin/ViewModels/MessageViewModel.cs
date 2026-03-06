@@ -54,6 +54,7 @@ public class MessageViewModel : ViewModelBase, IDisposable
     private bool _isTaskOutputSent;
     private string? _completionSummary;
     private string? _reviewerLabel;
+    private bool _isSavedToNotepad;
 
     public MessageRole Role { get; }
     public DateTime Timestamp { get; }
@@ -470,6 +471,13 @@ public class MessageViewModel : ViewModelBase, IDisposable
     {
         get => _isBookmarked;
         set => SetProperty(ref _isBookmarked, value);
+    }
+
+    /// <summary>Session-only indicator (not persisted to chat history). Resets on reload.</summary>
+    public bool IsSavedToNotepad
+    {
+        get => _isSavedToNotepad;
+        set => SetProperty(ref _isSavedToNotepad, value);
     }
 
     public MessageViewModel(MessageRole role, string text = "")

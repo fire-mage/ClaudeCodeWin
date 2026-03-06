@@ -170,6 +170,13 @@
                                                Margin="0,-2,0,0"
                                                Visibility="{Binding IsBookmarked, Converter={StaticResource BoolToVis}}"
                                                ToolTip="Bookmarked"/>
+                                    <!-- Saved to Notepad indicator -->
+                                    <TextBlock Text="&#x1F4BE;" FontSize="12"
+                                               Foreground="{StaticResource SuccessBrush}"
+                                               HorizontalAlignment="Right"
+                                               Margin="0,0,0,0"
+                                               Visibility="{Binding IsSavedToNotepad, Converter={StaticResource BoolToVis}}"
+                                               ToolTip="Saved to Notepad"/>
                                     <!-- Collapsible thinking content (shown after thinking phase completes) -->
                                     <Border Margin="0,0,0,6"
                                             CornerRadius="4"
@@ -244,6 +251,7 @@
                                                           Tag="{Binding Text}"/>
                                                 <Separator/>
                                                 <MenuItem Header="Bookmark" Click="ToggleBookmark_Click"/>
+                                                <MenuItem Header="Save to Notepad" Click="SaveToNotepad_Click"/>
                                             </ContextMenu>
                                         </TextBox.ContextMenu>
                                     </TextBox>
@@ -275,6 +283,7 @@
                                                                           Tag="{Binding DataContext.Text, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
                                                                 <Separator/>
                                                                 <MenuItem Header="Bookmark" Click="ToggleBookmark_Click"/>
+                                                                <MenuItem Header="Save to Notepad" Click="SaveToNotepad_Click"/>
                                                             </ContextMenu>
                                                         </TextBox.ContextMenu>
                                                     </TextBox>

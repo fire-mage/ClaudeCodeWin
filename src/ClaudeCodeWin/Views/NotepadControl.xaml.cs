@@ -1,8 +1,11 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using ClaudeCodeWin.Models;
 using ClaudeCodeWin.ViewModels;
 
 namespace ClaudeCodeWin.Views;
@@ -98,5 +101,33 @@ public partial class NotepadControl : UserControl
             vm.CancelRenameCommand.Execute(null);
             e.Handled = true;
         }
+    }
+
+    private void NoteImage_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Image img) return;
+        if (img.DataContext is not NoteBlock block || block.ImageFile == null) return;
+        if (DataContext is not NotepadViewModel vm) return;
+
+        var imagePath = vm.GetImagePath(block.ImageFile);
+        if (!File.Exists(imagePath)) return;
+
+        try
+        {
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.UriSource = new Uri(imagePath);
+            bitmap.EndInit();
+            bitmap.Freeze();
+            img.Source = bitmap;
+        }
+        catch { /* ignore missing/corrupt images */ }
+    }
+
+    private void SendNoteAsMessage_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is NotepadViewModel vm)
+            vm.RequestSendNoteAsMessage();
     }
 }
