@@ -710,14 +710,8 @@ public partial class MainViewModel : ViewModelBase
                 _contextSnapshotService.StartGenerationInBackground([settings.WorkingDirectory]);
             }
 
-            if (settings.SavedSessions.TryGetValue(settings.WorkingDirectory, out var saved)
-                && DateTime.Now - saved.CreatedAt < TimeSpan.FromHours(24))
-            {
-                _cliService.RestoreSession(saved.SessionId);
-                var resumeTime = saved.CreatedAt.ToString("HH:mm");
-                Messages.Add(new MessageViewModel(MessageRole.System,
-                    $"Resumed session from {resumeTime}. Type your message to continue."));
-            }
+            // Session restore on startup removed to save context memory.
+            // Sessions can still be restored via chat history viewer (LoadChatFromHistory).
         }
     }
 

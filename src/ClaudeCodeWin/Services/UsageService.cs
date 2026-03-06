@@ -251,31 +251,5 @@ public class UsageService
         catch { }
         return null;
     }
-    /// <summary>Load cached usage from settings so the panel shows immediately on startup.</summary>
-    public void LoadCachedUsage(Models.AppSettings settings)
-    {
-        if (settings.CachedSessionUtilization > 0 || settings.CachedWeeklyUtilization > 0)
-        {
-            SessionUtilization = settings.CachedSessionUtilization;
-            WeeklyUtilization = settings.CachedWeeklyUtilization;
-            SessionResetsAt = settings.CachedSessionResetsAt is not null
-                ? DateTime.Parse(settings.CachedSessionResetsAt)
-                : null;
-            WeeklyResetsAt = settings.CachedWeeklyResetsAt is not null
-                ? DateTime.Parse(settings.CachedWeeklyResetsAt)
-                : null;
-            IsLoaded = true;
-            OnUsageUpdated?.Invoke();
-        }
-    }
 
-    /// <summary>Save current usage to settings for next startup.</summary>
-    public void SaveCachedUsage(Models.AppSettings settings)
-    {
-        if (!IsLoaded) return;
-        settings.CachedSessionUtilization = SessionUtilization;
-        settings.CachedWeeklyUtilization = WeeklyUtilization;
-        settings.CachedSessionResetsAt = SessionResetsAt?.ToString("o");
-        settings.CachedWeeklyResetsAt = WeeklyResetsAt?.ToString("o");
-    }
 }

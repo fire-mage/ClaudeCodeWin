@@ -172,7 +172,6 @@ public partial class App : Application
 
             // Usage service wiring (global — same for all tabs)
             ConfigureUsageService(tabHost, usageService, settingsService, settings);
-            usageService.LoadCachedUsage(settings);
             usageService.Start();
 
             // Menus (resolve active tab at click time)
@@ -335,12 +334,6 @@ public partial class App : Application
             tabHost.UsageText = $"Session: {sessionPct}{sessionExtra}Week: {weekPct}{weekExtra}{sonnetSuffix}";
         };
 
-        // Save usage cache after each successful API fetch (not every countdown tick)
-        usageService.OnFetchSuccess += () =>
-        {
-            usageService.SaveCachedUsage(settings);
-            settingsService.Save(settings);
-        };
     }
 
     private static async Task<bool> RunDependencySetup(
