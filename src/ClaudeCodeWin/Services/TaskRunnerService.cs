@@ -34,20 +34,18 @@ public class TaskRunnerService
         "  \u2022 project \u2014 (optional) project name for grouping in submenu",
         "  \u2022 hotKey \u2014 (optional) keyboard shortcut hint",
         "  \u2022 confirmBeforeRun \u2014 (optional) ask before running",
-        "  \u2022 category \u2014 (optional) set to \"deploy\" for Deploy Scripts menu",
         "",
         "Example:",
         "[",
         "  {",
         "    \"name\": \"Deploy API\",",
         "    \"command\": \"powershell ./deploy-api.ps1\",",
-        "    \"project\": \"MyProject\",",
-        "    \"category\": \"deploy\"",
+        "    \"project\": \"MyProject\"",
         "  }",
         "]",
         "",
-        "Scripts with a 'project' field appear in a submenu.",
-        "Scripts with category \"deploy\" appear in Deploy Scripts menu.",
+        "All scripts appear in the Deploy Scripts menu.",
+        "Scripts with a 'project' field are grouped into a submenu.",
         "",
         "Use Edit Scripts... to modify, or ask Claude to add a script for you."
     });
@@ -126,74 +124,15 @@ public class TaskRunnerService
 
             var tasks = LoadTasks();
 
-            // Split tasks by category
-            var deployTasks = tasks.Where(t =>
-                string.Equals(t.Category, "deploy", StringComparison.OrdinalIgnoreCase)).ToList();
-            var regularTasks = tasks.Where(t =>
-                !string.Equals(t.Category, "deploy", StringComparison.OrdinalIgnoreCase)).ToList();
-
-            PopulateMenuInternal(mainWindow.TasksMenu, regularTasks, mainWindow, getActiveTab);
-
-            // Refresh menus when opened (picks up tasks.json changes made by Claude or manual edits)
+            // Refresh menu when opened (picks up tasks.json changes made by Claude or manual edits)
             if (_submenuRefreshHandler is not null)
             {
-                mainWindow.TasksMenu.SubmenuOpened -= _submenuRefreshHandler;
                 mainWindow.DeployScriptsMenu.SubmenuOpened -= _submenuRefreshHandler;
             }
             _submenuRefreshHandler = (_, _) => PopulateMenu(mainWindow, getActiveTab);
-            mainWindow.TasksMenu.SubmenuOpened += _submenuRefreshHandler;
             mainWindow.DeployScriptsMenu.SubmenuOpened += _submenuRefreshHandler;
 
-            if (deployTasks.Count > 0)
-            {
-                PopulateMenuInternal(mainWindow.DeployScriptsMenu, deployTasks, mainWindow, getActiveTab);
-            }
-            else
-            {
-                mainWindow.DeployScriptsMenu.Items.Clear();
-                var emptyHint = new MenuItem
-                {
-                    Header = "No deploy scripts yet",
-                    IsEnabled = false,
-                    IsHitTestVisible = false,
-                    Focusable = false,
-                    FontStyle = System.Windows.FontStyles.Italic
-                };
-                mainWindow.DeployScriptsMenu.Items.Add(emptyHint);
-
-                var createHint = new MenuItem
-                {
-                    Header = "Use Claude > Create Deploy Scripts...",
-                    ToolTip = "Go to Claude menu to let Claude create deploy scripts for your project.",
-                    FontStyle = System.Windows.FontStyles.Italic,
-                    IsEnabled = false,
-                    IsHitTestVisible = false,
-                    Focusable = false
-                };
-                mainWindow.DeployScriptsMenu.Items.Add(createHint);
-
-                mainWindow.DeployScriptsMenu.Items.Add(new Separator());
-
-                var editTasks = new MenuItem
-                {
-                    Header = "Edit Scripts...",
-                    ToolTip = "Open the built-in editor to modify tasks.json."
-                };
-                editTasks.Click += (_, _) => EditTasksJson(mainWindow, getActiveTab);
-                mainWindow.DeployScriptsMenu.Items.Add(editTasks);
-
-                var howTo = new MenuItem
-                {
-                    Header = "How to add a script",
-                    ToolTip = "Show instructions for adding custom scripts."
-                };
-                howTo.Click += (_, _) =>
-                {
-                    MessageBox.Show(ScriptHelpText, "How to Add a Script",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                };
-                mainWindow.DeployScriptsMenu.Items.Add(howTo);
-            }
+            PopulateMenuInternal(mainWindow.DeployScriptsMenu, tasks, mainWindow, getActiveTab);
         }
         finally { _isPopulating = false; }
     }
@@ -436,7 +375,7 @@ public class TaskRunnerService
             new TaskDefinition
             {
                 Name = "Hello Script",
-                Command = "echo Scripts are working! You can add your own scripts such as deploy commands, build scripts, or git workflows. Go to My Scripts > Edit Scripts... or ask Claude to add a script for you.",
+                Command = "echo Scripts are working! You can add your own scripts such as deploy commands, build scripts, or git workflows. Go to Deploy Scripts > Edit Scripts... or ask Claude to add a script for you.",
                 ConfirmBeforeRun = false
             }
         ];

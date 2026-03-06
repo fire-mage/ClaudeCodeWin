@@ -1222,9 +1222,9 @@ public partial class MainWindow : Window
             "1. Ask about their preferred commit message style (conventional commits, free-form, etc.)\n" +
             "2. Ask about their branch strategy (main only, feature branches, etc.)\n" +
             "3. Create one or more shell scripts (e.g. commit-and-push.sh / commit-and-push.ps1)\n" +
-            $"4. Add the scripts as entries in tasks.json (located at %AppData%/ClaudeCodeWin/tasks.json) with category \"deploy\" and project \"{projectName}\" so they appear in the Deploy Scripts menu\n\n" +
+            $"4. Add the scripts as entries in tasks.json (located at %AppData%/ClaudeCodeWin/tasks.json) with project \"{projectName}\" so they appear in the Deploy Scripts menu\n\n" +
             "The scripts should handle: staging changes, committing with a message, and pushing to remote.\n" +
-            "After adding, remind the user to reopen My Scripts or Deploy Scripts menu to see the changes (the menu refreshes automatically on next open).";
+            "After adding, remind the user to reopen Deploy Scripts menu to see the changes (the menu refreshes automatically on next open).";
 
         ViewModel.InputText = prompt;
         if (ViewModel.SendCommand.CanExecute(null))
@@ -1261,10 +1261,10 @@ public partial class MainWindow : Window
             "Please:\n" +
             "1. Analyze the project to determine the appropriate deployment strategy\n" +
             "2. Create deploy shell scripts (e.g. deploy.sh, deploy.ps1, rollback.sh)\n" +
-            $"3. Add entries to tasks.json (located at %AppData%/ClaudeCodeWin/tasks.json) with category \"deploy\" and project \"{projectName}\" so they appear in Deploy Scripts menu\n" +
+            $"3. Add entries to tasks.json (located at %AppData%/ClaudeCodeWin/tasks.json) with project \"{projectName}\" so they appear in Deploy Scripts menu\n" +
             "4. Include scripts for: full deploy, quick deploy (no build), rollback if possible\n" +
             "5. Set confirmBeforeRun: true for safety\n\n" +
-            "After adding, remind the user to reopen My Scripts or Deploy Scripts menu to see the changes (the menu refreshes automatically on next open).";
+            "After adding, remind the user to reopen Deploy Scripts menu to see the changes (the menu refreshes automatically on next open).";
 
         ViewModel.InputText = prompt;
         if (ViewModel.SendCommand.CanExecute(null))
