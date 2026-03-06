@@ -134,6 +134,10 @@ public partial class MainViewModel : ViewModelBase
     private int _sendGeneration;
     private int _activeSendGeneration;
 
+    // Auto-restart: retry once when CLI process crashes mid-conversation
+    private int _crashRetryCount;
+    private const int MaxCrashRetries = 1;
+
     // Control request protocol state
     private int _pendingQuestionCount;
     private string? _pendingControlRequestId;

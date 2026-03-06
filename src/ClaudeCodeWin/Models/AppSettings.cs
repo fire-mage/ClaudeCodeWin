@@ -97,6 +97,9 @@ public class AppSettings
     public double CachedWeeklyUtilization { get; set; }
     public string? CachedSessionResetsAt { get; set; }
     public string? CachedWeeklyResetsAt { get; set; }
+
+    // Favorite/saved messages for quick reuse
+    public List<SavedMessage> SavedMessages { get; set; } = [];
 }
 
 public class ApiKeyEntry

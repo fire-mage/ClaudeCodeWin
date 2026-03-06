@@ -120,6 +120,7 @@ public partial class MainViewModel
         // Null _sessionId synchronously to prevent BuildArguments from using a stale
         // session ID if SendMessage is called before the async stop completes.
         // The async stop itself is safe to fire-and-forget (has internal error handling).
+        _crashRetryCount = 0;
         _cliService.ResetSessionSync();
         ModelName = "";
         StatusText = "";

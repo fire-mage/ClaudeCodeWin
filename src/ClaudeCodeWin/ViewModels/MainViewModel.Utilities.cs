@@ -199,6 +199,7 @@ public partial class MainViewModel
         _cliService.Cancel();
         CancelReview();
         IsProcessing = false;
+        _crashRetryCount = 0;
         StopNudgeTimer();
         StatusText = "Cancelled";
         UpdateCta(CtaState.WaitingForUser);

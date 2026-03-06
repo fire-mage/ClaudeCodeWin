@@ -848,6 +848,7 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Button Grid.Column="0"
@@ -866,6 +867,13 @@
                             ToolTip="Browse and reopen previous conversations"
                             VerticalAlignment="Center" Margin="0,0,4,0"/>
                     <Button Grid.Column="2"
+                            Content="Saved"
+                            Click="SavedMessages_Click"
+                            Style="{StaticResource SecondaryButton}"
+                            FontSize="11" Padding="8,3"
+                            ToolTip="Browse and reuse saved messages"
+                            VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <Button Grid.Column="3"
                             Content="{Binding DataContext.TeamButtonText, RelativeSource={RelativeSource AncestorType=Window}}"
                             Command="{Binding DataContext.ToggleTeamPanelCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             Style="{StaticResource SecondaryButton}"
@@ -875,10 +883,10 @@
                             VerticalAlignment="Center" Margin="0,0,8,0"
                             Visibility="{Binding DataContext.HasTeamTasks, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
                     <!-- Vertical separator -->
-                    <Rectangle Grid.Column="3" Width="1" Height="16"
+                    <Rectangle Grid.Column="4" Width="1" Height="16"
                                Fill="{StaticResource BorderBrush}"
                                VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <CheckBox Grid.Column="4"
+                    <CheckBox Grid.Column="5"
                               IsChecked="{Binding UseReviewer, Mode=TwoWay}"
                               VerticalAlignment="Center"
                               HorizontalAlignment="Left"
@@ -928,7 +936,7 @@
                         </TextBlock>
                     </CheckBox>
                     <!-- Auto-confirm Plan Mode toggle -->
-                    <CheckBox Grid.Column="5"
+                    <CheckBox Grid.Column="6"
                               Style="{StaticResource InlineCheckBox}"
                               IsChecked="{Binding AutoConfirmEnabled, Mode=TwoWay}"
                               Margin="8,0,0,0"
@@ -1052,11 +1060,18 @@
                                 </TextBlock.Resources>
                             </TextBlock>
                         </Border>
-                        <Button Content="Send"
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="&#x2606;" FontSize="14" Padding="6,4"
+                                    ToolTip="Save current message to favorites"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Click="SaveCurrentMessage_Click"
+                                    Margin="0,0,4,4"/>
+                            <Button Content="Send"
                                 Style="{StaticResource PrimaryButton}"
                                 Command="{Binding SendCommand}"
                                 IsEnabled="{Binding Update.IsUpdating, Converter={StaticResource InverseBool}}"
                                 Margin="0,0,0,4"/>
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
 

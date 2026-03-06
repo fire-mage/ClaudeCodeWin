@@ -316,12 +316,23 @@ public partial class App : Application
             var weekCountdown = usageService.GetWeeklyCountdown();
             var weekExtra = string.IsNullOrEmpty(weekCountdown) ? "" : $" ({weekCountdown})";
 
+            // Build Sonnet-only line if API provides it
+            var sonnetSuffix = "";
+            if (usageService.SonnetUtilization > 0 || usageService.SonnetResetsAt is not null)
+            {
+                var sonnetPct = $"{usageService.SonnetUtilization:F0}%";
+                var sonnetCountdown = usageService.GetSonnetCountdown();
+                sonnetSuffix = string.IsNullOrEmpty(sonnetCountdown)
+                    ? $" | Sonnet: {sonnetPct}"
+                    : $" | Sonnet: {sonnetPct} ({sonnetCountdown})";
+            }
+
             // Usage is global (API-level), update TabHost-level properties
             tabHost.SessionPctText = sessionPct;
             tabHost.SessionExtraText = sessionExtra;
             tabHost.WeekPctText = weekPct;
-            tabHost.WeekExtraText = weekExtra;
-            tabHost.UsageText = $"Session: {sessionPct}{sessionExtra}Week: {weekPct}{weekExtra}";
+            tabHost.WeekExtraText = weekExtra + sonnetSuffix;
+            tabHost.UsageText = $"Session: {sessionPct}{sessionExtra}Week: {weekPct}{weekExtra}{sonnetSuffix}";
         };
 
         // Save usage cache after each successful API fetch (not every countdown tick)

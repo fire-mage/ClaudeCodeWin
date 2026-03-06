@@ -315,6 +315,9 @@ public partial class MainViewModel
                 $"Review found issues after {_reviewAttempt} rounds. Sending final feedback to Claude."));
             ReviewStatusText = $"Review: Final fix (round {_reviewAttempt})";
 
+            // Show compact message in chat (reviewer output is already visible above)
+            Messages.Add(new MessageViewModel(MessageRole.User, "Please fix all remaining issues (final round).")
+                { ReviewerLabel = "Final Review Fix" });
             // Send the final review feedback to Claude (no further auto-review after this)
             var finalFixPrompt = $"""
                 A code reviewer found issues after {_reviewAttempt} review rounds. This is the FINAL round — no more automatic reviews will follow.
@@ -324,7 +327,7 @@ public partial class MainViewModel
 
                 After fixing, provide a brief summary of what you changed.
                 """;
-            SendDirectAsync(finalFixPrompt, null, "Final Review Fix").ContinueWith(t =>
+            SendDirectAsync(finalFixPrompt, null, "Final Review Fix", skipUserMessage: true).ContinueWith(t =>
             {
                 if (t.Exception is not null)
                     DiagnosticLogger.Log("REVIEW_FIX_ERROR", t.Exception.InnerException?.Message ?? t.Exception.Message);
@@ -350,6 +353,9 @@ public partial class MainViewModel
 
         // Auto-fix: send reviewer's feedback as prompt to main Claude
         _isAutoReviewPending = true;
+        // Show compact message in chat (reviewer output is already visible above)
+        Messages.Add(new MessageViewModel(MessageRole.User, "Please fix the issues found by the reviewer.")
+            { ReviewerLabel = "Auto-Review" });
         var fixPrompt = $"""
             A code reviewer found issues in your recent work:
 
@@ -361,7 +367,7 @@ public partial class MainViewModel
             - If the issues were genuine bugs, security problems, or logic errors → end with `REVIEW_QUALITY: HIGH`
             - If the issues were mostly style preferences, minor suggestions without real impact, or false positives → end with `REVIEW_QUALITY: LOW`
             """;
-        SendDirectAsync(fixPrompt, null, "Auto-Review").ContinueWith(t =>
+        SendDirectAsync(fixPrompt, null, "Auto-Review", skipUserMessage: true).ContinueWith(t =>
         {
             if (t.Exception is not null)
                 DiagnosticLogger.Log("REVIEW_FIX_ERROR", t.Exception.InnerException?.Message ?? t.Exception.Message);
@@ -445,8 +451,10 @@ public partial class MainViewModel
         {
             if (Messages[i].Role != MessageRole.Assistant) continue;
             if (Messages[i].IsReviewerMessage) continue;
-            return !string.IsNullOrEmpty(Messages[i].Text)
-                && ReviewService.DetectReviewDismiss(Messages[i].Text);
+            var msg = Messages[i];
+            var fullText = msg.Text + (msg.CompletionSummary ?? "");
+            return !string.IsNullOrEmpty(fullText)
+                && ReviewService.DetectReviewDismiss(fullText);
         }
         return false;
     }

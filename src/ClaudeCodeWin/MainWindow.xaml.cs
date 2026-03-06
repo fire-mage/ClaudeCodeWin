@@ -819,6 +819,39 @@ public partial class MainWindow : Window
         }
     }
 
+    private void SavedMessages_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new SavedMessagesWindow(_settings.SavedMessages, () => _settingsService.Save(_settings))
+        {
+            Owner = this
+        };
+
+        if (window.ShowDialog() == true && window.SelectedMessage is not null)
+        {
+            ViewModel.InputText = window.SelectedMessage.Text;
+        }
+    }
+
+    private void SaveCurrentMessage_Click(object sender, RoutedEventArgs e)
+    {
+        var text = ViewModel.InputText?.Trim();
+        if (string.IsNullOrEmpty(text))
+        {
+            ViewModel.Messages.Add(new MessageViewModel(MessageRole.System, "Nothing to save - composer is empty."));
+            return;
+        }
+
+        if (_settings.SavedMessages.Any(m => m.Text == text))
+        {
+            ViewModel.Messages.Add(new MessageViewModel(MessageRole.System, "Message already saved."));
+            return;
+        }
+
+        _settings.SavedMessages.Add(new SavedMessage { Text = text });
+        _settingsService.Save(_settings);
+        ViewModel.Messages.Add(new MessageViewModel(MessageRole.System, "Message saved to favorites."));
+    }
+
     private void FinalizeActions_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (ViewModel.FinalizeActions.OpenFinalizeActionsCommand.CanExecute(null))

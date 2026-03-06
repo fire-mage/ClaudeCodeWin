@@ -75,7 +75,7 @@ public partial class MainViewModel
     }
 
     private async Task SendDirectAsync(string text, List<FileAttachment>? attachments,
-        string? participantLabel = null, List<MessageContentPart>? contentParts = null)
+        string? participantLabel = null, List<MessageContentPart>? contentParts = null, bool skipUserMessage = false)
     {
         // Cancel any active review if this is a real user message (not an auto-review fix prompt)
         if (_reviewService?.IsActive == true && participantLabel is null)
@@ -84,20 +84,25 @@ public partial class MainViewModel
             Messages.Add(new MessageViewModel(MessageRole.System, "Review cancelled (user message)."));
         }
 
-        var userMsg = new MessageViewModel(MessageRole.User, text);
-        if (participantLabel is not null)
-            userMsg.ReviewerLabel = participantLabel;
-        if (attachments is not null)
-            userMsg.Attachments = [.. attachments];
-        if (contentParts is not null)
-            userMsg.ContentParts = contentParts;
-        Messages.Add(userMsg);
+        if (!skipUserMessage)
+        {
+            var userMsg = new MessageViewModel(MessageRole.User, text);
+            if (participantLabel is not null)
+                userMsg.ReviewerLabel = participantLabel;
+            if (attachments is not null)
+                userMsg.Attachments = [.. attachments];
+            if (contentParts is not null)
+                userMsg.ContentParts = contentParts;
+            Messages.Add(userMsg);
+        }
 
         _lastSentText = text;
         _lastSentAttachments = attachments;
         _hasResponseStarted = false;
 
         EffectiveProjectName = "";
+        if (participantLabel is null && !skipUserMessage)
+            _crashRetryCount = 0;
         _cliService.ClearFileSnapshots();
         _activeSendGeneration = ++_sendGeneration;
         IsProcessing = true;
@@ -331,6 +336,7 @@ public partial class MainViewModel
             StopNudgeTimer();
             _messageAssembler.ClearAllThinking();
             StatusText = "";
+            _crashRetryCount = 0;
             UpdateCta(CtaState.WaitingForUser);
 
             if (!string.IsNullOrEmpty(result.Model))
@@ -611,6 +617,34 @@ public partial class MainViewModel
         {
             // Skip stale callbacks from a cancelled CLI process
             if (_activeSendGeneration != _sendGeneration) return;
+
+            // Auto-restart: if CLI crashed mid-conversation and we have a message to retry
+            if (error.Contains("exited unexpectedly") && _lastSentText is not null
+                && _crashRetryCount < MaxCrashRetries && !_usageService.IsRateLimited)
+            {
+                _crashRetryCount++;
+                var retryText = _lastSentText;
+                var retryAttachments = _lastSentAttachments;
+
+                Messages.Add(new MessageViewModel(MessageRole.System,
+                    $"Session crashed. Auto-restarting (attempt {_crashRetryCount}/{MaxCrashRetries})..."));
+
+                _messageAssembler.ClearAllThinking();
+                StopNudgeTimer();
+                StatusText = "Restarting...";
+
+                // Delay slightly to let the process fully terminate
+                var gen = _sendGeneration;
+                var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+                timer.Tick += (_, _) =>
+                {
+                    timer.Stop();
+                    if (_sendGeneration != gen) { IsProcessing = false; return; } // user sent something else
+                    _ = SendDirectAsync(retryText, retryAttachments, skipUserMessage: true);
+                };
+                timer.Start();
+                return;
+            }
 
             _messageAssembler.HandleError(error);
 

@@ -26,6 +26,10 @@ public class UsageService
     public DateTime? SessionResetsAt { get; private set; }
     public double WeeklyUtilization { get; private set; }
     public DateTime? WeeklyResetsAt { get; private set; }
+    public double DailyUtilization { get; private set; }
+    public DateTime? DailyResetsAt { get; private set; }
+    public double SonnetUtilization { get; private set; }
+    public DateTime? SonnetResetsAt { get; private set; }
     public bool IsLoaded { get; private set; }
     public bool IsOnline { get; private set; } = true;
     public bool IsRateLimited { get; private set; }
@@ -37,7 +41,7 @@ public class UsageService
 
     public UsageService()
     {
-        _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(5) };
+        _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
         _pollTimer.Tick += async (_, _) => await FetchUsageAsync();
 
         _countdownTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -106,6 +110,28 @@ public class UsageService
                     : null;
             }
 
+            // Parse daily limit if present
+            if (root.TryGetProperty("daily", out var daily))
+            {
+                DailyUtilization = daily.TryGetProperty("utilization", out var u) ? u.GetDouble() : 0;
+                DailyResetsAt = daily.TryGetProperty("resets_at", out var r) && r.ValueKind == JsonValueKind.String
+                    ? DateTimeOffset.Parse(r.GetString()!).LocalDateTime
+                    : null;
+            }
+
+            // Parse sonnet-specific limit if present
+            if (root.TryGetProperty("sonnet", out var sonnet))
+            {
+                SonnetUtilization = sonnet.TryGetProperty("utilization", out var u) ? u.GetDouble() : 0;
+                SonnetResetsAt = sonnet.TryGetProperty("resets_at", out var r) && r.ValueKind == JsonValueKind.String
+                    ? DateTimeOffset.Parse(r.GetString()!).LocalDateTime
+                    : null;
+            }
+
+            // Log raw API response on first load only (avoid spamming logs every minute)
+            if (!IsLoaded)
+                DiagnosticLogger.Log("USAGE_RAW", json);
+
             IsLoaded = true;
             _consecutiveFailures = 0;
 
@@ -118,7 +144,7 @@ public class UsageService
                 // Switch poll interval: 15s during rate limit, 1min normally
                 _pollTimer.Interval = IsRateLimited
                     ? TimeSpan.FromSeconds(15)
-                    : TimeSpan.FromMinutes(5);
+                    : TimeSpan.FromMinutes(1);
                 OnRateLimitChanged?.Invoke(IsRateLimited);
             }
 
@@ -185,6 +211,28 @@ public class UsageService
         _pollTimer.Interval = TimeSpan.FromSeconds(15);
         OnRateLimitChanged?.Invoke(true);
         _ = FetchUsageAsync(); // immediate refresh
+    }
+
+    public string GetDailyCountdown()
+    {
+        if (DailyResetsAt is null) return "";
+        var remaining = DailyResetsAt.Value - DateTime.Now;
+        if (remaining.TotalSeconds <= 0) return "resetting...";
+        return remaining.TotalHours >= 1
+            ? $"{(int)remaining.TotalHours}h {remaining.Minutes:D2}m"
+            : $"{remaining.Minutes}m {remaining.Seconds:D2}s";
+    }
+
+    public string GetSonnetCountdown()
+    {
+        if (SonnetResetsAt is null) return "";
+        var remaining = SonnetResetsAt.Value - DateTime.Now;
+        if (remaining.TotalSeconds <= 0) return "resetting...";
+        if (remaining.TotalDays >= 1)
+            return $"{(int)remaining.TotalDays}d {remaining.Hours}h";
+        return remaining.TotalHours >= 1
+            ? $"{(int)remaining.TotalHours}h {remaining.Minutes:D2}m"
+            : $"{remaining.Minutes}m {remaining.Seconds:D2}s";
     }
 
     private static string? ReadAccessToken()
