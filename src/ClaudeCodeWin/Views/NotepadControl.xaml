@@ -192,7 +192,7 @@
                             <TextBox Text="{Binding Text, Mode=OneWay}" IsReadOnly="True"
                                      TextWrapping="Wrap"
                                      FontFamily="Consolas" FontSize="14"
-                                     Foreground="{StaticResource TextPrimaryBrush}"
+                                     Foreground="{StaticResource TextBrush}"
                                      Background="Transparent" BorderThickness="0"
                                      Padding="0" Margin="0,4"
                                      SelectionBrush="{StaticResource SelectionBrush}"
