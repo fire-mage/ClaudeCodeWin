@@ -289,6 +289,17 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
+    public bool UseReviewer
+    {
+        get => _settings.ReviewerEnabled;
+        set
+        {
+            _settings.ReviewerEnabled = value;
+            _settingsService.Save(_settings);
+            OnPropertyChanged();
+        }
+    }
+
     public bool ShowRateLimitBanner => ActiveChatSession?.ShowRateLimitBanner ?? false;
     public string RateLimitCountdown => ActiveChatSession?.RateLimitCountdown ?? "";
 

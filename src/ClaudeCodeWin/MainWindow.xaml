@@ -98,22 +98,16 @@
                     <MenuItem Header="_Knowledge Base..." Click="MenuItem_KnowledgeBase_Click"
                               ToolTip="View Knowledge Base, browse Marketplace, or teach Claude a new skill."/>
                 </MenuItem>
-                <MenuItem Header="_Workspace"
-                          ToolTip="Multi-project workspace management"
+                <!-- Workspace menu hidden from UI - managed automatically by Claude -->
+                <MenuItem Header="_Workspace" Visibility="Collapsed"
                           SubmenuOpened="WorkspaceMenu_SubmenuOpened">
-                    <MenuItem Header="_Create Workspace..." Click="MenuItem_CreateWorkspace_Click"
-                              ToolTip="Create a new workspace grouping multiple related projects."/>
-                    <MenuItem Header="_Open Workspace" x:Name="OpenWorkspaceMenu"
-                              ToolTip="Open a saved workspace."/>
+                    <MenuItem Header="_Create Workspace..." Click="MenuItem_CreateWorkspace_Click"/>
+                    <MenuItem Header="_Open Workspace" x:Name="OpenWorkspaceMenu"/>
                     <Separator/>
                     <MenuItem Header="_Edit Workspace..." x:Name="EditWorkspaceMenuItem"
-                              Click="MenuItem_EditWorkspace_Click"
-                              IsEnabled="False"
-                              ToolTip="Edit the active workspace (add/remove projects, change primary)."/>
+                              Click="MenuItem_EditWorkspace_Click" IsEnabled="False"/>
                     <MenuItem Header="C_lose Workspace" x:Name="CloseWorkspaceMenuItem"
-                              Click="MenuItem_CloseWorkspace_Click"
-                              IsEnabled="False"
-                              ToolTip="Close workspace and revert to single-project mode."/>
+                              Click="MenuItem_CloseWorkspace_Click" IsEnabled="False"/>
                 </MenuItem>
                 <MenuItem Header="_App"
                           ToolTip="Project management, updates, and application information">

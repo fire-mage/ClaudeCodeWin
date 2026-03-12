@@ -168,9 +168,11 @@ public class ReviewService
 
             If you have non-blocking code quality observations that aren't critical issues, output them as `USER_NOTE: your message here` (one per line). These notes will be delivered asynchronously — do NOT wait for a response.
 
-            At the end of your review, state exactly one of these verdicts:
+            At the end of your review, you MUST output exactly one of these two verdict lines (no other format, no numeric scores):
             - `VERDICT: CONSENSUS` — code is good, only minor suggestions
             - `VERDICT: ISSUES_FOUND` — there are problems that need fixing
+
+            Do NOT use any other verdict format (no "X out of 10", no "PASS/FAIL", no custom labels).
 
             Here is the code to review:
 
@@ -180,16 +182,23 @@ public class ReviewService
 
     internal static ReviewVerdict DetectVerdict(string text)
     {
-        // No tail limit — model may append text after the verdict marker
+        // Find the LAST verdict marker — earlier occurrences may be quoted prompt text
         var upper = text.ToUpperInvariant();
 
-        if (upper.Contains("VERDICT: CONSENSUS") || upper.Contains("VERDICT:CONSENSUS"))
-            return ReviewVerdict.Consensus;
-        if (upper.Contains("VERDICT: ISSUES_FOUND") || upper.Contains("VERDICT:ISSUES_FOUND"))
-            return ReviewVerdict.IssuesFound;
+        int lastConsensus = Math.Max(upper.LastIndexOf("VERDICT: CONSENSUS"), upper.LastIndexOf("VERDICT:CONSENSUS"));
+        int lastIssues = Math.Max(upper.LastIndexOf("VERDICT: ISSUES_FOUND"), upper.LastIndexOf("VERDICT:ISSUES_FOUND"));
+        int lastAgree = Math.Max(upper.LastIndexOf("VERDICT: AGREE"), upper.LastIndexOf("VERDICT:AGREE"));
 
-        // Legacy compat: AGREE also means consensus
-        if (upper.Contains("VERDICT: AGREE") || upper.Contains("VERDICT:AGREE"))
+        // Treat AGREE as CONSENSUS position
+        int lastConsensusAny = Math.Max(lastConsensus, lastAgree);
+
+        if (lastConsensusAny < 0 && lastIssues < 0)
+            return ReviewVerdict.None;
+
+        // Whichever appears last in the text is the actual verdict
+        if (lastIssues > lastConsensusAny)
+            return ReviewVerdict.IssuesFound;
+        if (lastConsensusAny > lastIssues)
             return ReviewVerdict.Consensus;
 
         return ReviewVerdict.None;

@@ -926,6 +926,7 @@ public class ChatSessionViewModel : ViewModelBase
 
         if (_reviewCycleCompleted)
         {
+            ReviewStatusText = "";
             TryShowTaskSuggestion();
             return;
         }
@@ -1081,7 +1082,10 @@ public class ChatSessionViewModel : ViewModelBase
             SendDirectAsync(finalFixPrompt, null, "Final Review Fix", skipUserMessage: true).ContinueWith(t =>
             {
                 if (t.Exception is not null)
+                {
                     DiagnosticLogger.Log("REVIEW_FIX_ERROR", t.Exception.InnerException?.Message ?? t.Exception.Message);
+                    App.Current?.Dispatcher?.Invoke(() => { ReviewStatusText = ""; });
+                }
             }, TaskContinuationOptions.OnlyOnFaulted);
             return;
         }
@@ -1093,7 +1097,7 @@ public class ChatSessionViewModel : ViewModelBase
             UpdateCta(CtaState.WaitingForUser);
             Messages.Add(new MessageViewModel(MessageRole.System,
                 "Review loop detected — same critical issue repeated. Stopping auto-review."));
-            ReviewStatusText = "Review: Loop detected";
+            ReviewStatusText = "";
             TryShowTaskSuggestion();
             if (_parent.IsTeamPausedForConflict) _parent.ResumeTeamAfterConflictPublic();
             return;
@@ -1786,15 +1790,9 @@ public class ChatSessionViewModel : ViewModelBase
 
         if (IsProcessing)
         {
-            if (RecallLastMessage()) return true;
-            var textToRestore = _lastSentText;
-            var attachmentsToRestore = _lastSentAttachments;
             _lastSentText = null;
             _lastSentAttachments = null;
             CancelProcessing();
-            if (textToRestore != null) InputText = StripInlineMarkers(textToRestore);
-            if (attachmentsToRestore != null)
-                foreach (var att in attachmentsToRestore) AddAttachment(att);
             return true;
         }
 
