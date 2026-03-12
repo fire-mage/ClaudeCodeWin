@@ -44,7 +44,16 @@ public partial class MainViewModel
             SetProperty(ref _activeSubTab, value);
 
             if (_activeSubTab != null)
+            {
                 _activeSubTab.IsActive = true;
+
+                // Switch ActiveChatSession when activating a Chat sub-tab
+                if (_activeSubTab.Type == SubTabType.Chat
+                    && _activeSubTab.LinkedChatSession is { } session)
+                {
+                    ActiveChatSession = session;
+                }
+            }
 
             OnPropertyChanged(nameof(IsExplorerActive));
             OnPropertyChanged(nameof(IsChatActive));
@@ -71,9 +80,17 @@ public partial class MainViewModel
     /// </summary>
     private void InitializeSubTabs()
     {
-        var chatTab = new SubTab(SubTabType.Chat, "Task Discussion");
+        var chatTab = new SubTab(SubTabType.Chat, "Chat");
         var notepadTab = new SubTab(SubTabType.Notepad, "Notepad");
         var explorerTab = new SubTab(SubTabType.Explorer, "File Explorer");
+
+        // Link the first chat session to its sub-tab
+        if (ChatSessions.Count > 0)
+        {
+            var firstSession = ChatSessions[0];
+            chatTab.LinkedChatSession = firstSession;
+            firstSession.LinkedSubTab = chatTab;
+        }
 
         // Create NotepadViewModel (service has no shared state, instantiate internally)
         var notepadStorage = new NotepadStorageService();
@@ -182,12 +199,95 @@ public partial class MainViewModel
         ActiveSubTab = chatTab; // Start with Chat active
     }
 
+    private int _chatTabCounter = 1;
+
+    /// <summary>
+    /// Creates a new chat session with its own CLI process and sub-tab.
+    /// </summary>
+    public void CreateChatSession()
+    {
+        if (SharedChatServices == null) return;
+
+        _chatTabCounter++;
+        var cliService = new ClaudeCliService
+        {
+            ClaudeExePath = _cliService.ClaudeExePath,
+            WorkingDirectory = WorkingDirectory,
+            ModelOverride = _cliService.ModelOverride,
+            SystemPrompt = _cliService.SystemPrompt,
+            AppendSystemPrompt = _cliService.AppendSystemPrompt,
+            DangerouslySkipPermissions = _cliService.DangerouslySkipPermissions
+        };
+
+        var session = new ChatSessionViewModel(cliService, this, SharedChatServices);
+        ChatSessions.Add(session);
+
+        var chatTab = new SubTab(SubTabType.Chat, $"Chat {_chatTabCounter}")
+        {
+            IsCloseable = true,
+            LinkedChatSession = session
+        };
+        session.LinkedSubTab = chatTab;
+
+        // Insert before Notepad tab (after last Chat tab)
+        var insertIndex = 0;
+        for (var i = SubTabs.Count - 1; i >= 0; i--)
+        {
+            if (SubTabs[i].Type == SubTabType.Chat)
+            {
+                insertIndex = i + 1;
+                break;
+            }
+        }
+        SubTabs.Insert(insertIndex, chatTab);
+        ActiveSubTab = chatTab; // This also sets ActiveChatSession via the setter
+
+        Messages.Add(new MessageViewModel(MessageRole.System,
+            "New chat session started. Type your message below."));
+    }
+
+    /// <summary>
+    /// Closes a chat sub-tab and disposes its session. Cannot close the last chat tab.
+    /// </summary>
+    public void CloseChatTab(SubTab tab)
+    {
+        if (tab.Type != SubTabType.Chat) return;
+
+        // Count chat tabs — don't close the last one
+        var chatTabs = SubTabs.Where(t => t.Type == SubTabType.Chat).ToList();
+        if (chatTabs.Count <= 1) return;
+
+        // Save history and dispose the linked session
+        if (tab.LinkedChatSession is { } session)
+        {
+            session.SaveChatHistory();
+            ChatSessions.Remove(session);
+            session.Dispose();
+        }
+
+        var index = SubTabs.IndexOf(tab);
+        SubTabs.Remove(tab);
+
+        // Switch to adjacent chat tab if this was active
+        if (ActiveSubTab == null || ActiveSubTab == tab)
+        {
+            var nextChat = SubTabs.Where(t => t.Type == SubTabType.Chat)
+                .OrderBy(t => Math.Abs(SubTabs.IndexOf(t) - index))
+                .FirstOrDefault();
+            if (nextChat != null)
+                ActiveSubTab = nextChat;
+        }
+    }
+
     /// <summary>
     /// Updates the explorer root when the working directory changes.
+    /// Supports multi-root when a workspace is active.
     /// </summary>
     private void UpdateExplorerRoot()
     {
-        if (!string.IsNullOrEmpty(WorkingDirectory) && Directory.Exists(WorkingDirectory))
+        if (_activeWorkspace is { } ws && ws.Projects.Count > 0)
+            Explorer.SetRoots(ws.Projects.Select(p => p.Path));
+        else if (!string.IsNullOrEmpty(WorkingDirectory) && Directory.Exists(WorkingDirectory))
             Explorer.SetRoot(WorkingDirectory);
 
         // Update Team project name for global popup header

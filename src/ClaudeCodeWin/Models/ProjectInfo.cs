@@ -11,6 +11,9 @@ public class ProjectInfo
     public DateTime RegisteredAt { get; set; }
     public string? Notes { get; set; }
 
+    public OnboardingStatus OnboardingStatus { get; set; }
+    public DateTime? OnboardingCompletedAt { get; set; }
+
     /// <summary>Set to true for the project matching the current WorkingDirectory in the picker.</summary>
     public bool IsCurrent { get; set; }
 }

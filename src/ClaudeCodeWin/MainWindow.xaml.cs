@@ -20,6 +20,8 @@ public partial class MainWindow : Window
     private readonly ProjectRegistryService _projectRegistry;
     private KnowledgeBaseService? _knowledgeBaseService;
     private DevKbService? _devKbService;
+    private readonly WorkspaceService _workspaceService;
+    private SpeechRecognitionService? _speechService;
     private CancellationTokenSource? _autocompleteCts;
     private bool _isAtMentionMode;
     private int _atMentionStart; // index of '@' in the text
@@ -33,7 +35,8 @@ public partial class MainWindow : Window
 
     public MainWindow(TabHostViewModel tabHost, NotificationService notificationService,
         SettingsService settingsService, AppSettings settings, FileIndexService fileIndexService,
-        ChatHistoryService chatHistoryService, ProjectRegistryService projectRegistry)
+        ChatHistoryService chatHistoryService, ProjectRegistryService projectRegistry,
+        WorkspaceService workspaceService)
     {
         InitializeComponent();
         DataContext = tabHost;
@@ -43,6 +46,7 @@ public partial class MainWindow : Window
         _fileIndexService = fileIndexService;
         _chatHistoryService = chatHistoryService;
         _projectRegistry = projectRegistry;
+        _workspaceService = workspaceService;
 
         notificationService.Initialize(this);
 
@@ -155,22 +159,28 @@ public partial class MainWindow : Window
         // Unsubscribe from previous tab
         if (_subscribedTab is not null && _finalizePropertyHandler is not null)
         {
-            _subscribedTab.FinalizeActions.PropertyChanged -= _finalizePropertyHandler;
-            // Fix #5: intentionally clear — old tab shouldn't animate while not visible;
-            // switching back re-subscribes via this method
-            _subscribedTab.FinalizeActions.OnFinalizeCollapse = null;
+            if (_subscribedTab.FinalizeActions is { } oldFA)
+            {
+                oldFA.PropertyChanged -= _finalizePropertyHandler;
+                // Fix #5: intentionally clear — old tab shouldn't animate while not visible;
+                // switching back re-subscribes via this method
+                oldFA.OnFinalizeCollapse = null;
+            }
         }
 
         _subscribedTab = tab;
 
         // Finalize Actions: blink animation + collapse animation
-        _finalizePropertyHandler = (_, e) =>
+        if (tab.FinalizeActions is { } fa)
         {
-            if (e.PropertyName == nameof(FinalizeActionsViewModel.FinalizeLabelBlinking) && tab.FinalizeActions.FinalizeLabelBlinking)
-                Dispatcher.BeginInvoke(StartFinalizeLabelBlink);
-        };
-        tab.FinalizeActions.PropertyChanged += _finalizePropertyHandler;
-        tab.FinalizeActions.OnFinalizeCollapse = () => Dispatcher.BeginInvoke(AnimateFinalizeCollapse);
+            _finalizePropertyHandler = (_, e) =>
+            {
+                if (e.PropertyName == nameof(FinalizeActionsViewModel.FinalizeLabelBlinking) && fa.FinalizeLabelBlinking)
+                    Dispatcher.BeginInvoke(StartFinalizeLabelBlink);
+            };
+            fa.PropertyChanged += _finalizePropertyHandler;
+            fa.OnFinalizeCollapse = () => Dispatcher.BeginInvoke(AnimateFinalizeCollapse);
+        }
         // Auto-scroll is handled by ChatControl internally via Messages DependencyProperty
     }
 
@@ -207,7 +217,10 @@ public partial class MainWindow : Window
     {
         if (sender is FrameworkElement fe && fe.Tag is Models.SubTab subTab)
         {
-            ViewModel.CloseFileTab(subTab);
+            if (subTab.Type == Models.SubTabType.Chat)
+                ViewModel.CloseChatTab(subTab);
+            else
+                ViewModel.CloseFileTab(subTab);
             e.Handled = true;
         }
     }
@@ -313,9 +326,14 @@ public partial class MainWindow : Window
         _settings.WindowState = WindowState == WindowState.Maximized ? 2 : 0;
 
         // Save open project tabs for restoration on next launch (skip tabs without a project)
-        _settings.OpenTabPaths = TabHost.Tabs
+        _settings.OpenTabPaths = null; // v1 format superseded by OpenTabs
+        _settings.OpenTabs = TabHost.Tabs
             .Where(t => !string.IsNullOrEmpty(t.WorkingDirectory))
-            .Select(t => t.WorkingDirectory!)
+            .Select(t => new Models.OpenTabEntry
+            {
+                Path = t.WorkingDirectory,
+                WorkspaceId = t.ActiveWorkspace?.Id
+            })
             .ToList();
         _settings.ActiveTabPath = TabHost.ActiveTab?.WorkingDirectory;
 
@@ -329,11 +347,17 @@ public partial class MainWindow : Window
         // stale Dispatcher.BeginInvoke reference after window is destroyed
         if (_subscribedTab is not null)
         {
-            if (_finalizePropertyHandler is not null)
-                _subscribedTab.FinalizeActions.PropertyChanged -= _finalizePropertyHandler;
-            _subscribedTab.FinalizeActions.OnFinalizeCollapse = null;
+            if (_subscribedTab.FinalizeActions is { } closingFA)
+            {
+                if (_finalizePropertyHandler is not null)
+                    closingFA.PropertyChanged -= _finalizePropertyHandler;
+                closingFA.OnFinalizeCollapse = null;
+            }
             _subscribedTab = null;
         }
+
+        // Dispose speech recognition (free native Whisper model)
+        _speechService?.Dispose();
 
         // Dispose all tabs (kill CLI processes)
         TabHost.DisposeAll();
@@ -496,10 +520,10 @@ public partial class MainWindow : Window
             }
         }
 
-        // Ctrl+N = New session
+        // Ctrl+N = New chat tab
         if (e.Key == Key.N && Keyboard.Modifiers == ModifierKeys.Control)
         {
-            ViewModel.NewSessionCommand.Execute(null);
+            ViewModel.CreateChatSession();
             e.Handled = true;
             return;
         }
@@ -838,6 +862,103 @@ public partial class MainWindow : Window
         ViewModel.Notepad?.AddNoteFromComposerBlocks(blocks);
     }
 
+    // ── Voice Input (hold-to-record) ──
+
+    private int _micRecording; // 0 or 1, Interlocked for thread-safe cap/mouseUp dedup
+
+    private void Mic_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_speechService is null || !_speechService.IsModelLoaded) return;
+        // Atomic entry guard: prevents double-click race and re-entry while recording
+        if (Interlocked.CompareExchange(ref _micRecording, 1, 0) != 0) return;
+
+        try
+        {
+            _speechService.RecordingCapped -= OnRecordingCapped;
+            _speechService.RecordingCapped += OnRecordingCapped;
+            _speechService.StartRecording();
+            Mouse.Capture(MicButton);
+            MicIcon.Text = "\u23FA"; // recording icon
+            MicButton.ToolTip = "Recording... release to transcribe";
+        }
+        catch (Exception ex)
+        {
+            Interlocked.Exchange(ref _micRecording, 0);
+            ViewModel.Messages.Add(new MessageViewModel(MessageRole.System, $"Mic error: {ex.Message}"));
+        }
+    }
+
+    private void Mic_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        Mouse.Capture(null);
+        if (Interlocked.Exchange(ref _micRecording, 0) != 1 || _speechService is null) return;
+        _ = StopRecordingAndTranscribeAsync();
+    }
+
+    private void OnRecordingCapped()
+    {
+        // Called from waveIn thread — dispatch to UI
+        Dispatcher.InvokeAsync(() =>
+        {
+            Mouse.Capture(null);
+            if (Interlocked.Exchange(ref _micRecording, 0) != 1) return;
+            _ = StopRecordingAndTranscribeAsync();
+        });
+    }
+
+    private async Task StopRecordingAndTranscribeAsync()
+    {
+        MicIcon.Text = "\uD83C\uDFA4"; // microphone icon
+        MicButton.ToolTip = "Hold to record voice (speech-to-text)";
+
+        try
+        {
+            MicButton.IsEnabled = false;
+            MicIcon.Text = "\u231B"; // hourglass
+            var text = await _speechService!.StopAndTranscribeAsync();
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                // Insert transcribed text into composer
+                var blocks = ViewModel.ComposerBlocks;
+                if (blocks is not null)
+                {
+                    var lastText = blocks.OfType<Models.TextComposerBlock>().LastOrDefault();
+                    if (lastText is not null)
+                    {
+                        lastText.Text = string.IsNullOrEmpty(lastText.Text)
+                            ? text
+                            : lastText.Text + " " + text;
+                    }
+                    else
+                    {
+                        blocks.Add(new Models.TextComposerBlock(text));
+                    }
+                    ComposerControl.FocusEnd();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ViewModel.Messages.Add(new MessageViewModel(MessageRole.System, $"Transcription error: {ex.Message}"));
+        }
+        finally
+        {
+            MicIcon.Text = "\uD83C\uDFA4";
+            MicButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>Show/hide mic button based on settings and model state.</summary>
+    public void UpdateMicButtonVisibility()
+    {
+        MicButton.Visibility = _settings.VoiceInputEnabled
+            && _speechService is not null
+            && _speechService.IsModelLoaded
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+    }
+
     private void ChatDisplay_SaveToNotepad(MessageViewModel msg)
     {
         var imagePaths = msg.Attachments?.Where(a => a.IsImage).Select(a => a.FilePath).ToList();
@@ -847,7 +968,7 @@ public partial class MainWindow : Window
 
     private void FinalizeActions_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (ViewModel.FinalizeActions.OpenFinalizeActionsCommand.CanExecute(null))
+        if (ViewModel.FinalizeActions?.OpenFinalizeActionsCommand.CanExecute(null) == true)
             ViewModel.FinalizeActions.OpenFinalizeActionsCommand.Execute(null);
         e.Handled = true;
     }
@@ -880,7 +1001,8 @@ public partial class MainWindow : Window
             scaleTransform.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, null);
             scaleTransform.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleYProperty, null);
 
-            ViewModel.FinalizeActions.ShowTaskSuggestion = false;
+            if (ViewModel.FinalizeActions != null)
+                ViewModel.FinalizeActions.ShowTaskSuggestion = false;
             FinalizePopupBorder.Opacity = 1;
             scaleTransform.ScaleX = 1;
             scaleTransform.ScaleY = 1;
@@ -930,13 +1052,103 @@ public partial class MainWindow : Window
 
     private void MenuItem_Settings_Click(object sender, RoutedEventArgs e)
     {
-        var dlg = new SettingsWindow(_settings, _settingsService, ViewModel, TabHost.Update, ViewModel.WorkingDirectory) { Owner = this };
+        var dlg = new SettingsWindow(_settings, _settingsService, ViewModel, TabHost.Update, ViewModel.WorkingDirectory, _speechService) { Owner = this };
         dlg.ShowDialog();
+        UpdateMicButtonVisibility();
     }
 
     private void MenuItem_About_Click(object sender, RoutedEventArgs e)
     {
         new AboutWindow(ViewModel.WorkingDirectory) { Owner = this }.ShowDialog();
+    }
+
+    private WorkspaceService GetWorkspaceService() => _workspaceService;
+
+    private void RefreshWorkspaceMenuState()
+    {
+        var hasWorkspace = ViewModel.ActiveWorkspace != null;
+        EditWorkspaceMenuItem.IsEnabled = hasWorkspace;
+        CloseWorkspaceMenuItem.IsEnabled = hasWorkspace;
+
+        // Populate "Open Workspace" submenu
+        OpenWorkspaceMenu.Items.Clear();
+        var wsService = GetWorkspaceService();
+        foreach (var ws in wsService.GetAll())
+        {
+            var item = new MenuItem
+            {
+                Header = $"{ws.Name} ({ws.Projects.Count} projects)",
+                Tag = ws.Id
+            };
+            item.Click += (_, _) =>
+            {
+                var workspace = wsService.GetById((string)item.Tag);
+                if (workspace != null)
+                {
+                    wsService.TouchLastOpened(workspace.Id);
+                    ViewModel.SetActiveWorkspace(workspace);
+                    RefreshWorkspaceMenuState();
+                }
+            };
+            OpenWorkspaceMenu.Items.Add(item);
+        }
+
+        if (OpenWorkspaceMenu.Items.Count == 0)
+        {
+            OpenWorkspaceMenu.Items.Add(new MenuItem
+            {
+                Header = "(no saved workspaces)",
+                IsEnabled = false
+            });
+        }
+    }
+
+    private void MenuItem_CreateWorkspace_Click(object sender, RoutedEventArgs e)
+    {
+        var wsService = GetWorkspaceService();
+        var dialog = new WorkspaceWindow(wsService, _projectRegistry,
+            initialProjectPath: ViewModel.WorkingDirectory)
+        { Owner = this };
+
+        if (dialog.ShowDialog() == true && dialog.ResultWorkspace is { } workspace)
+        {
+            wsService.TouchLastOpened(workspace.Id);
+            ViewModel.SetActiveWorkspace(workspace);
+            RefreshWorkspaceMenuState();
+        }
+    }
+
+    private void MenuItem_EditWorkspace_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.ActiveWorkspace is not { } workspace) return;
+
+        var wsService = GetWorkspaceService();
+        var dialog = new WorkspaceWindow(wsService, _projectRegistry, workspace)
+        { Owner = this };
+
+        if (dialog.ShowDialog() == true)
+        {
+            if (dialog.WasDeleted)
+            {
+                ViewModel.SetActiveWorkspace(null);
+            }
+            else if (dialog.ResultWorkspace is { } updated)
+            {
+                ViewModel.SetActiveWorkspace(updated);
+            }
+            RefreshWorkspaceMenuState();
+        }
+    }
+
+    private void MenuItem_CloseWorkspace_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.SetActiveWorkspace(null);
+        RefreshWorkspaceMenuState();
+    }
+
+    private void WorkspaceMenu_SubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        RefreshWorkspaceMenuState();
     }
 
     private void MenuItem_FeatureRequest_Click(object sender, RoutedEventArgs e)
@@ -948,6 +1160,7 @@ public partial class MainWindow : Window
 
     public void SetKnowledgeBaseService(KnowledgeBaseService service) => _knowledgeBaseService = service;
     public void SetDevKbService(DevKbService service) => _devKbService = service;
+    public void SetSpeechService(SpeechRecognitionService service) => _speechService = service;
 
     private void MenuItem_Marketplace_Click(object sender, RoutedEventArgs e)
     {
@@ -1167,7 +1380,7 @@ public partial class MainWindow : Window
 
     private void NewChatMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.NewSessionCommand.Execute(null);
+        ViewModel.CreateChatSession();
     }
 
     private (string workDir, string projectName)? ValidateProjectOpen()

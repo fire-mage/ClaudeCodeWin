@@ -1,4 +1,5 @@
 using ClaudeCodeWin.Infrastructure;
+using ClaudeCodeWin.ViewModels;
 
 namespace ClaudeCodeWin.Models;
 
@@ -18,6 +19,8 @@ public class SubTab : ViewModelBase
     private string _content = "";
     private string _savedContent = "";
     private int _badgeCount;
+    private bool _isWorking;
+    private bool _needsAttention;
 
     public SubTab(SubTabType type, string title, string? filePath = null)
     {
@@ -29,7 +32,24 @@ public class SubTab : ViewModelBase
 
     public SubTabType Type { get; }
     public string? FilePath { get; }
-    public bool IsCloseable { get; }
+    public bool IsCloseable { get; set; }
+
+    /// <summary>Reference to the ChatSessionViewModel for Chat sub-tabs.</summary>
+    public ChatSessionViewModel? LinkedChatSession { get; set; }
+
+    /// <summary>Blue dot: shown when processing is active on this chat tab.</summary>
+    public bool IsWorking
+    {
+        get => _isWorking;
+        set => SetProperty(ref _isWorking, value);
+    }
+
+    /// <summary>Green blinking dot: shown when work completes on an inactive chat tab.</summary>
+    public bool NeedsAttention
+    {
+        get => _needsAttention;
+        set => SetProperty(ref _needsAttention, value);
+    }
 
     public string Title
     {

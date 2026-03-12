@@ -9,22 +9,25 @@ public partial class MainViewModel
     /// <summary>
     /// Sets the working directory on startup (before the CLI process starts).
     /// Unlike SetWorkingDirectory, this doesn't stop/start sessions or show messages.
-    /// Initializes all tab-visible properties (TabTitle, GitStatus, etc.) so restored tabs
-    /// show the correct project name immediately.
     /// </summary>
     public void SetWorkingDirectoryOnStartup(string folder)
     {
         _cliService.WorkingDirectory = folder;
         ProjectPath = folder;
-        _registeredProjectRoots.Add(Path.GetFullPath(folder));
+        _registeredProjectRoots.TryAdd(Path.GetFullPath(folder), 0);
         LockProject?.Invoke(folder);
         RefreshGitStatus();
         StartGitRefreshTimer();
         UpdateExplorerRoot();
         _ = Task.Run(() => RefreshAutocompleteIndex());
-        _ = Task.Run(() => _projectRegistry.RegisterProject(folder, _gitService));
+        _ = Task.Run(() =>
+        {
+            _projectRegistry.RegisterProject(folder, _gitService);
+        }).ContinueWith(_ =>
+            _onboardingService?.TryStartOnboarding(folder),
+            TaskScheduler.FromCurrentSynchronizationContext());
         if (_settings.ContextSnapshotEnabled)
-            _contextSnapshotService.StartGenerationInBackground([folder]);
+            _contextSnapshotService.StartGenerationInBackground(GetAllProjectPaths());
     }
 
     private void SelectFolder()
@@ -38,9 +41,16 @@ public partial class MainViewModel
             SetWorkingDirectory(dialog.FolderName);
     }
 
-    public void SetWorkingDirectory(string folder)
+    public void SetWorkingDirectory(string folder) => SetWorkingDirectoryCore(folder, showMessage: true);
+
+    /// <summary>
+    /// Internal variant that skips the "Project loaded" message (used by SetActiveWorkspace
+    /// which shows its own workspace-level message).
+    /// </summary>
+    private void SetWorkingDirectoryCore(string folder, bool showMessage)
     {
-        // Check if this project is already open in another tab
+        if (string.IsNullOrEmpty(folder)) return;
+
         if (IsProjectLockedByOtherTab?.Invoke(folder) == true)
         {
             Messages.Add(new MessageViewModel(MessageRole.System,
@@ -48,23 +58,19 @@ public partial class MainViewModel
             return;
         }
 
-        // Unlock previous project before switching
         UnlockCurrentProject?.Invoke();
 
-        // Stop existing process when switching projects
-        _cliService.StopSession();
-
+        // Stop all chat sessions' CLI processes and close extra tabs
+        StopAllChatSessions();
         _cliService.WorkingDirectory = folder;
         _settings.WorkingDirectory = folder;
 
-        // Add to recent folders (move to top if already exists)
+        // Update recent folders
         RecentFolders.Remove(folder);
         RecentFolders.Insert(0, folder);
         _settings.RecentFolders.Remove(folder);
         _settings.RecentFolders.Insert(0, folder);
 
-        // Keep max 10 recent folders — trim each list independently to avoid
-        // IndexOutOfRange if they get out of sync
         while (RecentFolders.Count > 10)
             RecentFolders.RemoveAt(RecentFolders.Count - 1);
         while (_settings.RecentFolders.Count > 10)
@@ -72,105 +78,49 @@ public partial class MainViewModel
 
         _settingsService.Save(_settings);
         ProjectPath = folder;
-        _registeredProjectRoots.Add(Path.GetFullPath(folder));
+        _registeredProjectRoots.TryAdd(Path.GetFullPath(folder), 0);
 
-        // Lock this project in the tab system
         LockProject?.Invoke(folder);
         RefreshGitStatus();
         StartGitRefreshTimer();
         UpdateExplorerRoot();
 
-        // Register project in registry
-        _ = Task.Run(() => _projectRegistry.RegisterProject(folder, _gitService));
+        _ = Task.Run(() =>
+        {
+            _projectRegistry.RegisterProject(folder, _gitService);
+        }).ContinueWith(_ =>
+            _onboardingService?.TryStartOnboarding(folder),
+            TaskScheduler.FromCurrentSynchronizationContext());
 
-        // Rebuild file index in background
         _ = Task.Run(() => RefreshAutocompleteIndex());
 
-        // Clear stale snapshots from previous project, then generate for new project only
         if (_settings.ContextSnapshotEnabled)
         {
             _contextSnapshotService.InvalidateAll();
-            _contextSnapshotService.StartGenerationInBackground([folder]);
+            _contextSnapshotService.StartGenerationInBackground(GetAllProjectPaths());
         }
 
-        // Always start fresh session when switching projects
-        // (Session restore at startup is handled by the constructor + Welcome screen "Continue Chat")
-        StartNewSession(); // sets _needsPreambleInjection = true
+        StartNewSession();
 
-        var folderName = Path.GetFileName(folder) ?? folder;
-        Messages.Add(new MessageViewModel(MessageRole.System,
-            $"Project loaded: {folderName}\nType your message below to start working. Enter sends, Shift+Enter for newline."));
+        if (showMessage)
+        {
+            var folderName = Path.GetFileName(folder) ?? folder;
+            Messages.Add(new MessageViewModel(MessageRole.System,
+                $"Project loaded: {folderName}\nType your message below to start working. Enter sends, Shift+Enter for newline."));
+        }
     }
 
     private void StartNewSession()
     {
-        if (IsProcessing)
-            CancelProcessing();
-
-        // Save current chat before clearing
-        SaveChatHistory();
-        _currentChatId = null;
-
-        _messageAssembler.ClearMessages();
-        MessageQueue.Clear();
-        ChangedFiles.Clear();
-        ClearBackgroundTasks();
-        _cliService.ClearFileSnapshots();
-        // FIX (WARNING #3): ResetSessionAsync stops the process and nulls _sessionId.
-        // Null _sessionId synchronously to prevent BuildArguments from using a stale
-        // session ID if SendMessage is called before the async stop completes.
-        // The async stop itself is safe to fire-and-forget (has internal error handling).
-        _crashRetryCount = 0;
-        _cliService.ResetSessionSync();
-        ModelName = "";
-        StatusText = "";
-        ReviewStatusText = "";
-        ContextUsageText = "";
-        ContextPctText = "";
-        TodoProgressText = "";
-        _contextWarningShown = false;
-        _contextWindowSize = 0;
-        _needsPreambleInjection = true;
-        _apiKeyExpiryChecked = false;
-        _pendingQuestionAnswers.Clear();
-        _pendingQuestionMessages.Clear();
-        _pendingQuestionCount = 0;
-        _pendingControlRequestId = null;
-        _pendingControlToolUseId = null;
-        _pendingQuestionInput = null;
-
-        // Reset finalize actions state
-        FinalizeActions.ShowTaskSuggestion = false;
-        FinalizeActions.ShowFinalizeActionsLabel = false;
-        FinalizeActions.HasCompletedTask = false;
-        FinalizeActions.SuggestedTasks.Clear();
-        FinalizeActions.StopTaskSuggestionTimer();
-        StopNudgeTimer();
-
-        // Clear saved session for current project
-        if (!string.IsNullOrEmpty(WorkingDirectory)
-            && _settings.SavedSessions.Remove(WorkingDirectory))
-        {
-            _settingsService.Save(_settings);
-        }
-
-        // Regenerate context snapshot fresh for current project (as if app just started)
-        if (_settings.ContextSnapshotEnabled && !string.IsNullOrEmpty(WorkingDirectory))
-        {
-            _contextSnapshotService.InvalidateAll();
-            _contextSnapshotService.StartGenerationInBackground([WorkingDirectory]);
-        }
-
-        UpdateCta(CtaState.Ready);
+        // Delegate entirely to ActiveChatSession — it handles TechnicalWriter flush,
+        // saved sessions cleanup, and context snapshot invalidation internally
+        ActiveChatSession?.StartNewSession();
     }
 
     private void SwitchToOpus()
     {
-        _cliService.ModelOverride = "opus";
-        StartNewSession();
-        Messages.Add(new MessageViewModel(MessageRole.System, "Switching to Opus. Next message will use claude-opus."));
+        ActiveChatSession?.SwitchToOpus();
     }
-
 
     private void StartGitRefreshTimer()
     {
@@ -189,28 +139,9 @@ public partial class MainViewModel
                 if (WorkingDirectory == dir)
                     ApplyGitStatus(result);
             }
-            catch { /* async void — swallow to prevent app crash */ }
+            catch { }
         };
         _gitRefreshTimer.Start();
-    }
-
-    /// <summary>
-    /// Detect changed files via git status as a fallback for tools that don't report file changes
-    /// (e.g. Bash with sed/node). Only adds files that are NEW compared to the pre-turn snapshot,
-    /// so only files changed by Claude in this turn are tracked (not pre-existing dirty files).
-    /// Must be awaited so ChangedFiles is populated before SaveChatHistory / OnTurnCompleted.
-    /// </summary>
-    private async Task DetectChangedFilesFromGitAsync()
-    {
-        if (string.IsNullOrEmpty(WorkingDirectory)) return;
-
-        var baseline = _preTurnDirtyFiles;
-        var files = await Task.Run(() => _gitService.GetChangedFiles(WorkingDirectory));
-        foreach (var file in files)
-        {
-            if (!baseline.Contains(file) && !ChangedFiles.Any(f => string.Equals(f, file, StringComparison.OrdinalIgnoreCase)))
-                ChangedFiles.Add(file);
-        }
     }
 
     private void RefreshGitStatus()
@@ -239,10 +170,8 @@ public partial class MainViewModel
         }
 
         var parts = new List<string>();
-
         if (dirtyCount > 0)
             parts.Add($"{dirtyCount} file(s) unstaged");
-
         if (unpushedCount > 0)
             parts.Add($"{unpushedCount} unpushed");
 
@@ -256,85 +185,20 @@ public partial class MainViewModel
         var names = _projectRegistry.Projects.Select(p => p.Name).ToList();
         _fileIndexService.SetProjectNames(names);
 
-        // Build file index for @-mention autocomplete
         if (!string.IsNullOrEmpty(WorkingDirectory))
             _fileIndexService.BuildFileIndex(WorkingDirectory);
     }
 
-    private void SaveChatHistory()
+    /// <summary>Save current chat history (delegate to ActiveChatSession).</summary>
+    public void SaveChatHistory()
     {
-        // Only save if there are user/assistant messages
-        var chatMessages = Messages
-            .Where(m => m.Role is MessageRole.User or MessageRole.Assistant)
-            .ToList();
-        if (chatMessages.Count == 0) return;
-
-        var entry = new ChatHistoryEntry
-        {
-            Id = _currentChatId ?? Guid.NewGuid().ToString(),
-            ProjectPath = WorkingDirectory,
-            SessionId = _cliService.SessionId,
-            Messages = chatMessages.Select(m => new ChatMessage
-            {
-                Role = m.Role,
-                Text = m.Text,
-                Timestamp = m.Timestamp,
-                ToolUses = m.ToolUses.Select(t => new ToolUseInfo
-                {
-                    ToolName = t.ToolName,
-                    ToolUseId = t.ToolUseId,
-                    Input = t.Input,
-                    Output = t.Output,
-                    Summary = t.Summary
-                }).ToList()
-            }).ToList()
-        };
-
-        // Title = first ~80 chars of first user message
-        var firstUser = chatMessages.FirstOrDefault(m => m.Role == MessageRole.User);
-        entry.Title = firstUser is not null
-            ? (firstUser.Text.Length > 80 ? firstUser.Text[..80] + "..." : firstUser.Text)
-            : "Untitled";
-
-        if (_currentChatId is null)
-        {
-            entry.CreatedAt = chatMessages[0].Timestamp;
-            _currentChatId = entry.Id;
-        }
-
-        try { _chatHistoryService.Save(entry); } catch { }
+        ActiveChatSession?.SaveChatHistory();
     }
 
+    /// <summary>Load a chat from history into the active chat session.</summary>
     public void LoadChatFromHistory(ChatHistoryEntry entry)
     {
-        if (IsProcessing)
-            CancelProcessing();
-
-        _messageAssembler.ClearMessages();
-        MessageQueue.Clear();
-
-        _currentChatId = entry.Id;
-
-        // Restore session if available
-        if (!string.IsNullOrEmpty(entry.SessionId))
-            _cliService.RestoreSession(entry.SessionId);
-        else
-            _cliService.ResetSessionAsync().ContinueWith(t =>
-                Services.DiagnosticLogger.Log("RESET_SESSION_ERROR", t.Exception?.InnerException?.Message ?? "unknown"),
-                TaskContinuationOptions.OnlyOnFaulted);
-        _needsPreambleInjection = true;
-        ResetTaskOutputSentFlags();
-
-        // Restore messages
-        foreach (var msg in entry.Messages)
-        {
-            var vm = new MessageViewModel(msg.Role, msg.Text);
-            foreach (var tool in msg.ToolUses)
-                vm.ToolUses.Add(new ToolUseViewModel(tool.ToolName, tool.ToolUseId, tool.Input));
-            Messages.Add(vm);
-        }
-
-        // Switch to project if different
+        // Switch project if different
         if (!string.IsNullOrEmpty(entry.ProjectPath) && entry.ProjectPath != WorkingDirectory)
         {
             _cliService.WorkingDirectory = entry.ProjectPath;
@@ -346,17 +210,12 @@ public partial class MainViewModel
             _ = Task.Run(() => RefreshAutocompleteIndex());
         }
 
-        ModelName = "";
-        StatusText = "";
-
-        Messages.Add(new MessageViewModel(MessageRole.System,
-            $"Loaded chat from history. {(entry.SessionId is not null ? "Session restored — you can continue." : "No session to restore.")}"));
-        UpdateCta(CtaState.WaitingForUser);
+        ActiveChatSession?.LoadChatFromHistory(entry);
     }
 
     public void StartGeneralChat()
     {
-        _cliService.StopSession();
+        StopAllChatSessions();
         _cliService.WorkingDirectory = null;
         _settings.WorkingDirectory = null;
         _settingsService.Save(_settings);
@@ -365,6 +224,134 @@ public partial class MainViewModel
         _gitRefreshTimer = null;
 
         ProjectPath = "";
-        NewSessionCommand.Execute(null);
+        StartNewSession();
+    }
+
+    /// <summary>
+    /// Activates a multi-project workspace (or deactivates if null).
+    /// Sets the primary project as CLI CWD and updates explorer to show all workspace roots.
+    /// </summary>
+    public void SetActiveWorkspace(Workspace? workspace)
+    {
+        ActiveWorkspace = workspace;
+
+        if (workspace is null)
+        {
+            // Revert to single-project mode — keep current WorkingDirectory
+            UpdateExplorerRoot();
+            return;
+        }
+
+        // Note: callers (MainWindow) are responsible for calling WorkspaceService.TouchLastOpened()
+        // before invoking this method — do not mutate workspace directly here.
+
+        // Snapshot project paths to avoid race with concurrent workspace edits (e.g. WorkspaceWindow)
+        var projectPaths = workspace.Projects.Select(p => p.Path).ToList();
+
+        // Register all workspace projects
+        foreach (var path in projectPaths)
+            _registeredProjectRoots.TryAdd(Path.GetFullPath(path), 0);
+
+        // Register all projects in the background
+        _ = Task.Run(() =>
+        {
+            foreach (var path in projectPaths)
+                _projectRegistry.RegisterProject(path, _gitService);
+        });
+
+        // Set primary project as CWD (no duplicate "Project loaded" message)
+        if (!string.IsNullOrEmpty(workspace.PrimaryProjectPath))
+            SetWorkingDirectoryCore(workspace.PrimaryProjectPath, showMessage: false);
+
+        // Generate context snapshots for all workspace projects
+        if (_settings.ContextSnapshotEnabled)
+        {
+            _contextSnapshotService.InvalidateAll();
+            _contextSnapshotService.StartGenerationInBackground(GetAllProjectPaths());
+        }
+
+        var projectNames = string.Join(", ", projectPaths.Select(Path.GetFileName));
+        Messages.Add(new MessageViewModel(MessageRole.System,
+            $"Workspace \"{workspace.Name}\" loaded ({workspace.Projects.Count} projects: {projectNames})"));
+    }
+
+    /// <summary>
+    /// Switches the primary (CLI CWD) project within the active workspace.
+    /// </summary>
+    public void SwitchPrimaryProject(string newPrimaryPath)
+    {
+        if (_activeWorkspace is null) return;
+
+        var normalized = Path.GetFullPath(newPrimaryPath);
+        if (!_activeWorkspace.Projects.Any(p =>
+            string.Equals(Path.GetFullPath(p.Path), normalized, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        if (string.Equals(WorkingDirectory, normalized, StringComparison.OrdinalIgnoreCase))
+            return; // Already primary
+
+        StopAllChatSessions();
+
+        _cliService.WorkingDirectory = normalized;
+        _settings.WorkingDirectory = normalized;
+
+        // Persist workspace primary change through WorkspaceService (thread-safe + saves)
+        if (PersistWorkspacePrimary != null)
+            PersistWorkspacePrimary(_activeWorkspace.Id, normalized);
+        else
+            _activeWorkspace.PrimaryProjectPath = normalized;
+
+        _settingsService.Save(_settings);
+
+        ProjectPath = normalized;
+        RefreshGitStatus();
+        UpdateExplorerRoot();
+
+        _plannerService?.Configure(_cliService.ClaudeExePath, normalized);
+        _planReviewerService?.Configure(_cliService.ClaudeExePath, normalized);
+        _orchestratorService?.Configure(_cliService.ClaudeExePath, normalized);
+
+        StartNewSession();
+
+        var folderName = Path.GetFileName(normalized);
+        Messages.Add(new MessageViewModel(MessageRole.System,
+            $"Primary project switched to: {folderName}"));
+    }
+
+    /// <summary>
+    /// Stops all chat sessions' CLI processes and closes extra chat tabs,
+    /// leaving only the first chat session active.
+    /// </summary>
+    private void StopAllChatSessions()
+    {
+        // Flush TechnicalWriter buffers before switching projects
+        _technicalWriterService?.Flush();
+
+        // Stop all CLI processes
+        foreach (var session in ChatSessions)
+            session.CliService.StopSession();
+
+        // Close extra chat tabs (keep only the first)
+        var extraTabs = SubTabs.Where(t => t.Type == SubTabType.Chat).Skip(1).ToList();
+        foreach (var tab in extraTabs)
+        {
+            if (tab.LinkedChatSession is { } session)
+            {
+                session.SaveChatHistory();
+                ChatSessions.Remove(session);
+                session.Dispose();
+            }
+            SubTabs.Remove(tab);
+        }
+
+        // Reset counter and rename remaining tab
+        _chatTabCounter = 1;
+        var chatTab = SubTabs.FirstOrDefault(t => t.Type == SubTabType.Chat);
+        if (chatTab != null)
+        {
+            chatTab.Title = "Chat";
+            if (ActiveSubTab?.Type == SubTabType.Chat)
+                ActiveSubTab = chatTab;
+        }
     }
 }

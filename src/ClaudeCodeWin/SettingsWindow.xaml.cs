@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Windows;
 using ClaudeCodeWin.Models;
 using ClaudeCodeWin.Services;
@@ -13,10 +14,12 @@ public partial class SettingsWindow : Window
     private readonly UpdateViewModel _updateViewModel;
     private readonly string? _workingDir;
     private readonly InstructionsService _instructions = new();
+    private readonly SpeechRecognitionService? _speechService;
+    private CancellationTokenSource? _downloadCts;
     private bool _initialized;
 
     public SettingsWindow(AppSettings settings, SettingsService settingsService, MainViewModel viewModel,
-        UpdateViewModel updateViewModel, string? workingDir)
+        UpdateViewModel updateViewModel, string? workingDir, SpeechRecognitionService? speechService = null)
     {
         InitializeComponent();
         _settings = settings;
@@ -24,6 +27,7 @@ public partial class SettingsWindow : Window
         _viewModel = viewModel;
         _updateViewModel = updateViewModel;
         _workingDir = workingDir;
+        _speechService = speechService;
 
         // Set current state
         if (settings.UpdateChannel == "beta")
@@ -35,6 +39,7 @@ public partial class SettingsWindow : Window
         UpdateServersSummary();
         UpdateActivationSummary();
         UpdateApiKeysSummary();
+        InitVoiceInput();
 
         _initialized = true;
     }
@@ -134,8 +139,146 @@ public partial class SettingsWindow : Window
         ApiKeysSummary.Text = string.Join("  |  ", parts);
     }
 
+    // ── Voice Input ──
+
+    private void InitVoiceInput()
+    {
+        // Populate model combo
+        foreach (var model in WhisperModelManager.AvailableModels)
+            VoiceModelCombo.Items.Add(WhisperModelManager.GetModelDisplayName(model));
+
+        var selectedIdx = Array.IndexOf(WhisperModelManager.AvailableModels, _settings.VoiceInputModel);
+        if (selectedIdx < 0) selectedIdx = 2; // default to "small"
+        VoiceModelCombo.SelectedIndex = selectedIdx;
+
+        VoiceEnabledCheck.IsChecked = _settings.VoiceInputEnabled;
+        UpdateVoiceUI();
+    }
+
+    private void UpdateVoiceUI()
+    {
+        var enabled = VoiceEnabledCheck.IsChecked == true;
+        VoiceModelPanel.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!enabled)
+        {
+            VoiceSummary.Text = "Disabled — no microphone button shown";
+            return;
+        }
+
+        var model = GetSelectedModel();
+        var downloaded = WhisperModelManager.IsModelDownloaded(model);
+
+        VoiceDownloadBtn.Visibility = downloaded ? Visibility.Collapsed : Visibility.Visible;
+        VoiceDeleteBtn.Visibility = downloaded ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!SpeechRecognitionService.HasMicrophone())
+        {
+            VoiceSummary.Text = "No microphone detected";
+            return;
+        }
+
+        var modelDisplay = WhisperModelManager.GetModelDisplayName(model);
+        VoiceSummary.Text = downloaded
+            ? $"Ready — model: {modelDisplay}"
+            : $"Model not downloaded — model: {modelDisplay}";
+    }
+
+    private string GetSelectedModel()
+    {
+        var models = WhisperModelManager.AvailableModels;
+        var idx = VoiceModelCombo.SelectedIndex;
+        return idx >= 0 && idx < models.Length ? models[idx] : "small";
+    }
+
+    private void VoiceEnabled_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_initialized) return;
+        _settings.VoiceInputEnabled = VoiceEnabledCheck.IsChecked == true;
+        _settingsService.Save(_settings);
+        UpdateVoiceUI();
+    }
+
+    private void VoiceModel_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (!_initialized) return;
+        _settings.VoiceInputModel = GetSelectedModel();
+        _settingsService.Save(_settings);
+        UpdateVoiceUI();
+    }
+
+    private async void VoiceDownload_Click(object sender, RoutedEventArgs e)
+    {
+        var model = GetSelectedModel();
+        VoiceDownloadBtn.IsEnabled = false;
+        VoiceDownloadProgress.Visibility = Visibility.Visible;
+        VoiceDownloadProgress.Value = 0;
+        VoiceDownloadStatus.Text = "Downloading...";
+
+        _downloadCts?.Cancel();
+        _downloadCts = new CancellationTokenSource();
+
+        try
+        {
+            var success = await WhisperModelManager.DownloadModelAsync(
+                model,
+                (downloaded, total) =>
+                {
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        var pct = total > 0 ? (double)downloaded / total * 100 : 0;
+                        VoiceDownloadProgress.Value = pct;
+                        VoiceDownloadStatus.Text = $"Downloading... {downloaded / 1_048_576} / {total / 1_048_576} MB ({pct:F0}%)";
+                    });
+                },
+                _downloadCts.Token);
+
+            if (success)
+            {
+                VoiceDownloadStatus.Text = "Download complete!";
+
+                // Auto-load model into speech service
+                if (_speechService is not null)
+                {
+                    VoiceDownloadStatus.Text = "Loading model...";
+                    await _speechService.LoadModelAsync(model);
+                    VoiceDownloadStatus.Text = "Model loaded and ready!";
+                }
+            }
+            else
+            {
+                VoiceDownloadStatus.Text = "Download cancelled.";
+            }
+        }
+        catch (Exception ex)
+        {
+            VoiceDownloadStatus.Text = $"Download failed: {ex.Message}";
+        }
+        finally
+        {
+            VoiceDownloadBtn.IsEnabled = true;
+            VoiceDownloadProgress.Visibility = Visibility.Collapsed;
+            UpdateVoiceUI();
+        }
+    }
+
+    private void VoiceDelete_Click(object sender, RoutedEventArgs e)
+    {
+        var model = GetSelectedModel();
+        var result = MessageBox.Show(
+            $"Delete the {model} model file?\nYou can re-download it later.",
+            "Delete Model", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        WhisperModelManager.DeleteModel(model);
+        VoiceDownloadStatus.Text = "Model deleted.";
+        UpdateVoiceUI();
+    }
+
     private void Close_Click(object sender, RoutedEventArgs e)
     {
+        _downloadCts?.Cancel();
         Close();
     }
 }

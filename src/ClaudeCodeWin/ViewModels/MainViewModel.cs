@@ -1,7 +1,8 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using System.Text.Json;
 using System.Windows;
 using ClaudeCodeWin.ContextSnapshot;
 using ClaudeCodeWin.Infrastructure;
@@ -64,6 +65,7 @@ public partial class MainViewModel : ViewModelBase
         </system-instruction>
         """;
 
+    // ─── Service references (project-level, shared across chat sessions) ───
     private readonly ClaudeCliService _cliService;
     private readonly NotificationService _notificationService;
     private readonly SettingsService _settingsService;
@@ -78,33 +80,20 @@ public partial class MainViewModel : ViewModelBase
     private readonly TeamNotesService _teamNotesService;
     private readonly DevKbService? _devKbService;
     private TaskRunnerService? _taskRunnerService;
+    private OnboardingService? _onboardingService;
+    private TechnicalWriterService? _technicalWriterService;
     private Window? _ownerWindow;
 
-    private bool _isProcessing;
-    private bool _isReviewInProgress;
-    private string _statusText = "";
-    private string _modelName = "";
-    private readonly ChatMessageAssembler _messageAssembler;
-    private bool _hasResponseStarted;
-    private string? _lastSentText;
-    private List<FileAttachment>? _lastSentAttachments;
+    // ─── Multi-chat infrastructure ───
+    public ObservableCollection<ChatSessionViewModel> ChatSessions { get; } = [];
+    private ChatSessionViewModel? _activeChatSession;
+    internal ChatSessionServices? SharedChatServices { get; private set; }
+
+    // ─── Project-level state ───
     private string _projectPath = "";
-    private string _effectiveProjectName = "";
     private string _gitStatusText = "";
     private string _gitDirtyText = "";
     private bool _hasGitRepo;
-    private string _contextUsageText = "";
-    private string _contextPctText = "";
-    private string? _currentChatId;
-    private string _ctaText = "";
-    private CtaState _ctaState = CtaState.Ready;
-    private int _contextWindowSize;
-    private bool _contextWarningShown;
-    private int _previousInputTokens;
-    private int _previousCtxPercent;
-    private string _todoProgressText = "";
-    private bool _showRateLimitBanner;
-    private string _rateLimitCountdown = "";
 
     // Conflict tracking: pause team when chat edits a file the team has changed
     private bool _teamPausedForConflict;
@@ -116,121 +105,117 @@ public partial class MainViewModel : ViewModelBase
     private System.Windows.Threading.DispatcherTimer? _gitRefreshTimer;
 
     // Track project roots already registered this session (avoid re-registering)
-    private readonly HashSet<string> _registeredProjectRoots =
+    // ConcurrentDictionary for thread safety — accessed from UI thread and Task.Run
+    private readonly ConcurrentDictionary<string, byte> _registeredProjectRoots =
         new(StringComparer.OrdinalIgnoreCase);
 
-    // Preamble injection: set true whenever context may have been lost
-    // (new session, session restore, context compaction, chat history load)
-    private bool _needsPreambleInjection = true;
-    private bool _apiKeyExpiryChecked;
+    // ═══════════════════════════════════════════════════════════════════
+    //  ActiveChatSession + property forwarding
+    // ═══════════════════════════════════════════════════════════════════
 
-    // ExitPlanMode auto-confirm state
-    private int _exitPlanModeAutoCount;
+    public ChatSessionViewModel? ActiveChatSession
+    {
+        get => _activeChatSession;
+        set
+        {
+            if (_activeChatSession == value) return;
+            if (_activeChatSession != null)
+            {
+                _activeChatSession.PropertyChanged -= OnActiveChatPropertyChanged;
+                _activeChatSession.IsActive = false;
+            }
+            _activeChatSession = value;
+            if (_activeChatSession != null)
+            {
+                _activeChatSession.PropertyChanged += OnActiveChatPropertyChanged;
+                _activeChatSession.IsActive = true;
+            }
+            OnPropertyChanged();
+            RaiseAllChatProxyProperties();
+        }
+    }
 
-    // Generation counter: incremented in both CancelProcessing and SendDirectAsync
-    // to detect stale HandleCompleted/HandleError callbacks.
-    // Each send claims a new generation via ++_sendGeneration; if _activeSendGeneration
-    // doesn't match _sendGeneration when a callback fires, the callback is stale.
-    private int _sendGeneration;
-    private int _activeSendGeneration;
+    // Property names that are proxied from ChatSessionViewModel to MainViewModel
+    private static readonly HashSet<string> _proxyPropertyNames =
+    [
+        nameof(Messages), nameof(Attachments), nameof(MessageQueue),
+        nameof(ChangedFiles), nameof(ComposerBlocks), nameof(BackgroundTasks),
+        nameof(IsProcessing), nameof(IsReviewInProgress),
+        nameof(StatusText), nameof(ReviewStatusText),
+        nameof(ModelName), nameof(CanSwitchToOpus),
+        nameof(EffectiveProjectName), nameof(ContextUsageText), nameof(ContextPctText),
+        nameof(TodoProgressText), nameof(CtaText), nameof(HasCta),
+        nameof(ShowRateLimitBanner), nameof(RateLimitCountdown),
+        nameof(InputText), nameof(IsComposerEmpty),
+        nameof(HasAttachments), nameof(HasQueuedMessages),
+        nameof(HasChangedFiles), nameof(ChangedFilesText),
+        nameof(HasDialogHistory), nameof(FinalizeActions),
+        nameof(ShowNudgeButton), nameof(HasBackgroundTasks), nameof(BackgroundTasksHeaderText)
+    ];
 
-    // Auto-restart: retry once when CLI process crashes mid-conversation
-    private int _crashRetryCount;
-    private const int MaxCrashRetries = 1;
+    private void OnActiveChatPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != null && _proxyPropertyNames.Contains(e.PropertyName))
+            OnPropertyChanged(e.PropertyName);
+        if (e.PropertyName is "IsProcessing" or "IsReviewInProgress")
+            CancelCommand.RaiseCanExecuteChanged();
+    }
 
-    // Control request protocol state
-    private int _pendingQuestionCount;
-    private string? _pendingControlRequestId;
-    private string? _pendingControlToolUseId;
-    private JsonElement? _pendingQuestionInput;
-    private readonly List<(string question, string answer)> _pendingQuestionAnswers = [];
-    private readonly List<MessageViewModel> _pendingQuestionMessages = [];
+    private void RaiseAllChatProxyProperties()
+    {
+        foreach (var name in _proxyPropertyNames) OnPropertyChanged(name);
+        CancelCommand.RaiseCanExecuteChanged();
+    }
 
-    public ObservableCollection<MessageViewModel> Messages { get; } = [];
-    public ObservableCollection<FileAttachment> Attachments { get; } = [];
+    // ═══════════════════════════════════════════════════════════════════
+    //  Proxy properties → ActiveChatSession
+    // ═══════════════════════════════════════════════════════════════════
+
+    // Empty collection fallbacks (used when ActiveChatSession is null during startup)
+    private static readonly ObservableCollection<MessageViewModel> _emptyMessages = [];
+    private static readonly ObservableCollection<FileAttachment> _emptyAttachments = [];
+    private static readonly ObservableCollection<QueuedMessage> _emptyQueue = [];
+    private static readonly ObservableCollection<string> _emptyStrings = [];
+    private static readonly ObservableCollection<ComposerBlock> _emptyComposer = [new TextComposerBlock()];
+    private static readonly ObservableCollection<BackgroundTaskViewModel> _emptyBgTasks = [];
+
+    public ObservableCollection<MessageViewModel> Messages => ActiveChatSession?.Messages ?? _emptyMessages;
+    public ObservableCollection<FileAttachment> Attachments => ActiveChatSession?.Attachments ?? _emptyAttachments;
+    public ObservableCollection<QueuedMessage> MessageQueue => ActiveChatSession?.MessageQueue ?? _emptyQueue;
+    public ObservableCollection<string> ChangedFiles => ActiveChatSession?.ChangedFiles ?? _emptyStrings;
+    public ObservableCollection<ComposerBlock> ComposerBlocks => ActiveChatSession?.ComposerBlocks ?? _emptyComposer;
+    public ObservableCollection<BackgroundTaskViewModel> BackgroundTasks => ActiveChatSession?.BackgroundTasks ?? _emptyBgTasks;
     public ObservableCollection<string> RecentFolders { get; } = [];
-    public ObservableCollection<QueuedMessage> MessageQueue { get; } = [];
-    public ObservableCollection<string> ChangedFiles { get; } = [];
-    private HashSet<string> _preTurnDirtyFiles = [];
-    public ObservableCollection<ComposerBlock> ComposerBlocks { get; } = [new TextComposerBlock()];
 
-    /// <summary>
-    /// Computed proxy: reads/writes the first TextComposerBlock's text.
-    /// Keeps backward compatibility with code that sets InputText directly.
-    /// WARNING: The setter calls ClearComposerText(), which destroys ALL composer blocks
-    /// (including inline images) and replaces them with a single empty TextBlock.
-    /// Use only for restoring plain text (recall, queue pop, scripts).
-    /// </summary>
     public string InputText
     {
-        get => string.Join("", ComposerBlocks.OfType<TextComposerBlock>().Select(t => t.Text));
-        set
-        {
-            ClearComposerText();
-            if (ComposerBlocks[0] is TextComposerBlock tb)
-                tb.Text = value ?? "";
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsComposerEmpty));
-        }
+        get => ActiveChatSession?.InputText ?? "";
+        set { if (ActiveChatSession != null) ActiveChatSession.InputText = value; }
     }
 
-    public bool IsComposerEmpty =>
-        ComposerBlocks.Count == 1
-        && ComposerBlocks[0] is TextComposerBlock tb
-        && string.IsNullOrWhiteSpace(tb.Text);
+    public bool IsComposerEmpty => ActiveChatSession?.IsComposerEmpty ?? true;
+    public void NotifyComposerChanged() => ActiveChatSession?.NotifyComposerChanged();
 
-    /// <summary>Call from View when composer content changes (text or block structure).</summary>
-    public void NotifyComposerChanged() => OnPropertyChanged(nameof(IsComposerEmpty));
-
-    public bool IsProcessing
-    {
-        get => _isProcessing;
-        set => SetProperty(ref _isProcessing, value);
-    }
-
-    public bool IsReviewInProgress
-    {
-        get => _isReviewInProgress;
-        set
-        {
-            if (SetProperty(ref _isReviewInProgress, value))
-                CancelCommand.RaiseCanExecuteChanged();
-        }
-    }
+    public bool IsProcessing => ActiveChatSession?.IsProcessing ?? false;
+    public bool IsReviewInProgress => ActiveChatSession?.IsReviewInProgress ?? false;
 
     public DependencySetupViewModel DependencySetup { get; } = new();
 
-    public bool HasAttachments => Attachments.Count > 0;
-    public bool HasQueuedMessages => MessageQueue.Count > 0;
-    public bool HasChangedFiles => ChangedFiles.Count > 0;
-    public string ChangedFilesText => $"{ChangedFiles.Count} file(s) changed";
+    public bool HasAttachments => ActiveChatSession?.HasAttachments ?? false;
+    public bool HasQueuedMessages => ActiveChatSession?.HasQueuedMessages ?? false;
+    public bool HasChangedFiles => ActiveChatSession?.HasChangedFiles ?? false;
+    public string ChangedFilesText => ActiveChatSession?.ChangedFilesText ?? "";
 
     public string StatusText
     {
-        get => _statusText;
-        set => SetProperty(ref _statusText, value);
+        get => ActiveChatSession?.StatusText ?? "";
+        set { if (ActiveChatSession != null) ActiveChatSession.StatusText = value; }
     }
 
-    private string _reviewStatusText = "";
-    public string ReviewStatusText
-    {
-        get => _reviewStatusText;
-        set => SetProperty(ref _reviewStatusText, value);
-    }
+    public string ReviewStatusText => ActiveChatSession?.ReviewStatusText ?? "";
 
-    public string ModelName
-    {
-        get => _modelName;
-        set
-        {
-            if (SetProperty(ref _modelName, value))
-                OnPropertyChanged(nameof(CanSwitchToOpus));
-        }
-    }
-
-    public bool CanSwitchToOpus =>
-        !string.IsNullOrEmpty(_modelName)
-        && !_modelName.Contains("opus", StringComparison.OrdinalIgnoreCase);
+    public string ModelName => ActiveChatSession?.ModelName ?? "";
+    public bool CanSwitchToOpus => ActiveChatSession?.CanSwitchToOpus ?? false;
 
     public string ProjectPath
     {
@@ -268,11 +253,12 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    public string EffectiveProjectName
-    {
-        get => _effectiveProjectName;
-        set => SetProperty(ref _effectiveProjectName, value);
-    }
+    public string EffectiveProjectName => ActiveChatSession?.EffectiveProjectName ?? "";
+    public string ContextUsageText => ActiveChatSession?.ContextUsageText ?? "";
+    public string ContextPctText => ActiveChatSession?.ContextPctText ?? "";
+    public string TodoProgressText => ActiveChatSession?.TodoProgressText ?? "";
+    public string CtaText => ActiveChatSession?.CtaText ?? "";
+    public bool HasCta => ActiveChatSession?.HasCta ?? false;
 
     public string GitStatusText
     {
@@ -292,32 +278,6 @@ public partial class MainViewModel : ViewModelBase
         set => SetProperty(ref _hasGitRepo, value);
     }
 
-    public string ContextUsageText
-    {
-        get => _contextUsageText;
-        set => SetProperty(ref _contextUsageText, value);
-    }
-
-    public string ContextPctText
-    {
-        get => _contextPctText;
-        set => SetProperty(ref _contextPctText, value);
-    }
-
-    public string TodoProgressText
-    {
-        get => _todoProgressText;
-        set => SetProperty(ref _todoProgressText, value);
-    }
-
-    public string CtaText
-    {
-        get => _ctaText;
-        set => SetProperty(ref _ctaText, value);
-    }
-
-    public bool HasCta => !string.IsNullOrEmpty(_ctaText);
-
     public bool AutoConfirmEnabled
     {
         get => _settings.AutoConfirmPlanMode;
@@ -329,17 +289,8 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    public bool ShowRateLimitBanner
-    {
-        get => _showRateLimitBanner;
-        set => SetProperty(ref _showRateLimitBanner, value);
-    }
-
-    public string RateLimitCountdown
-    {
-        get => _rateLimitCountdown;
-        set => SetProperty(ref _rateLimitCountdown, value);
-    }
+    public bool ShowRateLimitBanner => ActiveChatSession?.ShowRateLimitBanner ?? false;
+    public string RateLimitCountdown => ActiveChatSession?.RateLimitCountdown ?? "";
 
     private string _conflictBannerText = "";
     public string ConflictBannerText
@@ -349,27 +300,41 @@ public partial class MainViewModel : ViewModelBase
     }
 
     public bool IsConflictBannerVisible => _teamPausedForConflict;
-
-    /// <summary>True when conflict buttons should be enabled (still waiting for user decision).</summary>
     public bool IsConflictActionable => _pendingConflictRequestId != null;
 
-    public RelayCommand EditAnywayCommand { get; }
-    public RelayCommand CancelConflictCommand { get; }
+    public FinalizeActionsViewModel? FinalizeActions => ActiveChatSession?.FinalizeActions;
 
-    public FinalizeActionsViewModel FinalizeActions { get; }
-
-    public bool HasDialogHistory => Messages.Any(m => m.Role == MessageRole.Assistant);
+    public bool HasDialogHistory => ActiveChatSession?.HasDialogHistory ?? false;
 
     public string? WorkingDirectory => _cliService.WorkingDirectory;
 
+    // Multi-project workspace (optional — null = single-project mode)
+    private Workspace? _activeWorkspace;
+    public Workspace? ActiveWorkspace
+    {
+        get => _activeWorkspace;
+        private set => SetProperty(ref _activeWorkspace, value);
+    }
+
+    /// <summary>
+    /// Returns all project paths in the active workspace, or just the current WorkingDirectory.
+    /// </summary>
+    internal List<string> GetAllProjectPaths()
+    {
+        if (_activeWorkspace is { } ws && ws.Projects.Count > 0)
+            return ws.Projects.Select(p => p.Path).ToList();
+        return string.IsNullOrEmpty(WorkingDirectory) ? [] : [WorkingDirectory];
+    }
+
+    public bool ShowNudgeButton => ActiveChatSession?.ShowNudgeButton ?? false;
+    public bool HasBackgroundTasks => ActiveChatSession?.HasBackgroundTasks ?? false;
+    public string BackgroundTasksHeaderText => ActiveChatSession?.BackgroundTasksHeaderText ?? "";
+
     /// <summary>Display name for the tab header.</summary>
     public string TabTitle => string.IsNullOrEmpty(ProjectFolderName) ? "New Tab" : ProjectFolderName;
-
-    /// <summary>Raises PropertyChanged for TabTitle (called by TabHostViewModel after project lock).</summary>
     public void RaiseTabTitleChanged() => OnPropertyChanged(nameof(TabTitle));
 
     private bool _isActiveTab;
-    /// <summary>Whether this tab is currently active (set by TabHostViewModel).</summary>
     public bool IsActiveTab
     {
         get => _isActiveTab;
@@ -381,7 +346,6 @@ public partial class MainViewModel : ViewModelBase
     }
 
     private bool _hasNotification;
-    /// <summary>Green dot indicator: shown when work completes on an inactive tab.</summary>
     public bool HasNotification
     {
         get => _hasNotification;
@@ -392,6 +356,13 @@ public partial class MainViewModel : ViewModelBase
     public Func<string, bool>? IsProjectLockedByOtherTab { get; set; }
     public Action<string>? LockProject { get; set; }
     public Action? UnlockCurrentProject { get; set; }
+
+    /// <summary>Callback to persist workspace primary project change (set by MainWindow).</summary>
+    public Action<string, string>? PersistWorkspacePrimary { get; set; }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  Commands
+    // ═══════════════════════════════════════════════════════════════════
 
     public RelayCommand SendCommand { get; }
     public RelayCommand CancelCommand { get; }
@@ -413,17 +384,74 @@ public partial class MainViewModel : ViewModelBase
     public RelayCommand NudgeCommand { get; }
     public RelayCommand SendBgTaskOutputCommand { get; }
     public RelayCommand DismissBgTaskCommand { get; }
+    public RelayCommand EditAnywayCommand { get; }
+    public RelayCommand CancelConflictCommand { get; }
+    public RelayCommand NewChatCommand { get; }
+    public RelayCommand CloseChatTabCommand { get; }
 
-    /// <summary>
-    /// Returns the built-in CCW system instruction text for display in the Instructions editor.
-    /// </summary>
     public static string GetSystemInstructionText() => SystemInstruction;
+
+    // ─── Internal accessors for ChatSessionViewModel ───
+    internal Window? OwnerWindow => _ownerWindow;
+    internal TaskRunnerService? TaskRunner => _taskRunnerService;
+    internal TechnicalWriterService? TechnicalWriter => _technicalWriterService;
+    internal PlannerService? Planner => _plannerService;
+    internal bool IsTeamPausedForConflict => _teamPausedForConflict;
+
+    internal void ResumeTeamAfterConflictPublic() => ResumeTeamAfterConflict();
+    internal void RefreshGitStatusPublic() => RefreshGitStatus();
+
+    internal bool CheckAndHandleFileConflict(string requestId, string toolUseId, string filePath, ClaudeCliService chatCli)
+    {
+        if (!IsFileConflictWithTeam(filePath)) return false;
+        _ = HandleConflictPauseAsync(requestId, toolUseId, filePath, callerCli: chatCli);
+        return true;
+    }
+
+    // ─── Service setup ───
 
     public void SetTaskRunner(TaskRunnerService taskRunnerService, Window ownerWindow)
     {
         _taskRunnerService = taskRunnerService;
         _ownerWindow = ownerWindow;
     }
+
+    public void SetOnboardingService(OnboardingService onboardingService)
+    {
+        if (_onboardingService == onboardingService) return;
+        if (_onboardingService is not null)
+        {
+            _onboardingService.OnOnboardingCompleted -= OnOnboardingCompleted;
+            _onboardingService.OnOnboardingError -= OnOnboardingError;
+        }
+        _onboardingService = onboardingService;
+        _onboardingService.OnOnboardingCompleted += OnOnboardingCompleted;
+        _onboardingService.OnOnboardingError += OnOnboardingError;
+    }
+
+    private void OnOnboardingCompleted(string projectPath, string summary)
+    {
+        if (!string.Equals(projectPath, WorkingDirectory, StringComparison.OrdinalIgnoreCase)) return;
+        Application.Current?.Dispatcher.BeginInvoke(() =>
+        {
+            Messages.Add(new MessageViewModel(MessageRole.System, summary));
+        });
+    }
+
+    private void OnOnboardingError(string projectPath, string error)
+    {
+        if (!string.Equals(projectPath, WorkingDirectory, StringComparison.OrdinalIgnoreCase)) return;
+        DiagnosticLogger.Log("ONBOARDING_ERROR", error);
+    }
+
+    public void SetTechnicalWriter(TechnicalWriterService writerService)
+    {
+        _technicalWriterService = writerService;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  Constructor
+    // ═══════════════════════════════════════════════════════════════════
 
     public MainViewModel(ClaudeCliService cliService, NotificationService notificationService,
         SettingsService settingsService, AppSettings settings, GitService gitService,
@@ -446,27 +474,46 @@ public partial class MainViewModel : ViewModelBase
         _backlogService = backlogService;
         _teamNotesService = teamNotesService;
         _devKbService = devKbService;
-        _messageAssembler = new ChatMessageAssembler(Messages);
 
-        SendCommand = new RelayCommand(() => _ = SendMessageAsync());
-        CancelCommand = new RelayCommand(() => CancelProcessing(), () => IsProcessing || IsReviewInProgress);
+        // Create shared chat services container
+        SharedChatServices = new ChatSessionServices
+        {
+            Notification = notificationService,
+            SettingsService = settingsService,
+            Settings = settings,
+            Git = gitService,
+            ChatHistory = chatHistoryService,
+            Usage = usageService,
+            Backlog = backlogService,
+            ProjectRegistry = projectRegistry,
+            ContextSnapshot = contextSnapshotService,
+            DevKb = devKbService
+        };
+
+        // Create first chat session (CLI events are wired inside ChatSessionViewModel)
+        var firstSession = new ChatSessionViewModel(cliService, this, SharedChatServices);
+        ChatSessions.Add(firstSession);
+
+        // ─── Commands (delegate to ActiveChatSession) ───
+
+        SendCommand = new RelayCommand(() => _ = ActiveChatSession?.SendMessageAsync());
+        CancelCommand = new RelayCommand(
+            () => ActiveChatSession?.CancelProcessing(),
+            () => ActiveChatSession?.IsProcessing == true || ActiveChatSession?.IsReviewInProgress == true);
         NewSessionCommand = new RelayCommand(StartNewSession);
         RemoveAttachmentCommand = new RelayCommand(p =>
         {
-            if (p is FileAttachment att)
-                Attachments.Remove(att);
+            if (p is FileAttachment att) ActiveChatSession?.Attachments.Remove(att);
         });
         PreviewAttachmentCommand = new RelayCommand(p =>
         {
             if (p is FileAttachment att && att.IsImage && File.Exists(att.FilePath))
                 ShowImagePreview(att);
         });
-
         SelectFolderCommand = new RelayCommand(SelectFolder);
         OpenRecentFolderCommand = new RelayCommand(p =>
         {
-            if (p is string folder)
-                SetWorkingDirectory(folder);
+            if (p is string folder) SetWorkingDirectory(folder);
         });
         RemoveRecentFolderCommand = new RelayCommand(p =>
         {
@@ -479,109 +526,29 @@ public partial class MainViewModel : ViewModelBase
         });
         RemoveQueuedMessageCommand = new RelayCommand(p =>
         {
-            if (p is QueuedMessage qm)
-                MessageQueue.Remove(qm);
+            if (p is QueuedMessage qm) ActiveChatSession?.MessageQueue.Remove(qm);
         });
         SendQueuedNowCommand = new RelayCommand(p =>
         {
-            if (p is QueuedMessage qm)
-            {
-                MessageQueue.Remove(qm);
-                CancelProcessing();
-                // Defer send to next dispatcher cycle so stale HandleCompleted/HandleError
-                // callbacks (queued before CancelProcessing killed the CLI) are processed
-                // and dropped by the generation check before the new send starts.
-                // Residual race: if pipe-buffered data from the killed process is read
-                // AFTER this callback runs, the stale callback would pass the generation
-                // check (both fields match). This is extremely unlikely on Windows but
-                // not impossible — a correct fix would require per-send closure capture
-                // in ClaudeCliService's event model.
-                System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
-                {
-                    // Guard against rapid double-click: if another queued message
-                    // already started sending, skip this one to avoid overwriting
-                    // the generation counter and losing the first response.
-                    if (IsProcessing) return;
-
-                    _currentTaskStartIndex = Messages.Count;
-                    _reviewCycleCompleted = false;
-                    ChangedFiles.Clear();
-                    _ = SendDirectAsync(qm.Text, qm.Attachments);
-                });
-            }
+            if (p is QueuedMessage qm) ActiveChatSession?.HandleSendQueuedNow(qm);
         });
         ReturnQueuedToInputCommand = new RelayCommand(p =>
         {
-            if (p is QueuedMessage qm)
-            {
-                MessageQueue.Remove(qm);
-                InputText = StripInlineMarkers(qm.Text);
-                // Restore attachments back to the attachment bar
-                if (qm.Attachments is not null)
-                {
-                    foreach (var att in qm.Attachments)
-                        AddAttachment(att);
-                }
-            }
+            if (p is QueuedMessage qm) ActiveChatSession?.HandleReturnQueuedToInput(qm);
         });
         ViewChangedFileCommand = new RelayCommand(p =>
         {
-            if (p is string filePath)
-                ShowFileDiff(filePath);
+            if (p is string filePath) ShowFileDiff(filePath);
         });
         AnswerQuestionCommand = new RelayCommand(p =>
         {
-            if (p is not string answer) return;
-
-            if (_pendingControlRequestId is not null)
-            {
-                // Fix WARNING #1: For multi-select, toggle option selection instead of sending answer.
-                // The answer is only sent when user clicks "Confirm selection".
-                // Find the correct question by scanning for an unanswered multi-select with matching option.
-                if (!answer.StartsWith("__confirm_multiselect__"))
-                {
-                    var msMsg = _pendingQuestionMessages.FirstOrDefault(m =>
-                        m.QuestionDisplay is { MultiSelect: true, IsAnswered: false }
-                        && m.QuestionDisplay.Options.Any(o => o.Label == answer));
-                    if (msMsg?.QuestionDisplay is { } display)
-                    {
-                        var option = display.Options.FirstOrDefault(o => o.Label == answer);
-                        if (option is not null)
-                            option.IsSelected = !option.IsSelected;
-                        return;
-                    }
-                }
-
-                // For multi-select confirm, parse target question index from command parameter
-                // (format: "__confirm_multiselect__:N") to confirm the correct question.
-                if (answer.StartsWith("__confirm_multiselect__"))
-                {
-                    // Fix Issue #1: require explicit ":N" suffix — without it we'd default to index 0
-                    // and silently confirm the wrong question
-                    var colonPos = answer.IndexOf(':');
-                    if (colonPos < 0) return;
-                    if (!int.TryParse(answer.AsSpan(colonPos + 1), out var confirmIdx) || confirmIdx < 0)
-                        return;
-
-                    if (confirmIdx < _pendingQuestionMessages.Count
-                        && _pendingQuestionMessages[confirmIdx]?.QuestionDisplay is { MultiSelect: true } msDisplay)
-                    {
-                        var selected = msDisplay.Options.Where(o => o.IsSelected).Select(o => o.Label).ToList();
-                        if (selected.Count == 0) return;
-                        answer = string.Join(", ", selected);
-                    }
-                    else
-                    {
-                        // confirmIdx doesn't match a valid multi-select question — ignore
-                        return;
-                    }
-                }
-
-                HandleControlAnswer(answer);
-            }
+            if (p is string answer) ActiveChatSession?.HandleAnswerCommand(answer);
         });
         SwitchToOpusCommand = new RelayCommand(SwitchToOpus);
-        DismissRateLimitCommand = new RelayCommand(() => ShowRateLimitBanner = false);
+        DismissRateLimitCommand = new RelayCommand(() =>
+        {
+            if (ActiveChatSession != null) ActiveChatSession.ShowRateLimitBanner = false;
+        });
         UpgradeAccountCommand = new RelayCommand(() =>
         {
             try { Process.Start(new ProcessStartInfo("https://console.anthropic.com/settings/billing") { UseShellExecute = true }); }
@@ -589,138 +556,52 @@ public partial class MainViewModel : ViewModelBase
         });
         SendTaskOutputCommand = new RelayCommand(p =>
         {
-            if (p is MessageViewModel msg && msg.HasTaskOutput && !msg.IsTaskOutputSent)
-            {
-                msg.IsTaskOutputSent = true;
-                var fullOutput = msg.TaskOutputFull ?? msg.TaskOutputText;
-                var prompt = $"Console output from task \"{msg.Text}\":\n\n<task-output>\n{fullOutput}\n</task-output>";
-                _ = SendDirectAsync(prompt, null);
-            }
+            if (p is MessageViewModel msg) ActiveChatSession?.HandleSendTaskOutput(msg);
         });
-        NudgeCommand = new RelayCommand(ExecuteNudge);
-        SendBgTaskOutputCommand = new RelayCommand(ExecuteSendBgTaskOutput);
-        DismissBgTaskCommand = new RelayCommand(ExecuteDismissBgTask);
+        NudgeCommand = new RelayCommand(() => ActiveChatSession?.ExecuteNudge());
+        SendBgTaskOutputCommand = new RelayCommand(p => ActiveChatSession?.ExecuteSendBgTaskOutput(p));
+        DismissBgTaskCommand = new RelayCommand(p => ActiveChatSession?.ExecuteDismissBgTask(p));
         EditAnywayCommand = new RelayCommand(() => HandleEditAnyway());
         CancelConflictCommand = new RelayCommand(() => HandleCancelConflict());
-        InitializeNudge();
-        InitializeBackgroundTaskTimer();
+        NewChatCommand = new RelayCommand(CreateChatSession);
+        CloseChatTabCommand = new RelayCommand(p =>
+        {
+            if (p is SubTab tab) CloseChatTab(tab);
+        });
+
         InitializeSubTabCommands();
         InitializeSubTabs();
 
-        FinalizeActions = new FinalizeActionsViewModel(settingsService, settings, () => WorkingDirectory);
-        FinalizeActions.OnCommitRequested += msg => _ = SendDirectAsync(msg, null);
-        FinalizeActions.OnRunTaskRequested += task =>
-        {
-            if (_ownerWindow is not null)
-                TaskRunnerService.RunTaskPublic(task, this, _ownerWindow);
-        };
+        // Set ActiveChatSession AFTER sub-tabs are initialized (so LinkedSubTab can be linked)
+        ActiveChatSession = firstSession;
 
-        Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
-        Messages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasDialogHistory));
-        MessageQueue.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasQueuedMessages));
-        ChangedFiles.CollectionChanged += (_, _) =>
-        {
-            OnPropertyChanged(nameof(HasChangedFiles));
-            OnPropertyChanged(nameof(ChangedFilesText));
-        };
-
-        _cliService.OnTextBlockStart += HandleTextBlockStart;
-        _cliService.OnTextDelta += HandleTextDelta;
-        _cliService.OnThinkingDelta += HandleThinkingDelta;
-        _cliService.OnToolUseStarted += HandleToolUseStarted;
-        _cliService.OnToolResult += HandleToolResult;
-        _cliService.OnCompleted += HandleCompleted;
-        _cliService.OnError += HandleError;
-        _cliService.OnControlRequest += HandleControlRequest;
-        _cliService.OnFileChanged += HandleFileChanged;
-        _cliService.OnRateLimitDetected += () =>
-            RunOnUI(() => _usageService.SetRateLimitedExternally());
-
-        // Subscribe to rate limit changes from UsageService
-        _usageService.OnRateLimitChanged += isLimited =>
-        {
-            RunOnUI(() =>
-            {
-                if (isLimited)
-                {
-                    ShowRateLimitBanner = true;
-                    RateLimitCountdown = _usageService.GetSessionCountdown();
-                    Messages.Add(new MessageViewModel(MessageRole.System,
-                        $"Rate limit reached. Resets in {RateLimitCountdown}."));
-                }
-                else
-                {
-                    ShowRateLimitBanner = false;
-                    RateLimitCountdown = "";
-                    Messages.Add(new MessageViewModel(MessageRole.System,
-                        "Rate limit cleared. You can continue working."));
-                }
-            });
-        };
-
-        // Update rate limit countdown text every second (piggybacking on UsageService OnUsageUpdated)
-        _usageService.OnUsageUpdated += () =>
-        {
-            if (_showRateLimitBanner)
-                RateLimitCountdown = _usageService.GetSessionCountdown();
-        };
-
-        _cliService.OnMessageStarted += HandleMessageStarted;
-
-        _cliService.OnCompactionDetected += msg =>
-        {
-            RunOnUI(() =>
-            {
-                var ctx = ContextUsageText;
-                Messages.Add(new MessageViewModel(MessageRole.System,
-                    $"Context auto-compacted. {msg} [{ctx}]"));
-                DiagnosticLogger.Log("COMPACTION", $"{msg} ctx={ctx}");
-                _contextWarningShown = false; // reset so warning fires again if context fills up
-            });
-        };
-
-        _cliService.OnSystemNotification += msg =>
-        {
-            DiagnosticLogger.Log("SYSTEM_NOTIFICATION", msg);
-        };
-
-        // Enable diagnostic logging from settings
         DiagnosticLogger.Enabled = settings.DiagnosticLoggingEnabled;
 
-        // Initialize recent folders from settings
         foreach (var folder in settings.RecentFolders)
             RecentFolders.Add(folder);
 
         ProjectPath = settings.WorkingDirectory ?? "";
-        UpdateCta(CtaState.Ready);
 
-        // Restore session and git status if project was already set
         if (!string.IsNullOrEmpty(settings.WorkingDirectory))
         {
-            _registeredProjectRoots.Add(Path.GetFullPath(settings.WorkingDirectory));
+            _registeredProjectRoots.TryAdd(Path.GetFullPath(settings.WorkingDirectory), 0);
             RefreshGitStatus();
             StartGitRefreshTimer();
             UpdateExplorerRoot();
             _ = Task.Run(() => RefreshAutocompleteIndex());
             _ = Task.Run(() => _projectRegistry.RegisterProject(settings.WorkingDirectory, _gitService));
 
-            // Generate context snapshot for current project only
             if (_settings.ContextSnapshotEnabled)
-            {
                 _contextSnapshotService.StartGenerationInBackground([settings.WorkingDirectory]);
-            }
-
-            // Session restore on startup removed to save context memory.
-            // Sessions can still be restored via chat history viewer (LoadChatFromHistory).
         }
     }
 
-    /// <summary>
-    /// Releases resources when the tab is closed: stops CLI process and timers.
-    /// </summary>
+    // ═══════════════════════════════════════════════════════════════════
+    //  Dispose
+    // ═══════════════════════════════════════════════════════════════════
+
     public void Dispose()
     {
-        CancelReview();
         _conflictBannerClearTimer?.Stop();
         _conflictBannerClearTimer = null;
         _gitRefreshTimer?.Stop();
@@ -728,15 +609,21 @@ public partial class MainViewModel : ViewModelBase
         _conflictPauseCts?.Cancel();
         _conflictPauseCts?.Dispose();
         _conflictPauseCts = null;
-        _cliService.StopSession();
-        StopNudgeTimer();
-        _bgTaskTimer?.Stop();
-        FinalizeActions.StopTaskSuggestionTimer();
+
+        // Dispose all chat sessions (stops CLI, timers, disposes messages)
+        foreach (var cs in ChatSessions) cs.Dispose();
+        ChatSessions.Clear();
+        _activeChatSession = null;
+
+        if (_onboardingService is not null)
+        {
+            _onboardingService.OnOnboardingCompleted -= OnOnboardingCompleted;
+            _onboardingService.OnOnboardingError -= OnOnboardingError;
+            _onboardingService.StopAll();
+        }
+
+        _technicalWriterService?.Shutdown();
         Notepad?.Shutdown();
-        // BUG FIX: Team/Explorer are null! fields set in InitializeSubTabs — guard against
-        // partial construction if the constructor threw before InitializeSubTabs completed
-        // Fix: dispose MessageViewModels to stop leaked DispatcherTimers
-        _messageAssembler.DisposeAllMessages();
         Team?.Dispose();
         Explorer?.Dispose();
     }

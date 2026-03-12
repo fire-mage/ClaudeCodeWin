@@ -92,6 +92,15 @@ public class AppSettings
     // External service API keys with expiry tracking
     public List<ApiKeyEntry> ApiKeys { get; set; } = [];
 
+    // Voice Input (speech-to-text via Whisper)
+    public bool VoiceInputEnabled { get; set; }
+    public string VoiceInputModel { get; set; } = "small";
+
+    // Multi-project workspaces
+    public List<Workspace> Workspaces { get; set; } = [];
+
+    // Tab persistence v2: workspace-aware tab entries (replaces OpenTabPaths)
+    public List<OpenTabEntry>? OpenTabs { get; set; }
 }
 
 public class ApiKeyEntry

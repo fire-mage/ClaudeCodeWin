@@ -11,19 +11,23 @@ public class ProjectRegistryService
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "ClaudeCodeWin", "project-registry.json");
 
+    private readonly object _lock = new();
     private List<ProjectInfo> _projects = [];
 
-    public IReadOnlyList<ProjectInfo> Projects => _projects;
+    public IReadOnlyList<ProjectInfo> Projects { get { lock (_lock) return _projects.ToList(); } }
 
     /// <summary>
     /// Returns the N most recently opened projects whose folders still exist on disk.
     /// </summary>
-    public IReadOnlyList<ProjectInfo> GetMostRecentProjects(int count) =>
-        _projects
-            .Where(p => Directory.Exists(p.Path))
-            .OrderByDescending(x => x.LastOpened)
-            .Take(count)
-            .ToList();
+    public IReadOnlyList<ProjectInfo> GetMostRecentProjects(int count)
+    {
+        lock (_lock)
+            return _projects
+                .Where(p => Directory.Exists(p.Path))
+                .OrderByDescending(x => x.LastOpened)
+                .Take(count)
+                .ToList();
+    }
 
     /// <summary>
     /// Returns projects filtered to remove nested sub-projects (keeps topmost roots),
@@ -45,11 +49,11 @@ public class ProjectRegistryService
 
         var filtered = roots.OrderByDescending(p => p.LastOpened).ToList();
 
-        // Mark the current project
-        if (!string.IsNullOrEmpty(currentDir))
+        // Mark the current project (IsCurrent is presentation-only, set under lock to avoid race)
+        lock (_lock)
         {
             foreach (var p in filtered)
-                p.IsCurrent = p.Path.PathEquals(currentDir);
+                p.IsCurrent = !string.IsNullOrEmpty(currentDir) && p.Path.PathEquals(currentDir);
         }
 
         return filtered;
@@ -63,11 +67,13 @@ public class ProjectRegistryService
         try
         {
             var json = File.ReadAllText(RegistryPath);
-            _projects = JsonSerializer.Deserialize<List<ProjectInfo>>(json, JsonDefaults.Options) ?? [];
+            lock (_lock)
+                _projects = JsonSerializer.Deserialize<List<ProjectInfo>>(json, JsonDefaults.Options) ?? [];
         }
         catch
         {
-            _projects = [];
+            lock (_lock)
+                _projects = [];
         }
     }
 
@@ -76,7 +82,9 @@ public class ProjectRegistryService
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(RegistryPath)!);
-            var json = JsonSerializer.Serialize(_projects, JsonDefaults.Options);
+            string json;
+            lock (_lock)
+                json = JsonSerializer.Serialize(_projects, JsonDefaults.Options);
             File.WriteAllText(RegistryPath, json);
         }
         catch { }
@@ -89,26 +97,32 @@ public class ProjectRegistryService
     public void RegisterProject(string folderPath, GitService gitService)
     {
         var normalized = Path.GetFullPath(folderPath);
-        var existing = _projects.FirstOrDefault(p =>
-            string.Equals(p.Path, normalized, StringComparison.OrdinalIgnoreCase));
+        var gitRemote = DetectGitRemote(normalized, gitService);
+        var techStack = DetectTechStack(normalized);
 
-        if (existing is not null)
+        lock (_lock)
         {
-            existing.LastOpened = DateTime.Now;
-            existing.GitRemoteUrl = DetectGitRemote(normalized, gitService) ?? existing.GitRemoteUrl;
-            existing.TechStack = DetectTechStack(normalized) ?? existing.TechStack;
-        }
-        else
-        {
-            _projects.Add(new ProjectInfo
+            var existing = _projects.FirstOrDefault(p =>
+                string.Equals(p.Path, normalized, StringComparison.OrdinalIgnoreCase));
+
+            if (existing is not null)
             {
-                Path = normalized,
-                Name = Path.GetFileName(normalized) ?? normalized,
-                GitRemoteUrl = DetectGitRemote(normalized, gitService),
-                TechStack = DetectTechStack(normalized),
-                LastOpened = DateTime.Now,
-                RegisteredAt = DateTime.Now
-            });
+                existing.LastOpened = DateTime.Now;
+                existing.GitRemoteUrl = gitRemote ?? existing.GitRemoteUrl;
+                existing.TechStack = techStack ?? existing.TechStack;
+            }
+            else
+            {
+                _projects.Add(new ProjectInfo
+                {
+                    Path = normalized,
+                    Name = Path.GetFileName(normalized) ?? normalized,
+                    GitRemoteUrl = gitRemote,
+                    TechStack = techStack,
+                    LastOpened = DateTime.Now,
+                    RegisteredAt = DateTime.Now
+                });
+            }
         }
 
         Save();
@@ -119,11 +133,13 @@ public class ProjectRegistryService
     /// </summary>
     public string BuildRegistrySummary()
     {
-        if (_projects.Count == 0)
+        List<ProjectInfo> snapshot;
+        lock (_lock) snapshot = _projects.ToList();
+        if (snapshot.Count == 0)
             return "";
 
         var lines = new List<string> { "## Known local projects" };
-        foreach (var p in _projects.OrderByDescending(x => x.LastOpened))
+        foreach (var p in snapshot.OrderByDescending(x => x.LastOpened))
         {
             var parts = new List<string> { $"- **{p.Name}** — `{p.Path}`" };
             if (!string.IsNullOrEmpty(p.Description))
@@ -147,21 +163,61 @@ public class ProjectRegistryService
 
     public void UpdateNotes(string folderPath, string? notes)
     {
-        var normalized = Path.GetFullPath(folderPath);
-        var project = _projects.FirstOrDefault(p =>
-            string.Equals(p.Path, normalized, StringComparison.OrdinalIgnoreCase));
-        if (project is not null)
+        lock (_lock)
         {
+            var project = GetProjectUnsafe(folderPath);
+            if (project is null) return;
             project.Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
-            Save();
         }
+        Save();
     }
 
     public string? GetNotes(string folderPath)
     {
+        lock (_lock)
+            return GetProjectUnsafe(folderPath)?.Notes;
+    }
+
+    /// <summary>
+    /// Returns the ProjectInfo for the given folder, or null if not registered.
+    /// </summary>
+    public ProjectInfo? GetProject(string folderPath)
+    {
+        var normalized = Path.GetFullPath(folderPath);
+        lock (_lock)
+            return _projects.FirstOrDefault(p =>
+                string.Equals(p.Path, normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public void UpdateOnboardingStatus(string folderPath, OnboardingStatus status)
+    {
+        lock (_lock)
+        {
+            var project = GetProjectUnsafe(folderPath);
+            if (project is null) return;
+            project.OnboardingStatus = status;
+            if (status == OnboardingStatus.Completed)
+                project.OnboardingCompletedAt = DateTime.Now;
+        }
+        Save();
+    }
+
+    public void UpdateDescription(string folderPath, string description)
+    {
+        lock (_lock)
+        {
+            var project = GetProjectUnsafe(folderPath);
+            if (project is null) return;
+            project.Description = description;
+        }
+        Save();
+    }
+
+    private ProjectInfo? GetProjectUnsafe(string folderPath)
+    {
         var normalized = Path.GetFullPath(folderPath);
         return _projects.FirstOrDefault(p =>
-            string.Equals(p.Path, normalized, StringComparison.OrdinalIgnoreCase))?.Notes;
+            string.Equals(p.Path, normalized, StringComparison.OrdinalIgnoreCase));
     }
 
     private static readonly string[] ProjectMarkerFiles =

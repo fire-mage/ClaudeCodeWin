@@ -5,6 +5,7 @@
         xmlns:vm="clr-namespace:ClaudeCodeWin.ViewModels"
         xmlns:models="clr-namespace:ClaudeCodeWin.Models"
         xmlns:views="clr-namespace:ClaudeCodeWin.Views"
+        x:Name="RootWindow"
         Title="Claude Code for Windows (CCW)"
         MinHeight="500" MinWidth="600"
         Background="{StaticResource BackgroundBrush}"
@@ -75,7 +76,7 @@
         <StackPanel Grid.Row="0">
             <Menu Background="{StaticResource SurfaceBrush}">
                 <MenuItem Header="New _Chat" x:Name="NewChatMenuItem" Click="NewChatMenuItem_Click"
-                          ToolTip="Start a new chat session (Ctrl+N)."/>
+                          ToolTip="Open a new chat tab (Ctrl+N)."/>
                 <MenuItem Header="S_cripts" x:Name="ScriptsMenu" Visibility="Collapsed"/>
                 <MenuItem Header="_Deploy Scripts" x:Name="DeployScriptsMenu"
                           ToolTip="Shell commands and deploy scripts for your projects.&#x0a;Output appears in a separate window. Customize via tasks.json."/>
@@ -96,6 +97,23 @@
                     <Separator/>
                     <MenuItem Header="_Knowledge Base..." Click="MenuItem_KnowledgeBase_Click"
                               ToolTip="View Knowledge Base, browse Marketplace, or teach Claude a new skill."/>
+                </MenuItem>
+                <MenuItem Header="_Workspace"
+                          ToolTip="Multi-project workspace management"
+                          SubmenuOpened="WorkspaceMenu_SubmenuOpened">
+                    <MenuItem Header="_Create Workspace..." Click="MenuItem_CreateWorkspace_Click"
+                              ToolTip="Create a new workspace grouping multiple related projects."/>
+                    <MenuItem Header="_Open Workspace" x:Name="OpenWorkspaceMenu"
+                              ToolTip="Open a saved workspace."/>
+                    <Separator/>
+                    <MenuItem Header="_Edit Workspace..." x:Name="EditWorkspaceMenuItem"
+                              Click="MenuItem_EditWorkspace_Click"
+                              IsEnabled="False"
+                              ToolTip="Edit the active workspace (add/remove projects, change primary)."/>
+                    <MenuItem Header="C_lose Workspace" x:Name="CloseWorkspaceMenuItem"
+                              Click="MenuItem_CloseWorkspace_Click"
+                              IsEnabled="False"
+                              ToolTip="Close workspace and revert to single-project mode."/>
                 </MenuItem>
                 <MenuItem Header="_App"
                           ToolTip="Project management, updates, and application information">
@@ -317,6 +335,38 @@
                                         Background="{StaticResource SurfaceBrush}"
                                         MouseLeftButtonUp="SubTab_Click" Tag="{Binding}">
                                     <StackPanel Orientation="Horizontal">
+                                        <!-- Working indicator (blue dot) -->
+                                        <Ellipse x:Name="WorkingDot" Width="6" Height="6" Margin="0,0,5,0"
+                                                 Fill="{StaticResource PrimaryBrush}"
+                                                 VerticalAlignment="Center"
+                                                 Visibility="{Binding IsWorking, Converter={StaticResource BoolToVis}}"/>
+                                        <!-- Needs attention indicator (green dot with blink) -->
+                                        <Ellipse x:Name="AttentionDot" Width="6" Height="6" Margin="0,0,5,0"
+                                                 Fill="{StaticResource SuccessBrush}"
+                                                 VerticalAlignment="Center"
+                                                 Visibility="{Binding NeedsAttention, Converter={StaticResource BoolToVis}}">
+                                            <Ellipse.Style>
+                                                <Style TargetType="Ellipse">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding NeedsAttention}" Value="True">
+                                                            <DataTrigger.EnterActions>
+                                                                <BeginStoryboard x:Name="BlinkStoryboard">
+                                                                    <Storyboard RepeatBehavior="Forever">
+                                                                        <DoubleAnimation
+                                                                            Storyboard.TargetProperty="Opacity"
+                                                                            From="1.0" To="0.2" Duration="0:0:0.6"
+                                                                            AutoReverse="True"/>
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </DataTrigger.EnterActions>
+                                                            <DataTrigger.ExitActions>
+                                                                <StopStoryboard BeginStoryboardName="BlinkStoryboard"/>
+                                                            </DataTrigger.ExitActions>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Ellipse.Style>
+                                        </Ellipse>
                                         <TextBlock x:Name="SubTabText" Text="{Binding DisplayTitle}" FontSize="12"
                                                    Foreground="{StaticResource TextBrush}"
                                                    VerticalAlignment="Center"
@@ -850,12 +900,12 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Button Grid.Column="0"
-                            Content="New Chat"
+                            Content="Restart Chat"
                             Command="{Binding NewSessionCommand}"
                             Style="{StaticResource SecondaryButton}"
                             FontSize="11" Padding="8,3"
                             BorderBrush="#5BA65B" BorderThickness="1"
-                            ToolTip="Start a new chat (Ctrl+N)"
+                            ToolTip="Restart current chat session"
                             VerticalAlignment="Center" Margin="0,0,4,0"/>
                     <Button Grid.Column="1"
                             Content="History"
@@ -1057,6 +1107,17 @@
                                     Style="{StaticResource SecondaryButton}"
                                     Click="SaveToNotepad_Click"
                                     Margin="0,0,4,4"/>
+                            <!-- Microphone button (voice input) -->
+                            <Button x:Name="MicButton"
+                                    FontSize="14" Padding="6,4"
+                                    ToolTip="Hold to record voice (speech-to-text)"
+                                    Style="{StaticResource SecondaryButton}"
+                                    PreviewMouseLeftButtonDown="Mic_MouseDown"
+                                    PreviewMouseLeftButtonUp="Mic_MouseUp"
+                                    Margin="0,0,4,4"
+                                    Visibility="Collapsed">
+                                <TextBlock x:Name="MicIcon" Text="&#x1F3A4;"/>
+                            </Button>
                             <Button Content="Send"
                                 Style="{StaticResource PrimaryButton}"
                                 Command="{Binding SendCommand}"
@@ -1370,13 +1431,14 @@
                 <StackPanel Grid.Column="5" Orientation="Horizontal"
                             VerticalAlignment="Center" Margin="0,0,16,0"
                             ToolTip="Usage limits from your Anthropic subscription.&#x0a;Session resets every 5 hours, weekly every 7 days."
-                            Visibility="{Binding DataContext.SessionPctText, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource StringToVis}}">
+                            DataContext="{Binding DataContext, ElementName=RootWindow}"
+                            Visibility="{Binding SessionPctText, Converter={StaticResource StringToVis}}">
                     <TextBlock Text="Session: " FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding DataContext.SessionPctText, RelativeSource={RelativeSource AncestorType=Window}, Mode=OneWay}" FontSize="11" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding DataContext.SessionExtraText, RelativeSource={RelativeSource AncestorType=Window}, Mode=OneWay}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding SessionPctText, Mode=OneWay}" FontSize="11" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding SessionExtraText, Mode=OneWay}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
                     <TextBlock Text="Week: " FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding DataContext.WeekPctText, RelativeSource={RelativeSource AncestorType=Window}, Mode=OneWay}" FontSize="11" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding DataContext.WeekExtraText, RelativeSource={RelativeSource AncestorType=Window}, Mode=OneWay}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding WeekPctText, Mode=OneWay}" FontSize="11" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding WeekExtraText, Mode=OneWay}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
                 </StackPanel>
                 <Border Grid.Column="7" VerticalAlignment="Center"
                         Background="Transparent"

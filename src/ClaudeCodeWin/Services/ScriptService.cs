@@ -48,6 +48,31 @@ public partial class ScriptService
         File.WriteAllText(ScriptsPath, json);
     }
 
+    /// <summary>
+    /// Merge new scripts into the existing list, skipping duplicates by name.
+    /// Returns the number of scripts actually added.
+    /// </summary>
+    public int MergeScripts(List<ScriptDefinition> newScripts)
+    {
+        var existing = LoadScripts();
+        var existingNames = new HashSet<string>(existing.Select(s => s.Name), StringComparer.OrdinalIgnoreCase);
+        var added = 0;
+
+        foreach (var script in newScripts)
+        {
+            if (string.IsNullOrEmpty(script.Name) || existingNames.Contains(script.Name))
+                continue;
+            existing.Add(script);
+            existingNames.Add(script.Name);
+            added++;
+        }
+
+        if (added > 0)
+            SaveScripts(existing);
+
+        return added;
+    }
+
     public void PopulateMenu(MainWindow mainWindow, Func<MainViewModel> getActiveTab, GitService gitService,
         AppSettings? settings = null, ProjectRegistryService? projectRegistry = null,
         BacklogService? backlogService = null)

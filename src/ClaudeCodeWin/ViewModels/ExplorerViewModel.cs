@@ -9,12 +9,14 @@ namespace ClaudeCodeWin.ViewModels;
 
 public class ExplorerViewModel : ViewModelBase, IDisposable
 {
-    private FileSystemWatcher? _watcher;
+    private readonly List<FileSystemWatcher> _watchers = [];
+    private readonly List<string> _rootPaths = [];
     private string _rootPath = "";
     private FileNode? _selectedNode;
     // FIX: debounce timer must be a field with lock to avoid race condition from concurrent FSW events
     private System.Timers.Timer? _debounceTimer;
     private readonly object _debounceLock = new();
+    private readonly HashSet<string> _pendingRefreshDirs = new(StringComparer.OrdinalIgnoreCase);
 
     public ObservableCollection<FileNode> RootNodes { get; } = [];
 
@@ -77,11 +79,26 @@ public class ExplorerViewModel : ViewModelBase, IDisposable
     public void SetRoot(string path)
     {
         if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
-        if (string.Equals(RootPath, path, StringComparison.OrdinalIgnoreCase)) return;
+        SetRoots([path]);
+    }
 
-        RootPath = path;
+    public void SetRoots(IEnumerable<string> paths)
+    {
+        var validPaths = paths.Where(p => !string.IsNullOrEmpty(p) && Directory.Exists(p)).ToList();
+        if (validPaths.Count == 0) return;
+
+        // Check if roots are unchanged (set equality + same primary/first path)
+        if (_rootPaths.Count == validPaths.Count &&
+            string.Equals(_rootPaths.FirstOrDefault(), validPaths[0], StringComparison.OrdinalIgnoreCase) &&
+            new HashSet<string>(_rootPaths, StringComparer.OrdinalIgnoreCase).SetEquals(validPaths))
+            return;
+
+        _rootPaths.Clear();
+        _rootPaths.AddRange(validPaths);
+        RootPath = validPaths[0];
+
         LoadTree();
-        SetupWatcher();
+        SetupWatchers();
     }
 
     private void LoadTree()
@@ -89,60 +106,74 @@ public class ExplorerViewModel : ViewModelBase, IDisposable
         RunOnUI(() =>
         {
             RootNodes.Clear();
-            if (string.IsNullOrEmpty(RootPath)) return;
-
-            var root = new FileNode(Path.GetFileName(RootPath), RootPath, true);
-            root.LoadChildren();
-            root.IsExpanded = true;
-            RootNodes.Add(root);
+            foreach (var path in _rootPaths)
+            {
+                if (!Directory.Exists(path)) continue;
+                var root = new FileNode(Path.GetFileName(path), path, true);
+                root.LoadChildren();
+                root.IsExpanded = true;
+                RootNodes.Add(root);
+            }
         });
     }
 
-    private void SetupWatcher()
+    private void SetupWatchers()
     {
-        _watcher?.Dispose();
-        if (string.IsNullOrEmpty(RootPath)) return;
+        foreach (var w in _watchers) w.Dispose();
+        _watchers.Clear();
 
-        try
+        foreach (var path in _rootPaths)
         {
-            _watcher = new FileSystemWatcher(RootPath)
+            try
             {
-                IncludeSubdirectories = true,
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName
-                               | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
-                EnableRaisingEvents = true
-            };
-
-            // FIX: synchronized debounce to prevent race condition from concurrent threadpool callbacks
-            void OnChanged(object s, FileSystemEventArgs e)
-            {
-                lock (_debounceLock)
+                var watcher = new FileSystemWatcher(path)
                 {
-                    _debounceTimer?.Stop();
-                    _debounceTimer?.Dispose();
-                    var dir = Path.GetDirectoryName(e.FullPath);
-                    _debounceTimer = new System.Timers.Timer(500) { AutoReset = false };
-                    _debounceTimer.Elapsed += (_, _) =>
-                    {
-                        lock (_debounceLock)
-                        {
-                            _debounceTimer?.Dispose();
-                            _debounceTimer = null;
-                        }
-                        if (dir != null)
-                            RunOnUI(() => RefreshNode(dir));
-                    };
-                    _debounceTimer.Start();
-                }
-            }
+                    IncludeSubdirectories = true,
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName
+                                   | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+                    EnableRaisingEvents = true
+                };
 
-            _watcher.Created += OnChanged;
-            _watcher.Deleted += OnChanged;
-            _watcher.Renamed += (s, e) => OnChanged(s, e);
-        }
-        catch
-        {
-            // FileSystemWatcher can fail on some paths — not critical
+                // FIX: synchronized debounce to prevent race condition from concurrent threadpool callbacks.
+                // Accumulates all changed directories and refreshes them together on timer expiry.
+                void OnChanged(object s, FileSystemEventArgs e)
+                {
+                    lock (_debounceLock)
+                    {
+                        var dir = Path.GetDirectoryName(e.FullPath);
+                        if (dir != null) _pendingRefreshDirs.Add(dir);
+
+                        _debounceTimer?.Stop();
+                        _debounceTimer?.Dispose();
+                        _debounceTimer = new System.Timers.Timer(500) { AutoReset = false };
+                        _debounceTimer.Elapsed += (_, _) =>
+                        {
+                            string[] dirs;
+                            lock (_debounceLock)
+                            {
+                                _debounceTimer?.Dispose();
+                                _debounceTimer = null;
+                                dirs = [.. _pendingRefreshDirs];
+                                _pendingRefreshDirs.Clear();
+                            }
+                            RunOnUI(() =>
+                            {
+                                foreach (var d in dirs) RefreshNode(d);
+                            });
+                        };
+                        _debounceTimer.Start();
+                    }
+                }
+
+                watcher.Created += OnChanged;
+                watcher.Deleted += OnChanged;
+                watcher.Renamed += (s, e) => OnChanged(s, e);
+                _watchers.Add(watcher);
+            }
+            catch
+            {
+                // FileSystemWatcher can fail on some paths — not critical
+            }
         }
     }
 
@@ -150,8 +181,15 @@ public class ExplorerViewModel : ViewModelBase, IDisposable
     {
         if (RootNodes.Count == 0) return;
 
-        var node = FindNode(RootNodes[0], directoryPath);
-        node?.Invalidate();
+        foreach (var rootNode in RootNodes)
+        {
+            var node = FindNode(rootNode, directoryPath);
+            if (node != null)
+            {
+                node.Invalidate();
+                return;
+            }
+        }
     }
 
     private static FileNode? FindNode(FileNode root, string path)
@@ -425,8 +463,8 @@ public class ExplorerViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        _watcher?.Dispose();
-        _watcher = null;
+        foreach (var w in _watchers) w.Dispose();
+        _watchers.Clear();
         lock (_debounceLock)
         {
             _debounceTimer?.Dispose();

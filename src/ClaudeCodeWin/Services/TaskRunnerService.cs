@@ -77,6 +77,34 @@ public class TaskRunnerService
         File.WriteAllText(TasksPath, json);
     }
 
+    /// <summary>
+    /// Merge new tasks into the existing list, skipping duplicates by name+project.
+    /// Returns the number of tasks actually added.
+    /// </summary>
+    public int MergeTasks(List<TaskDefinition> newTasks)
+    {
+        var existing = LoadTasks();
+        var existingKeys = new HashSet<string>(
+            existing.Select(t => $"{t.Name}|{t.Project ?? ""}"),
+            StringComparer.OrdinalIgnoreCase);
+        var added = 0;
+
+        foreach (var task in newTasks)
+        {
+            if (string.IsNullOrEmpty(task.Name)) continue;
+            var key = $"{task.Name}|{task.Project ?? ""}";
+            if (existingKeys.Contains(key)) continue;
+            existing.Add(task);
+            existingKeys.Add(key);
+            added++;
+        }
+
+        if (added > 0)
+            SaveTasks(existing);
+
+        return added;
+    }
+
     public List<TaskDefinition> GetTasksForProject(string? workingDirectory)
     {
         if (string.IsNullOrEmpty(workingDirectory))

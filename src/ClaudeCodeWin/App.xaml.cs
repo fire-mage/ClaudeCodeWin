@@ -99,6 +99,7 @@ public partial class App : Application
             cliUpdateService.BlacklistedVersions = new HashSet<string>(settings.FailedCliVersions);
             var usageService = new UsageService();
             var contextSnapshotService = new ContextSnapshotService();
+            var workspaceService = new WorkspaceService(settingsService, settings);
             var backlogService = new BacklogService();
             backlogService.Load();
             var teamNotesService = new TeamNotesService();
@@ -115,21 +116,24 @@ public partial class App : Application
                 projectRegistry, contextSnapshotService, usageService,
                 backlogService, teamNotesService, devKbService);
 
-            // Determine which project paths to restore (new multi-tab or legacy single)
-            var tabPaths = (settings.OpenTabPaths is { Count: > 0 }
-                ? settings.OpenTabPaths
-                : string.IsNullOrEmpty(settings.WorkingDirectory)
-                    ? new List<string> { "" }
-                    : new List<string> { settings.WorkingDirectory })
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            // Determine which tabs to restore (v2 workspace-aware, v1 path-only, or legacy single)
+            var tabEntries = (settings.OpenTabs is { Count: > 0 }
+                ? settings.OpenTabs
+                : (settings.OpenTabPaths is { Count: > 0 }
+                    ? settings.OpenTabPaths.Select(p => new OpenTabEntry { Path = p }).ToList()
+                    : string.IsNullOrEmpty(settings.WorkingDirectory)
+                        ? [new OpenTabEntry { Path = "" }]
+                        : [new OpenTabEntry { Path = settings.WorkingDirectory }])).ToList();
+
+            var tabPaths = tabEntries.Select(e => e.Path ?? "").ToList();
 
             // Create initial tab (always created before mainWindow)
             var initialTab = tabHost.CreateTab();
-            if (!string.IsNullOrEmpty(tabPaths[0]))
-                initialTab.SetWorkingDirectoryOnStartup(tabPaths[0]);
+            var firstEntry = tabEntries.First();
+            if (!string.IsNullOrEmpty(firstEntry.Path))
+                initialTab.SetWorkingDirectoryOnStartup(firstEntry.Path);
 
-            var mainWindow = new MainWindow(tabHost, notificationService, settingsService, settings, fileIndexService, chatHistoryService, projectRegistry);
+            var mainWindow = new MainWindow(tabHost, notificationService, settingsService, settings, fileIndexService, chatHistoryService, projectRegistry, workspaceService);
             mainWindow.Show();
 
             // Signal to update.cmd that the new version started successfully
@@ -178,25 +182,36 @@ public partial class App : Application
             scriptService.PopulateMenu(mainWindow, () => tabHost.ActiveTab!, gitService, settings, projectRegistry, backlogService);
             taskRunnerService.PopulateMenu(mainWindow, () => tabHost.ActiveTab!);
 
-            // Set task runner for all current and future tabs via CollectionChanged.
-            // This ensures every new tab (startup restore, "+" button, Ctrl+T) gets it immediately.
-            tabHost.Tabs.CollectionChanged += (_, args) =>
-            {
-                if (args.NewItems is null) return;
-                foreach (MainViewModel tab in args.NewItems)
-                    tab.SetTaskRunner(taskRunnerService, mainWindow);
-            };
-
-            // Set task runner for tabs already created before this subscription (initial tab)
-            foreach (var tab in tabHost.Tabs)
-                tab.SetTaskRunner(taskRunnerService, mainWindow);
-
             // Restore additional saved tabs (after hooks are wired)
-            foreach (var path in tabPaths.Skip(1))
+            // Build (tab, entry) pairs so workspace restoration doesn't rely on index matching
+            var tabEntryPairs = new List<(MainViewModel tab, OpenTabEntry entry)>
+            {
+                (initialTab, tabEntries[0])
+            };
+            foreach (var entry in tabEntries.Skip(1))
             {
                 var tab = tabHost.CreateTab();
-                if (!string.IsNullOrEmpty(path))
-                    tab.SetWorkingDirectoryOnStartup(path);
+                if (!string.IsNullOrEmpty(entry.Path))
+                    tab.SetWorkingDirectoryOnStartup(entry.Path);
+                tabEntryPairs.Add((tab, entry));
+            }
+
+            // Set task runner and workspace callback for all tabs (including restored ones)
+            foreach (var tab in tabHost.Tabs)
+            {
+                tab.SetTaskRunner(taskRunnerService, mainWindow);
+                tab.PersistWorkspacePrimary = (wsId, path) => workspaceService.SetPrimary(wsId, path);
+            }
+
+            // Restore workspaces using stored pairs (no index assumptions)
+            foreach (var (tab, entry) in tabEntryPairs)
+            {
+                if (entry.WorkspaceId is { } wsId)
+                {
+                    var ws = workspaceService.GetById(wsId);
+                    if (ws != null)
+                        tab.SetActiveWorkspace(ws);
+                }
             }
 
             // Restore the previously active tab
@@ -213,6 +228,47 @@ public partial class App : Application
             var knowledgeBaseService = new KnowledgeBaseService();
             mainWindow.SetKnowledgeBaseService(knowledgeBaseService);
             mainWindow.SetDevKbService(devKbService);
+
+            // Speech Recognition (Whisper) — on-demand, only if enabled
+            var speechService = new SpeechRecognitionService();
+            mainWindow.SetSpeechService(speechService);
+            if (settings.VoiceInputEnabled && WhisperModelManager.IsModelDownloaded(settings.VoiceInputModel))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await speechService.LoadModelAsync(settings.VoiceInputModel);
+                        mainWindow.Dispatcher.InvokeAsync(() => mainWindow.UpdateMicButtonVisibility());
+                    }
+                    catch (Exception ex) { DiagnosticLogger.Log("VOICE_MODEL_LOAD_ERROR", ex.Message); }
+                });
+            }
+
+            // Project Onboarding + Technical Writer
+            var onboardingService = new OnboardingService(projectRegistry, scriptService, taskRunnerService, knowledgeBaseService);
+            onboardingService.Configure(claudeExePath);
+            var technicalWriterService = new TechnicalWriterService(knowledgeBaseService);
+            technicalWriterService.Configure(claudeExePath);
+
+            foreach (var tab in tabHost.Tabs)
+            {
+                tab.SetOnboardingService(onboardingService);
+                tab.SetTechnicalWriter(technicalWriterService);
+            }
+
+            // Single CollectionChanged handler for all new-tab initialization
+            tabHost.Tabs.CollectionChanged += (_, args) =>
+            {
+                if (args.NewItems is null) return;
+                foreach (MainViewModel tab in args.NewItems)
+                {
+                    tab.SetTaskRunner(taskRunnerService, mainWindow);
+                    tab.PersistWorkspacePrimary = (wsId, path) => workspaceService.SetPrimary(wsId, path);
+                    tab.SetOnboardingService(onboardingService);
+                    tab.SetTechnicalWriter(technicalWriterService);
+                }
+            };
 
             // Update check (welcome screen removed — always start fresh chat)
             await tabHost.Update.CheckOnStartupAsync();

@@ -51,11 +51,15 @@ public class UsageService
     public void Start()
     {
         _accessToken = ReadAccessToken();
-        if (_accessToken is null) return;
 
-        _ = FetchUsageAsync();
+        // Always start timers — if token is missing now, poll timer will retry ReadAccessToken
+        // every minute via FetchUsageAsync. This handles the case where credentials aren't
+        // available at startup (file locked, CLI hasn't written them yet, etc.)
         _pollTimer.Start();
         _countdownTimer.Start();
+
+        if (_accessToken is not null)
+            _ = FetchUsageAsync();
     }
 
     public void Stop()
