@@ -175,6 +175,7 @@ public partial class App : Application
             CheckInstructionDeduplication(settings.WorkingDirectory);
 
             // Usage service wiring (global — same for all tabs)
+            usageService.Configure(settings, settingsService);
             ConfigureUsageService(tabHost, usageService, settingsService, settings);
             usageService.Start();
 
@@ -241,7 +242,15 @@ public partial class App : Application
                         await speechService.LoadModelAsync(settings.VoiceInputModel);
                         mainWindow.Dispatcher.InvokeAsync(() => mainWindow.UpdateMicButtonVisibility());
                     }
-                    catch (Exception ex) { DiagnosticLogger.Log("VOICE_MODEL_LOAD_ERROR", ex.Message); }
+                    catch (Exception ex)
+                    {
+                        DiagnosticLogger.Log("VOICE_MODEL_LOAD_ERROR", ex.ToString());
+                        mainWindow.Dispatcher.InvokeAsync(() =>
+                        {
+                            if (tabHost.ActiveTab is { } tab)
+                                tab.StatusText = $"Voice model load failed: {ex.Message}";
+                        });
+                    }
                 });
             }
 

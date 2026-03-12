@@ -100,6 +100,9 @@ public class AppSettings
     public bool VectorMemoryEnabled { get; set; } = true;
     public float VectorMinRelevance { get; set; } = 0.3f;
 
+    // Usage API poll interval (seconds). Increased automatically on 429 errors, reset on success.
+    public int UsagePollIntervalSeconds { get; set; }
+
     // Multi-project workspaces
     public List<Workspace> Workspaces { get; set; } = [];
 

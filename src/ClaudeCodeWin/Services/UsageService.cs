@@ -11,15 +11,29 @@ public class UsageService
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".claude", ".credentials.json");
 
+    private static readonly string CachePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "ClaudeCodeWin", "usage-cache.json");
+
     private static readonly HttpClient Http = new()
     {
         Timeout = TimeSpan.FromSeconds(10)
     };
 
+    // Default poll interval: 5 minutes. Increased on 429 and persisted to settings.
+    private const int DefaultPollSeconds = 300;
+    private const int MaxPollSeconds = 1800; // 30 minutes cap
+    private const int CacheMaxMinutes = 10;
+
     private readonly DispatcherTimer _pollTimer;
     private readonly DispatcherTimer _countdownTimer;
     private string? _accessToken;
     private int _consecutiveFailures;
+    private bool _rawLogged;
+
+    // External dependencies for persisting poll interval
+    private Models.AppSettings? _appSettings;
+    private SettingsService? _settingsService;
 
     // Current usage data
     public double SessionUtilization { get; private set; }
@@ -41,20 +55,35 @@ public class UsageService
 
     public UsageService()
     {
-        _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(DefaultPollSeconds) };
         _pollTimer.Tick += async (_, _) => await FetchUsageAsync();
 
         _countdownTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _countdownTimer.Tick += (_, _) => OnUsageUpdated?.Invoke();
     }
 
+    /// <summary>
+    /// Configure settings persistence so poll interval changes survive restarts.
+    /// Call before Start().
+    /// </summary>
+    public void Configure(Models.AppSettings settings, SettingsService settingsService)
+    {
+        _appSettings = settings;
+        _settingsService = settingsService;
+
+        // Restore persisted poll interval (from previous 429 backoffs)
+        if (settings.UsagePollIntervalSeconds > 0)
+            _pollTimer.Interval = TimeSpan.FromSeconds(
+                Math.Clamp(settings.UsagePollIntervalSeconds, DefaultPollSeconds, MaxPollSeconds));
+    }
+
     public void Start()
     {
         _accessToken = ReadAccessToken();
 
-        // Always start timers — if token is missing now, poll timer will retry ReadAccessToken
-        // every minute via FetchUsageAsync. This handles the case where credentials aren't
-        // available at startup (file locked, CLI hasn't written them yet, etc.)
+        // Load cached usage data so status bar shows immediately, even if API is slow or returns 429
+        LoadCache();
+
         _pollTimer.Start();
         _countdownTimer.Start();
 
@@ -74,9 +103,7 @@ public class UsageService
         {
             _accessToken = ReadAccessToken();
             if (_accessToken is null)
-            {
                 return;
-            }
         }
         try
         {
@@ -87,10 +114,29 @@ public class UsageService
             request.Headers.TryAddWithoutValidation("User-Agent", "ClaudeCodeWin/1.0");
 
             var response = await Http.SendAsync(request);
+
+            // Any HTTP response means server is reachable — clear offline state
+            _consecutiveFailures = 0;
+            if (!IsOnline) { IsOnline = true; OnUsageUpdated?.Invoke(); }
+
             if (!response.IsSuccessStatusCode)
             {
                 if ((int)response.StatusCode == 401)
+                {
                     _accessToken = ReadAccessToken();
+                }
+                else if ((int)response.StatusCode == 429)
+                {
+                    // Exponential backoff: double interval, cap at 30 minutes, persist to settings
+                    var current = (int)_pollTimer.Interval.TotalSeconds;
+                    var next = Math.Min(current * 2, MaxPollSeconds);
+                    SetPollInterval(next);
+                    DiagnosticLogger.Log("USAGE_RATE_LIMITED", $"429 — backoff to {next}s");
+                }
+
+                // Keep countdowns alive from cached data
+                if (IsLoaded)
+                    OnUsageUpdated?.Invoke();
                 return;
             }
 
@@ -114,7 +160,6 @@ public class UsageService
                     : null;
             }
 
-            // Parse daily limit if present
             if (root.TryGetProperty("daily", out var daily))
             {
                 DailyUtilization = daily.TryGetProperty("utilization", out var u) ? u.GetDouble() : 0;
@@ -123,7 +168,6 @@ public class UsageService
                     : null;
             }
 
-            // Parse sonnet-specific limit if present
             if (root.TryGetProperty("sonnet", out var sonnet))
             {
                 SonnetUtilization = sonnet.TryGetProperty("utilization", out var u) ? u.GetDouble() : 0;
@@ -132,28 +176,33 @@ public class UsageService
                     : null;
             }
 
-            // Log raw API response on first load only (avoid spamming logs every minute)
-            if (!IsLoaded)
+            if (!_rawLogged)
+            {
                 DiagnosticLogger.Log("USAGE_RAW", json);
+                _rawLogged = true;
+            }
 
             IsLoaded = true;
-            _consecutiveFailures = 0;
+            SaveCache();
+
+            // Successful fetch — reset backoff to default if it was increased by 429
+            if (_pollTimer.Interval.TotalSeconds > DefaultPollSeconds)
+            {
+                _pollTimer.Interval = TimeSpan.FromSeconds(DefaultPollSeconds);
+                // Persist 0 = "use code default" so future DefaultPollSeconds changes take effect
+                if (_appSettings is not null && _settingsService is not null)
+                {
+                    _appSettings.UsagePollIntervalSeconds = 0;
+                    _settingsService.Save(_appSettings);
+                }
+            }
 
             // Rate limit detection
             var wasRateLimited = IsRateLimited;
             IsRateLimited = SessionUtilization >= 100;
 
             if (IsRateLimited != wasRateLimited)
-            {
-                // Switch poll interval: 15s during rate limit, 1min normally
-                _pollTimer.Interval = IsRateLimited
-                    ? TimeSpan.FromSeconds(15)
-                    : TimeSpan.FromMinutes(1);
                 OnRateLimitChanged?.Invoke(IsRateLimited);
-            }
-
-            if (!IsOnline)
-                IsOnline = true;
 
             OnUsageUpdated?.Invoke();
             OnFetchSuccess?.Invoke();
@@ -176,9 +225,9 @@ public class UsageService
                 OnUsageUpdated?.Invoke();
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Other parse/unexpected errors — silently ignore
+            DiagnosticLogger.Log("USAGE_PARSE_ERROR", ex.Message);
         }
     }
 
@@ -206,13 +255,11 @@ public class UsageService
 
     /// <summary>
     /// Force rate-limited state from external signal (e.g., CLI stderr).
-    /// Triggers faster polling to detect when limit clears.
     /// </summary>
     public void SetRateLimitedExternally()
     {
         if (IsRateLimited) return;
         IsRateLimited = true;
-        _pollTimer.Interval = TimeSpan.FromSeconds(15);
         OnRateLimitChanged?.Invoke(true);
         _ = FetchUsageAsync(); // immediate refresh
     }
@@ -239,6 +286,98 @@ public class UsageService
             : $"{remaining.Minutes}m {remaining.Seconds:D2}s";
     }
 
+    /// <summary>
+    /// Set poll interval and persist to settings so it survives app restarts.
+    /// </summary>
+    private void SetPollInterval(int seconds)
+    {
+        _pollTimer.Interval = TimeSpan.FromSeconds(seconds);
+
+        if (_appSettings is not null && _settingsService is not null)
+        {
+            _appSettings.UsagePollIntervalSeconds = seconds;
+            _settingsService.Save(_appSettings);
+        }
+    }
+
+    /// <summary>
+    /// Persists current usage data to disk. All timestamps stored as UTC.
+    /// </summary>
+    private void SaveCache()
+    {
+        try
+        {
+            var cache = new
+            {
+                sessionUtilization = SessionUtilization,
+                sessionResetsAt = SessionResetsAt?.ToUniversalTime().ToString("o"),
+                weeklyUtilization = WeeklyUtilization,
+                weeklyResetsAt = WeeklyResetsAt?.ToUniversalTime().ToString("o"),
+                dailyUtilization = DailyUtilization,
+                dailyResetsAt = DailyResetsAt?.ToUniversalTime().ToString("o"),
+                sonnetUtilization = SonnetUtilization,
+                sonnetResetsAt = SonnetResetsAt?.ToUniversalTime().ToString("o"),
+                isRateLimited = IsRateLimited,
+                savedAt = DateTime.UtcNow.ToString("o")
+            };
+            var json = JsonSerializer.Serialize(cache);
+            var dir = Path.GetDirectoryName(CachePath)!;
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            var tmp = CachePath + ".tmp";
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, CachePath, overwrite: true);
+        }
+        catch (Exception ex) { DiagnosticLogger.Log("USAGE_CACHE_SAVE_ERROR", ex.Message); }
+    }
+
+    /// <summary>
+    /// Loads cached usage data from disk. Cache is valid for 10 minutes max.
+    /// </summary>
+    private void LoadCache()
+    {
+        try
+        {
+            if (!File.Exists(CachePath)) return;
+            var json = File.ReadAllText(CachePath);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("savedAt", out var savedAt) || savedAt.ValueKind != JsonValueKind.String) return;
+            var saved = DateTime.Parse(savedAt.GetString()!, null, System.Globalization.DateTimeStyles.RoundtripKind);
+            if (DateTime.UtcNow - saved > TimeSpan.FromMinutes(CacheMaxMinutes)) return;
+
+            if (root.TryGetProperty("sessionUtilization", out var su))
+                SessionUtilization = su.GetDouble();
+            if (root.TryGetProperty("sessionResetsAt", out var sr) && sr.ValueKind == JsonValueKind.String)
+                SessionResetsAt = DateTime.Parse(sr.GetString()!, null, System.Globalization.DateTimeStyles.RoundtripKind).ToLocalTime();
+            if (root.TryGetProperty("weeklyUtilization", out var wu))
+                WeeklyUtilization = wu.GetDouble();
+            if (root.TryGetProperty("weeklyResetsAt", out var wr) && wr.ValueKind == JsonValueKind.String)
+                WeeklyResetsAt = DateTime.Parse(wr.GetString()!, null, System.Globalization.DateTimeStyles.RoundtripKind).ToLocalTime();
+            if (root.TryGetProperty("dailyUtilization", out var du))
+                DailyUtilization = du.GetDouble();
+            if (root.TryGetProperty("dailyResetsAt", out var dr) && dr.ValueKind == JsonValueKind.String)
+                DailyResetsAt = DateTime.Parse(dr.GetString()!, null, System.Globalization.DateTimeStyles.RoundtripKind).ToLocalTime();
+            if (root.TryGetProperty("sonnetUtilization", out var sonu))
+                SonnetUtilization = sonu.GetDouble();
+            if (root.TryGetProperty("sonnetResetsAt", out var sonr) && sonr.ValueKind == JsonValueKind.String)
+                SonnetResetsAt = DateTime.Parse(sonr.GetString()!, null, System.Globalization.DateTimeStyles.RoundtripKind).ToLocalTime();
+
+            // Restore rate limit state (only if reset time is still in the future)
+            if (root.TryGetProperty("isRateLimited", out var rl) && rl.GetBoolean()
+                && SessionResetsAt.HasValue && SessionResetsAt.Value > DateTime.Now)
+            {
+                IsRateLimited = true;
+                OnRateLimitChanged?.Invoke(true);
+            }
+
+            IsLoaded = true;
+            OnUsageUpdated?.Invoke();
+            DiagnosticLogger.Log("USAGE_CACHE", "Loaded cached usage data");
+        }
+        catch (Exception ex) { DiagnosticLogger.Log("USAGE_CACHE_LOAD_ERROR", ex.Message); }
+    }
+
     private static string? ReadAccessToken()
     {
         try
@@ -252,7 +391,7 @@ public class UsageService
                 return token.GetString();
             }
         }
-        catch { }
+        catch (Exception ex) { DiagnosticLogger.Log("CREDENTIALS_READ_ERROR", ex.Message); }
         return null;
     }
 
