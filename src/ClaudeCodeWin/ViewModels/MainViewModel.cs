@@ -460,6 +460,14 @@ public partial class MainViewModel : ViewModelBase
         _technicalWriterService = writerService;
     }
 
+    public void SetVectorMemory(VectorMemoryService vectorMemory)
+    {
+        if (SharedChatServices is not null)
+            SharedChatServices.VectorMemory = vectorMemory;
+        Notepad?.SetVectorMemory(vectorMemory);
+        Notepad?.SetProjectPath(WorkingDirectory);
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     //  Constructor
     // ═══════════════════════════════════════════════════════════════════

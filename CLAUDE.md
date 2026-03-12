@@ -7,7 +7,7 @@ ClaudeCodeWin — native WPF desktop client for Claude Code CLI. Provides a rich
 ## Tech Stack
 
 - .NET 9.0, WPF
-- **Zero NuGet dependencies** — everything uses built-in .NET 9 APIs
+- **Minimal NuGet dependencies** — `Microsoft.ML.OnnxRuntime` (local ONNX inference), `Microsoft.Data.Sqlite` (vector storage)
 - MVVM with custom ViewModelBase + RelayCommand
 
 ## Build & Run

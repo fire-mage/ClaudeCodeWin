@@ -96,6 +96,10 @@ public class AppSettings
     public bool VoiceInputEnabled { get; set; }
     public string VoiceInputModel { get; set; } = "small";
 
+    // Vector Memory (semantic search)
+    public bool VectorMemoryEnabled { get; set; } = true;
+    public float VectorMinRelevance { get; set; } = 0.3f;
+
     // Multi-project workspaces
     public List<Workspace> Workspaces { get; set; } = [];
 

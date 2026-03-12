@@ -245,6 +245,18 @@ public partial class App : Application
                 });
             }
 
+            // Vector Memory (semantic search with ONNX embeddings)
+            var vectorMemoryService = new VectorMemoryService();
+            knowledgeBaseService.SetVectorMemory(vectorMemoryService);
+            mainWindow.SetVectorMemory(vectorMemoryService);
+            mainWindow.Closed += (_, _) => vectorMemoryService.Dispose();
+            Exit += (_, _) => vectorMemoryService.Dispose();  // Belt-and-suspenders: Dispose is idempotent
+            _ = Task.Run(async () =>
+            {
+                try { await vectorMemoryService.InitializeAsync(); }
+                catch (Exception ex) { DiagnosticLogger.Log("VECTOR_MEMORY_INIT_ERROR", ex.Message); }
+            });
+
             // Project Onboarding + Technical Writer
             var onboardingService = new OnboardingService(projectRegistry, scriptService, taskRunnerService, knowledgeBaseService);
             onboardingService.Configure(claudeExePath);
@@ -255,6 +267,7 @@ public partial class App : Application
             {
                 tab.SetOnboardingService(onboardingService);
                 tab.SetTechnicalWriter(technicalWriterService);
+                tab.SetVectorMemory(vectorMemoryService);
             }
 
             // Single CollectionChanged handler for all new-tab initialization
@@ -267,6 +280,7 @@ public partial class App : Application
                     tab.PersistWorkspacePrimary = (wsId, path) => workspaceService.SetPrimary(wsId, path);
                     tab.SetOnboardingService(onboardingService);
                     tab.SetTechnicalWriter(technicalWriterService);
+                    tab.SetVectorMemory(vectorMemoryService);
                 }
             };
 

@@ -81,6 +81,7 @@ public partial class MainViewModel
         _registeredProjectRoots.TryAdd(Path.GetFullPath(folder), 0);
 
         LockProject?.Invoke(folder);
+        Notepad?.SetProjectPath(folder);
         RefreshGitStatus();
         StartGitRefreshTimer();
         UpdateExplorerRoot();

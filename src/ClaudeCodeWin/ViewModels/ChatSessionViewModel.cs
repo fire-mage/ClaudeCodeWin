@@ -29,6 +29,7 @@ internal class ChatSessionServices
     public required ProjectRegistryService ProjectRegistry { get; init; }
     public required ContextSnapshotService ContextSnapshot { get; init; }
     public DevKbService? DevKb { get; init; }
+    public VectorMemoryService? VectorMemory { get; set; }
 }
 
 /// <summary>
@@ -81,6 +82,9 @@ public class ChatSessionViewModel : ViewModelBase
     private JsonElement? _pendingQuestionInput;
     private readonly List<(string question, string answer)> _pendingQuestionAnswers = [];
     private readonly List<MessageViewModel> _pendingQuestionMessages = [];
+
+    // Atomic counter for unique vector memory sourceId (avoids Ticks collision)
+    private static int _vectorMsgSeq;
 
     // Review state
     private static readonly HashSet<string> TextDocExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -560,6 +564,26 @@ public class ChatSessionViewModel : ViewModelBase
             if (apiKeyWarnings.Count > 0)
                 preamble += $"\n\n<expired-api-keys>The following API keys are expired and should NOT be used: {string.Join(", ", apiKeyWarnings)}. Ask the user to update them in Settings > API Keys.</expired-api-keys>";
 
+            // Fix #2: vector memory search off UI thread to avoid blocking
+            if (Services.VectorMemory?.IsAvailable == true
+                && Services.Settings.VectorMemoryEnabled
+                && !string.IsNullOrEmpty(WorkingDirectory))
+            {
+                var vm = Services.VectorMemory;
+                var wd2 = WorkingDirectory;
+                var minRel = Services.Settings.VectorMinRelevance;
+                try
+                {
+                    var vectorCtx = await Task.Run(() => vm.GetContextForQuery(wd2, text, minRel));
+                    if (!string.IsNullOrEmpty(vectorCtx))
+                        preamble += "\n\n" + vectorCtx;
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticLogger.Log("VECTOR_SEARCH_ERROR", ex.Message);
+                }
+            }
+
             finalPrompt = $"{preamble}\n\n{text}";
             CheckApiKeyExpiry();
         }
@@ -577,6 +601,28 @@ public class ChatSessionViewModel : ViewModelBase
         else
         {
             _preTurnDirtyFiles = [];
+        }
+
+        // Vector memory: index user query for future semantic search
+        if (Services.VectorMemory?.IsAvailable == true
+            && Services.Settings.VectorMemoryEnabled
+            && !string.IsNullOrEmpty(text) && text.Length >= 20
+            && !string.IsNullOrEmpty(WorkingDirectory))
+        {
+            var vmWd = WorkingDirectory;
+            var vmText = text;
+            var vmSessionId = _currentChatId ?? "unknown";
+            var vmMsgSeq = Interlocked.Increment(ref _vectorMsgSeq);
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    Services.VectorMemory.IndexDocument(
+                        vmWd, "chat", $"{vmSessionId}:user:{vmMsgSeq}", vmText,
+                        new() { ["date"] = DateTime.UtcNow.ToString("o"), ["role"] = "user" });
+                }
+                catch (Exception ex) { DiagnosticLogger.Log("VECTOR_INDEX_ERROR", ex.Message); }
+            });
         }
 
         _messageAssembler.BeginAssistantMessage();
@@ -729,6 +775,29 @@ public class ChatSessionViewModel : ViewModelBase
             if (_parent.TechnicalWriter is not null && currentMsg is not null
                 && !string.IsNullOrEmpty(currentMsg.Text) && !string.IsNullOrEmpty(WorkingDirectory))
                 _parent.TechnicalWriter.AccumulateText(WorkingDirectory, currentMsg.Text);
+
+            // Vector memory: index assistant response for future semantic search
+            if (Services.VectorMemory?.IsAvailable == true
+                && Services.Settings.VectorMemoryEnabled
+                && currentMsg is not null
+                && !string.IsNullOrEmpty(currentMsg.Text) && currentMsg.Text.Length >= 50
+                && !string.IsNullOrEmpty(WorkingDirectory))
+            {
+                var wd = WorkingDirectory;
+                var msgText = currentMsg.Text;
+                var sessionId = _currentChatId ?? "unknown";
+                var msgSeq = Interlocked.Increment(ref _vectorMsgSeq);
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        Services.VectorMemory.IndexDocument(
+                            wd, "chat", $"{sessionId}:assistant:{msgSeq}", msgText,
+                            new() { ["date"] = DateTime.UtcNow.ToString("o"), ["role"] = "assistant" });
+                    }
+                    catch (Exception ex) { DiagnosticLogger.Log("VECTOR_INDEX_ERROR", ex.Message); }
+                });
+            }
 
             if (!string.IsNullOrEmpty(result.Model))
                 ModelName = result.Model;

@@ -15,11 +15,14 @@ public partial class SettingsWindow : Window
     private readonly string? _workingDir;
     private readonly InstructionsService _instructions = new();
     private readonly SpeechRecognitionService? _speechService;
+    private readonly VectorMemoryService? _vectorMemory;
     private CancellationTokenSource? _downloadCts;
+    private CancellationTokenSource? _vectorDownloadCts;
     private bool _initialized;
 
     public SettingsWindow(AppSettings settings, SettingsService settingsService, MainViewModel viewModel,
-        UpdateViewModel updateViewModel, string? workingDir, SpeechRecognitionService? speechService = null)
+        UpdateViewModel updateViewModel, string? workingDir,
+        SpeechRecognitionService? speechService = null, VectorMemoryService? vectorMemory = null)
     {
         InitializeComponent();
         _settings = settings;
@@ -28,6 +31,7 @@ public partial class SettingsWindow : Window
         _updateViewModel = updateViewModel;
         _workingDir = workingDir;
         _speechService = speechService;
+        _vectorMemory = vectorMemory;
 
         // Set current state
         if (settings.UpdateChannel == "beta")
@@ -40,6 +44,7 @@ public partial class SettingsWindow : Window
         UpdateActivationSummary();
         UpdateApiKeysSummary();
         InitVoiceInput();
+        InitVectorMemory();
 
         _initialized = true;
     }
@@ -276,9 +281,145 @@ public partial class SettingsWindow : Window
         UpdateVoiceUI();
     }
 
+    // ── Vector Memory ──
+
+    private void InitVectorMemory()
+    {
+        VectorEnabledCheck.IsChecked = _settings.VectorMemoryEnabled;
+        UpdateVectorUI();
+    }
+
+    private void UpdateVectorUI()
+    {
+        var enabled = VectorEnabledCheck.IsChecked == true;
+        VectorModelPanel.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!enabled)
+        {
+            VectorSummary.Text = "Disabled — no semantic context injection";
+            return;
+        }
+
+        var downloaded = EmbeddingModelManager.IsModelDownloaded();
+        VectorDownloadPanel.Visibility = downloaded ? Visibility.Collapsed : Visibility.Visible;
+        VectorDeleteBtn.Visibility = downloaded ? Visibility.Visible : Visibility.Collapsed;
+
+        if (downloaded)
+        {
+            var isLoaded = _vectorMemory?.IsAvailable == true;
+            VectorModelStatus.Text = isLoaded
+                ? "Model: all-MiniLM-L6-v2 — loaded and ready"
+                : "Model: all-MiniLM-L6-v2 — downloaded (restart to load)";
+            VectorSummary.Text = isLoaded ? "Active — semantic search enabled" : "Model downloaded — restart to activate";
+
+            // Show index stats
+            if (_vectorMemory?.IsAvailable == true && !string.IsNullOrEmpty(_workingDir))
+            {
+                var (totalDocs, totalChunks, kbCount, chatCount, noteCount) = _vectorMemory.GetIndexStats(_workingDir);
+                VectorIndexStats.Text = totalChunks > 0
+                    ? $"Indexed: {totalDocs} documents, {totalChunks} chunks (KB: {kbCount}, Chats: {chatCount}, Notes: {noteCount})"
+                    : "No documents indexed yet for this project";
+            }
+            else
+            {
+                VectorIndexStats.Text = "";
+            }
+        }
+        else
+        {
+            VectorModelStatus.Text = "Model not downloaded";
+            VectorSummary.Text = "Download the embedding model to enable semantic search";
+            VectorIndexStats.Text = "";
+        }
+    }
+
+    private void VectorEnabled_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_initialized) return;
+        _settings.VectorMemoryEnabled = VectorEnabledCheck.IsChecked == true;
+        _settingsService.Save(_settings);
+        UpdateVectorUI();
+    }
+
+    private async void VectorDownload_Click(object sender, RoutedEventArgs e)
+    {
+        VectorDownloadBtn.IsEnabled = false;
+        VectorDownloadProgress.Visibility = Visibility.Visible;
+        VectorDownloadProgress.Value = 0;
+        VectorDownloadStatus.Text = "Downloading...";
+
+        _vectorDownloadCts?.Cancel();
+        _vectorDownloadCts?.Dispose();
+        _vectorDownloadCts = new CancellationTokenSource();
+
+        try
+        {
+            var success = await EmbeddingModelManager.DownloadAsync(
+                (downloaded, total) =>
+                {
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        var pct = total > 0 ? (double)downloaded / total * 100 : 0;
+                        VectorDownloadProgress.Value = pct;
+                        VectorDownloadStatus.Text = $"Downloading... {downloaded / 1_048_576} / {total / 1_048_576} MB ({pct:F0}%)";
+                    });
+                },
+                _vectorDownloadCts.Token);
+
+            if (success)
+            {
+                VectorDownloadStatus.Text = "Download complete! Restart the app to activate.";
+
+                // Try to initialize immediately
+                if (_vectorMemory is not null && !_vectorMemory.IsAvailable)
+                {
+                    VectorDownloadStatus.Text = "Loading model...";
+                    await Task.Run(() => _vectorMemory.InitializeAsync());
+                    VectorDownloadStatus.Text = _vectorMemory.IsAvailable
+                        ? "Model loaded and ready!"
+                        : "Download complete! Restart the app to activate.";
+                }
+            }
+            else
+            {
+                VectorDownloadStatus.Text = "Download cancelled.";
+            }
+        }
+        catch (Exception ex)
+        {
+            VectorDownloadStatus.Text = $"Download failed: {ex.Message}";
+        }
+        finally
+        {
+            VectorDownloadBtn.IsEnabled = true;
+            VectorDownloadProgress.Visibility = Visibility.Collapsed;
+            UpdateVectorUI();
+        }
+    }
+
+    private void VectorDelete_Click(object sender, RoutedEventArgs e)
+    {
+        var result = MessageBox.Show(
+            "Delete the embedding model?\nYou can re-download it later.",
+            "Delete Model", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        // Shutdown ONNX session first to release file handles
+        _vectorMemory?.Shutdown();
+        EmbeddingModelManager.DeleteModel();
+        VectorDownloadStatus.Text = EmbeddingModelManager.IsModelDownloaded()
+            ? "Could not delete model — file may be in use. Restart and try again."
+            : "Model deleted.";
+        UpdateVectorUI();
+    }
+
     private void Close_Click(object sender, RoutedEventArgs e)
     {
         _downloadCts?.Cancel();
+        _downloadCts?.Dispose();
+        _vectorDownloadCts?.Cancel();
+        _vectorDownloadCts?.Dispose();
         Close();
     }
 }

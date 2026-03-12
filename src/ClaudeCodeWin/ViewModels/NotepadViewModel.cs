@@ -13,6 +13,7 @@ public class NotepadViewModel : ViewModelBase
 {
     private readonly NotepadStorageService _storage;
     private readonly DispatcherTimer _autoSaveTimer;
+    private readonly DispatcherTimer _vectorIndexTimer;
     private string? _selectedNote;
     private List<NoteBlock> _noteBlocks = [NoteBlock.CreateText("")];
     private bool _isLoaded;
@@ -20,6 +21,11 @@ public class NotepadViewModel : ViewModelBase
     private string _renameText = "";
     private bool _suppressAutoSave;
     private bool _shutdownCalled;
+    private VectorMemoryService? _vectorMemory;
+    private string? _projectPath;
+
+    public void SetVectorMemory(VectorMemoryService? vectorMemory) => _vectorMemory = vectorMemory;
+    public void SetProjectPath(string? projectPath) => _projectPath = projectPath;
 
     public ObservableCollection<string> Notes { get; } = [];
 
@@ -105,6 +111,9 @@ public class NotepadViewModel : ViewModelBase
 
         _autoSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _autoSaveTimer.Tick += AutoSaveTimer_Tick;
+
+        _vectorIndexTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _vectorIndexTimer.Tick += VectorIndexTimer_Tick;
 
         CreateNoteCommand = new RelayCommand(_ => CreateNote());
         SaveNoteCommand = new RelayCommand(_ => SaveNote(), _ => _selectedNote != null || HasContentToSave());
@@ -275,7 +284,11 @@ public class NotepadViewModel : ViewModelBase
         _autoSaveTimer.Stop();
         if (_selectedNote != null)
         {
-            try { _storage.SaveNoteBlocks(_selectedNote, _noteBlocks); }
+            try
+            {
+                _storage.SaveNoteBlocks(_selectedNote, _noteBlocks);
+                RestartVectorIndexTimer();
+            }
             catch (Exception ex) { DiagnosticLogger.Log("NOTEPAD_AUTOSAVE_TICK_ERROR", ex.Message); }
         }
         else if (HasContentToSave())
@@ -293,6 +306,13 @@ public class NotepadViewModel : ViewModelBase
 
     private void FlushAutoSave()
     {
+        // Flush pending vector index on note switch/shutdown
+        if (_vectorIndexTimer.IsEnabled && _selectedNote != null)
+        {
+            _vectorIndexTimer.Stop();
+            IndexNoteInVectorMemory(_selectedNote, _noteBlocks);
+        }
+
         if (_autoSaveTimer.IsEnabled)
         {
             _autoSaveTimer.Stop();
@@ -329,7 +349,11 @@ public class NotepadViewModel : ViewModelBase
         if (_selectedNote != null)
         {
             _autoSaveTimer.Stop();
-            try { _storage.SaveNoteBlocks(_selectedNote, _noteBlocks); }
+            try
+            {
+                _storage.SaveNoteBlocks(_selectedNote, _noteBlocks);
+                IndexNoteInVectorMemory(_selectedNote, _noteBlocks);
+            }
             catch (Exception ex)
             {
                 MessageBox.Show($"Failed to save note: {ex.Message}", "Error",
@@ -353,10 +377,46 @@ public class NotepadViewModel : ViewModelBase
     {
         var name = _storage.CreateNote($"Note {DateTime.Now:yyyy-MM-dd HH.mm}");
         _storage.SaveNoteBlocks(name, _noteBlocks);
+        IndexNoteInVectorMemory(name, _noteBlocks);
         Notes.Add(name);
         _suppressAutoSave = true;
         try { SelectedNote = name; }
         finally { _suppressAutoSave = false; }
+    }
+
+    private void RestartVectorIndexTimer()
+    {
+        _vectorIndexTimer.Stop();
+        _vectorIndexTimer.Start();
+    }
+
+    private void VectorIndexTimer_Tick(object? sender, EventArgs e)
+    {
+        _vectorIndexTimer.Stop();
+        if (_selectedNote != null)
+            IndexNoteInVectorMemory(_selectedNote, _noteBlocks);
+    }
+
+    private void IndexNoteInVectorMemory(string noteName, List<NoteBlock> blocks)
+    {
+        if (_vectorMemory?.IsAvailable != true || string.IsNullOrEmpty(_projectPath)) return;
+
+        var textContent = string.Join("\n", blocks
+            .Where(b => b.Type == NoteBlockType.Text && !string.IsNullOrWhiteSpace(b.Text))
+            .Select(b => b.Text));
+        if (string.IsNullOrWhiteSpace(textContent)) return;
+
+        var vm = _vectorMemory;
+        var pp = _projectPath;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                vm.IndexDocument(pp, "notepad", noteName, textContent,
+                    new Dictionary<string, string> { ["name"] = noteName });
+            }
+            catch (Exception ex) { DiagnosticLogger.Log("NOTEPAD_VECTOR_INDEX_ERROR", ex.Message); }
+        });
     }
 
     private void DeleteNote()
@@ -378,6 +438,12 @@ public class NotepadViewModel : ViewModelBase
         try
         {
             _storage.DeleteNote(name);
+            if (_vectorMemory?.IsAvailable == true && !string.IsNullOrEmpty(_projectPath))
+            {
+                var vm = _vectorMemory;
+                var pp = _projectPath;
+                _ = Task.Run(() => { try { vm.RemoveDocument(pp, "notepad", name); } catch (Exception ex) { DiagnosticLogger.Log("NOTEPAD_VECTOR_REMOVE_ERROR", ex.Message); } });
+            }
             Notes.Remove(name);
 
             if (Notes.Count > 0)

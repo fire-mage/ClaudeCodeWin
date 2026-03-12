@@ -14,6 +14,10 @@ public class KnowledgeBaseService
     // Per-directory lock to prevent TOCTOU race when concurrent callers save entries
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> _dirLocks = new(StringComparer.OrdinalIgnoreCase);
 
+    private VectorMemoryService? _vectorMemory;
+
+    public void SetVectorMemory(VectorMemoryService vectorMemory) => _vectorMemory = vectorMemory;
+
     private static readonly Regex SafeIdPattern = new(@"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", RegexOptions.Compiled);
     private static readonly Regex ReservedNames = new(@"^(CON|PRN|AUX|NUL|COM\d|LPT\d)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -103,6 +107,25 @@ public class KnowledgeBaseService
 
                 var json = JsonSerializer.Serialize(entries, JsonDefaults.Options);
                 File.WriteAllText(GetIndexPath(workingDir), json);
+
+                // Fire-and-forget: index article in vector memory for semantic search
+                if (_vectorMemory?.IsAvailable == true)
+                {
+                    var vm = _vectorMemory;
+                    var wd = workingDir;
+                    var id = entry.Id;
+                    var txt = content;
+                    _ = Task.Run(() =>
+                    {
+                        try
+                        {
+                            vm.IndexDocument(wd, "kb", id, txt,
+                                new Dictionary<string, string> { ["title"] = id });
+                        }
+                        catch (Exception ex) { DiagnosticLogger.Log("KB_VECTOR_INDEX_ERROR", ex.Message); }
+                    });
+                }
+
                 return true;
             }
             catch (Exception ex)

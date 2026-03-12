@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private DevKbService? _devKbService;
     private readonly WorkspaceService _workspaceService;
     private SpeechRecognitionService? _speechService;
+    private VectorMemoryService? _vectorMemory;
     private CancellationTokenSource? _autocompleteCts;
     private bool _isAtMentionMode;
     private int _atMentionStart; // index of '@' in the text
@@ -1052,7 +1053,7 @@ public partial class MainWindow : Window
 
     private void MenuItem_Settings_Click(object sender, RoutedEventArgs e)
     {
-        var dlg = new SettingsWindow(_settings, _settingsService, ViewModel, TabHost.Update, ViewModel.WorkingDirectory, _speechService) { Owner = this };
+        var dlg = new SettingsWindow(_settings, _settingsService, ViewModel, TabHost.Update, ViewModel.WorkingDirectory, _speechService, _vectorMemory) { Owner = this };
         dlg.ShowDialog();
         UpdateMicButtonVisibility();
     }
@@ -1161,6 +1162,7 @@ public partial class MainWindow : Window
     public void SetKnowledgeBaseService(KnowledgeBaseService service) => _knowledgeBaseService = service;
     public void SetDevKbService(DevKbService service) => _devKbService = service;
     public void SetSpeechService(SpeechRecognitionService service) => _speechService = service;
+    public void SetVectorMemory(VectorMemoryService service) => _vectorMemory = service;
 
     private void MenuItem_Marketplace_Click(object sender, RoutedEventArgs e)
     {
