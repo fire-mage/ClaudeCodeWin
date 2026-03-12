@@ -1190,6 +1190,13 @@ public class ChatSessionViewModel : ViewModelBase
     private bool HasReviewableFileChanges()
     {
         if (string.IsNullOrEmpty(WorkingDirectory) || ChangedFiles.Count == 0) return false;
+
+        // Skip review if working tree is clean (e.g. after git commit + push)
+        // Use status --porcelain to cover staged, unstaged, and untracked files
+        // null means git failed — fall through to existing file-based checks
+        var gitStatus = Services.Git.RunGit("status --porcelain", WorkingDirectory);
+        if (gitStatus is not null && string.IsNullOrWhiteSpace(gitStatus)) return false;
+
         var wd = WorkingDirectory.Replace('\\', '/').TrimEnd('/') + "/";
         foreach (var file in ChangedFiles)
         {
