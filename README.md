@@ -27,5 +27,3 @@ IMBAlino is a free native Windows desktop client for Claude Code CLI. It provide
 **Existing users**: Your app will update automatically to IMBAlino. No action needed.
 
 ---
-
-*"imba" (gamer slang for overpowered) + "-lino" (Italian diminutive) = an unfair advantage for your development*
