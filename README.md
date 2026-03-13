@@ -1,54 +1,31 @@
-# ClaudeCodeWin
+# ClaudeCodeWin → IMBAlino
 
-A native Windows GUI for [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) — the AI coding assistant by Anthropic.
+This project has been **renamed to IMBAlino** and moved to a new repository.
 
-Helps you transition from Cursor to Claude Code without the terminal stress. All the power of Claude Code, wrapped in a familiar desktop app.
+## Why the rename?
 
-## Features
+We did not receive a response from Anthropic regarding trademark approval for the name "Claude Code Win", so we proactively renamed the project to avoid any potential trademark conflicts.
 
-- Chat interface with streaming responses and thinking indicators
-- Session persistence — resume where you left off
-- Project folder management with recent projects
-- File attachments via drag & drop or clipboard (screenshots)
-- Git status in the status bar (branch + dirty count)
-- Token usage tracking per session
-- Prompt template scripts with variables (`{clipboard}`, `{git-status}`, `{git-diff}`, `{snapshot}`, `{file:path}`)
-- Auto-injection of `CONTEXT_SNAPSHOT.md` on first message
-- Dark theme (Catppuccin-inspired)
-- Auto-updates
+## Where to find IMBAlino
 
-## Requirements
+- **Website**: [imbalino.com](https://imbalino.com)
+- **Download**: [imbalino.com/#download](https://imbalino.com/#download)
 
-- Windows 10/11 (x64 or ARM64)
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+## What is IMBAlino?
 
-## Installation
+IMBAlino is a free native Windows desktop client for Claude Code CLI. It provides a rich GUI with:
 
-Download the latest installer from [Releases](https://github.com/fire-mage/ClaudeCodeWin/releases).
+- Token-saving optimizations through CLI integration
+- Team task pipeline with autonomous Cognits
+- Voice input via local Whisper speech recognition
+- Curated local knowledge base
+- Multi-project workspaces
+- Built-in code review
+- Real-time usage limit monitoring
+- And much more
 
-## Building from Source
+**Existing users**: Your app will update automatically to IMBAlino. No action needed.
 
-Requires [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0).
+---
 
-```powershell
-# Build
-dotnet build src/ClaudeCodeWin
-
-# Run
-dotnet run --project src/ClaudeCodeWin
-
-# Publish (single-file, self-contained)
-dotnet publish src/ClaudeCodeWin -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o dist
-```
-
-## Creating an Installer
-
-Requires [Inno Setup 6](https://jrsoftware.org/isinfo.php).
-
-```powershell
-.\build\build-installer.ps1
-```
-
-## License
-
-[MIT](LICENSE)
+*"imba" (gamer slang for overpowered) + "-lino" (Italian diminutive) = an unfair advantage for your development*
